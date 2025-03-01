@@ -1,0 +1,56 @@
+# mongodb/kubernetes/monitoring/prometheus-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mongodb-exporter
+  namespace: dive25-mongodb
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mongodb-exporter
+  template:
+    metadata:
+      labels:
+        app: mongodb-exporter
+    spec:
+      containers:
+      - name: mongodb-exporter
+        image: percona/mongodb_exporter:0.32.0
+        ports:
+        - containerPort: 9216
+          name: metrics
+        volumeMounts:
+        - name: config
+          mountPath: /etc/mongodb-exporter
+        env:
+        - name: MONGODB_EXPORTER_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: mongodb-secret
+              key: mongodb-exporter-password
+        - name: MONGODB_EXPORTER_CONFIG_FILE
+          value: "/etc/mongodb-exporter/mongodb-exporter.yml"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: metrics
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      volumes:
+      - name: config
+        configMap:
+          name: mongodb-prometheus-exporter-config

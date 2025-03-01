@@ -1,0 +1,104 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dive25-api
+  namespace: dive25
+  labels:
+    app: dive25-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: dive25-api
+  template:
+    metadata:
+      labels:
+        app: dive25-api
+    spec:
+      containers:
+      - name: dive25-api
+        image: ${DOCKER_REGISTRY}/dive25-api:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 3000
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000"
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: dive25-secrets
+              key: mongodb-uri
+        - name: KEYCLOAK_AUTH_SERVER_URL
+          valueFrom:
+            configMapKeyRef:
+              name: dive25-config
+              key: keycloak-url
+        - name: KEYCLOAK_REALM
+          valueFrom:
+            configMapKeyRef:
+              name: dive25-config
+              key: keycloak-realm
+        - name: KEYCLOAK_CLIENT_ID
+          valueFrom:
+            configMapKeyRef:
+              name: dive25-config
+              key: keycloak-client-id
+        - name: KEYCLOAK_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: dive25-secrets
+              key: keycloak-client-secret
+        - name: OPA_URL
+          valueFrom:
+            configMapKeyRef:
+              name: dive25-config
+              key: opa-url
+        - name: LDAP_URL
+          valueFrom:
+            configMapKeyRef:
+              name: dive25-config
+              key: ldap-url
+        - name: LDAP_BIND_DN
+          valueFrom:
+            configMapKeyRef:
+              name: dive25-config
+              key: ldap-bind-dn
+        - name: LDAP_BIND_CREDENTIALS
+          valueFrom:
+            secretKeyRef:
+              name: dive25-secrets
+              key: ldap-bind-credentials
+        - name: CORS_ALLOWED_ORIGINS
+          valueFrom:
+            configMapKeyRef:
+              name: dive25-config
+              key: cors-allowed-origins
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: dive25-secrets
+              key: jwt-secret
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "256Mi"
+          limits:
+            cpu: "500m"
+            memory: "512Mi"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 15
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      imagePullSecrets:
+      - name: regcred

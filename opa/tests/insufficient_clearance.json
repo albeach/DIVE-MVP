@@ -1,0 +1,29 @@
+{
+    "input": {
+        "user": {
+            "uniqueId": "bob456",
+            "username": "bob",
+            "clearance": "CONFIDENTIAL",
+            "countryOfAffiliation": "GBR",
+            "caveats": [
+                "FVEY"
+            ],
+            "coi": [
+                "OpAlpha"
+            ]
+        },
+        "resource": {
+            "id": "doc456",
+            "classification": "SECRET",
+            "releasableTo": [
+                "FVEY"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coiTags": [
+                "OpAlpha"
+            ]
+        }
+    }
+}

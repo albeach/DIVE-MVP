@@ -1,0 +1,23 @@
+# mongodb/kubernetes/monitoring/prometheus-configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-prometheus-exporter-config
+  namespace: dive25-mongodb
+data:
+  mongodb-exporter.yml: |
+    mongodb:
+      uri: "mongodb://mongodb-exporter:${MONGODB_EXPORTER_PASSWORD}@mongodb-0.mongodb-headless.dive25-mongodb.svc.cluster.local:27017,mongodb-1.mongodb-headless.dive25-mongodb.svc.cluster.local:27017,mongodb-2.mongodb-headless.dive25-mongodb.svc.cluster.local:27017/admin?replicaSet=rs0"
+      
+    metrics:
+      general:
+        enabled: true
+      database:
+        enabled: true
+        collections: [dive25]
+      instance:
+        enabled: true
+      replicaset:
+        enabled: true
+      topmetrics:
+        enabled: true

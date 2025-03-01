@@ -1,0 +1,76 @@
+/* frontend/src/styles/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base typography */
+@layer base {
+    html {
+        @apply text-gray-900;
+        font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        @apply font-medium tracking-tight;
+    }
+
+    /* Handle focus outlines */
+    :focus {
+        @apply outline-none ring-2 ring-offset-2 ring-dive25-500;
+    }
+
+    /* Make sure focus outlines are only visible when using keyboard navigation */
+    :focus:not(:focus-visible) {
+        @apply ring-0 ring-offset-0;
+    }
+
+    :focus-visible {
+        @apply outline-none ring-2 ring-offset-2 ring-dive25-500;
+    }
+}
+
+/* Custom components */
+@layer components {
+
+    /* Classification banner styles */
+    .classification-banner {
+        @apply fixed top-0 left-0 right-0 z-50 py-1 text-center font-bold uppercase;
+    }
+
+    .classification-unclassified {
+        @apply bg-classification-unclassified text-white;
+    }
+
+    .classification-restricted {
+        @apply bg-classification-restricted text-white;
+    }
+
+    .classification-confidential {
+        @apply bg-classification-confidential text-white;
+    }
+
+    .classification-secret {
+        @apply bg-classification-secret text-white;
+    }
+
+    .classification-topsecret {
+        @apply bg-classification-top-secret text-white;
+    }
+}
+
+/* Utility classes */
+@layer utilities {
+    .scrollbar-hide {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+    }
+
+    .scrollbar-hide::-webkit-scrollbar {
+        display: none;
+    }
+}

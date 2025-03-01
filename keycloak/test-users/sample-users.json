@@ -1,0 +1,220 @@
+[
+    {
+        "username": "alice",
+        "email": "alice@us.gov",
+        "firstName": "Alice",
+        "lastName": "Johnson",
+        "enabled": true,
+        "emailVerified": true,
+        "credentials": [
+            {
+                "type": "password",
+                "value": "password123",
+                "temporary": false
+            }
+        ],
+        "attributes": {
+            "countryOfAffiliation": [
+                "USA"
+            ],
+            "clearance": [
+                "TOP SECRET"
+            ],
+            "organization": [
+                "Department of Defense"
+            ],
+            "caveats": [
+                "FVEY",
+                "NATO"
+            ],
+            "coi": [
+                "OpAlpha",
+                "OpBravo"
+            ]
+        },
+        "realmRoles": [
+            "user",
+            "admin"
+        ]
+    },
+    {
+        "username": "bob",
+        "email": "bob@mod.uk",
+        "firstName": "Bob",
+        "lastName": "Smith",
+        "enabled": true,
+        "emailVerified": true,
+        "credentials": [
+            {
+                "type": "password",
+                "value": "password123",
+                "temporary": false
+            }
+        ],
+        "attributes": {
+            "countryOfAffiliation": [
+                "GBR"
+            ],
+            "clearance": [
+                "SECRET"
+            ],
+            "organization": [
+                "Ministry of Defence"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coi": [
+                "OpAlpha"
+            ]
+        },
+        "realmRoles": [
+            "user"
+        ]
+    },
+    {
+        "username": "charlie",
+        "email": "charlie@forces.gc.ca",
+        "firstName": "Charlie",
+        "lastName": "Brown",
+        "enabled": true,
+        "emailVerified": true,
+        "credentials": [
+            {
+                "type": "password",
+                "value": "password123",
+                "temporary": false
+            }
+        ],
+        "attributes": {
+            "countryOfAffiliation": [
+                "CAN"
+            ],
+            "clearance": [
+                "NATO SECRET"
+            ],
+            "organization": [
+                "Canadian Armed Forces"
+            ],
+            "caveats": [
+                "FVEY",
+                "NATO"
+            ],
+            "coi": [
+                "OpBravo",
+                "MissionZ"
+            ]
+        },
+        "realmRoles": [
+            "user"
+        ]
+    },
+    {
+        "username": "diana",
+        "email": "diana@defence.gov.au",
+        "firstName": "Diana",
+        "lastName": "Williams",
+        "enabled": true,
+        "emailVerified": true,
+        "credentials": [
+            {
+                "type": "password",
+                "value": "password123",
+                "temporary": false
+            }
+        ],
+        "attributes": {
+            "countryOfAffiliation": [
+                "AUS"
+            ],
+            "clearance": [
+                "SECRET"
+            ],
+            "organization": [
+                "Australian Defence Force"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coi": [
+                "OpAlpha",
+                "MissionX"
+            ]
+        },
+        "realmRoles": [
+            "user"
+        ]
+    },
+    {
+        "username": "evan",
+        "email": "evan@nzdf.mil.nz",
+        "firstName": "Evan",
+        "lastName": "Davis",
+        "enabled": true,
+        "emailVerified": true,
+        "credentials": [
+            {
+                "type": "password",
+                "value": "password123",
+                "temporary": false
+            }
+        ],
+        "attributes": {
+            "countryOfAffiliation": [
+                "NZL"
+            ],
+            "clearance": [
+                "CONFIDENTIAL"
+            ],
+            "organization": [
+                "New Zealand Defence Force"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coi": [
+                "MissionX"
+            ]
+        },
+        "realmRoles": [
+            "user"
+        ]
+    },
+    {
+        "username": "francois",
+        "email": "francois@defense.gouv.fr",
+        "firstName": "François",
+        "lastName": "Dubois",
+        "enabled": true,
+        "emailVerified": true,
+        "credentials": [
+            {
+                "type": "password",
+                "value": "password123",
+                "temporary": false
+            }
+        ],
+        "attributes": {
+            "countryOfAffiliation": [
+                "FRA"
+            ],
+            "clearance": [
+                "NATO SECRET"
+            ],
+            "organization": [
+                "Ministère des Armées"
+            ],
+            "caveats": [
+                "NATO",
+                "EU"
+            ],
+            "coi": [
+                "OpGamma",
+                "MissionZ"
+            ]
+        },
+        "realmRoles": [
+            "user"
+        ]
+    }
+]

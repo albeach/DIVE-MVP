@@ -1,0 +1,16 @@
+// frontend/src/public/silent-check-sso.html
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Silent SSO Check</title>
+    <script>
+        parent.postMessage(location.href, location.origin);
+    </script>
+</head>
+
+<body>
+    <!-- Silent SSO check page - used by Keycloak for background token refresh -->
+</body>
+
+</html>

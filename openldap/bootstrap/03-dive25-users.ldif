@@ -1,0 +1,98 @@
+# openldap/bootstrap/03-dive25-users.ldif
+# Sample Users
+dn: uid=alice,ou=USA,ou=users,dc=dive25,dc=local
+objectClass: dive25Person
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Johnson
+sn: Johnson
+givenName: Alice
+mail: alice@us.gov
+userPassword: {SSHA}xxxxxxxxxxxxxxxxxxxxxxxx
+clearance: TOP SECRET
+countryOfAffiliation: USA
+o: Department of Defense
+caveats: FVEY
+caveats: NATO
+aCPCOI: OpAlpha
+aCPCOI: OpBravo
+
+dn: uid=bob,ou=GBR,ou=users,dc=dive25,dc=local
+objectClass: dive25Person
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Smith
+sn: Smith
+givenName: Bob
+mail: bob@mod.uk
+userPassword: {SSHA}xxxxxxxxxxxxxxxxxxxxxxxx
+clearance: SECRET
+countryOfAffiliation: GBR
+o: Ministry of Defence
+caveats: FVEY
+aCPCOI: OpAlpha
+
+dn: uid=charlie,ou=CAN,ou=users,dc=dive25,dc=local
+objectClass: dive25Person
+objectClass: inetOrgPerson
+uid: charlie
+cn: Charlie Brown
+sn: Brown
+givenName: Charlie
+mail: charlie@forces.gc.ca
+userPassword: {SSHA}xxxxxxxxxxxxxxxxxxxxxxxx
+clearance: NATO SECRET
+countryOfAffiliation: CAN
+o: Canadian Armed Forces
+caveats: FVEY
+caveats: NATO
+aCPCOI: OpBravo
+aCPCOI: MissionZ
+
+dn: uid=diana,ou=AUS,ou=users,dc=dive25,dc=local
+objectClass: dive25Person
+objectClass: inetOrgPerson
+uid: diana
+cn: Diana Williams
+sn: Williams
+givenName: Diana
+mail: diana@defence.gov.au
+userPassword: {SSHA}xxxxxxxxxxxxxxxxxxxxxxxx
+clearance: SECRET
+countryOfAffiliation: AUS
+o: Australian Defence Force
+caveats: FVEY
+aCPCOI: OpAlpha
+aCPCOI: MissionX
+
+dn: uid=evan,ou=NZL,ou=users,dc=dive25,dc=local
+objectClass: dive25Person
+objectClass: inetOrgPerson
+uid: evan
+cn: Evan Davis
+sn: Davis
+givenName: Evan
+mail: evan@nzdf.mil.nz
+userPassword: {SSHA}xxxxxxxxxxxxxxxxxxxxxxxx
+clearance: CONFIDENTIAL
+countryOfAffiliation: NZL
+o: New Zealand Defence Force
+caveats: FVEY
+aCPCOI: MissionX
+
+dn: uid=francois,ou=FRA,ou=users,dc=dive25,dc=local
+objectClass: dive25Person
+objectClass: inetOrgPerson
+uid: francois
+cn: François Dubois
+sn: Dubois
+givenName: François
+mail: francois@defense.gouv.fr
+userPassword: {SSHA}xxxxxxxxxxxxxxxxxxxxxxxx
+clearance: NATO SECRET
+countryOfAffiliation: FRA
+o: Ministère des Armées
+caveats: NATO
+caveats: EU
+aCPCOI: OpGamma
+aCPCOI: MissionZ

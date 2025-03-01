@@ -1,0 +1,35 @@
+{
+    "input": {
+        "user": {
+            "uniqueId": "alice123",
+            "username": "alice",
+            "clearance": "TOP SECRET",
+            "countryOfAffiliation": "USA",
+            "caveats": [
+                "FVEY",
+                "NATO"
+            ],
+            "coi": [
+                "OpAlpha",
+                "OpBravo"
+            ]
+        },
+        "resource": {
+            "id": "doc123",
+            "classification": "SECRET",
+            "releasableTo": [
+                "USA",
+                "GBR",
+                "CAN",
+                "AUS",
+                "NZL"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coiTags": [
+                "OpAlpha"
+            ]
+        }
+    }
+}

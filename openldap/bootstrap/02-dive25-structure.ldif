@@ -1,0 +1,56 @@
+# openldap/bootstrap/02-dive25-structure.ldif
+# Base Structure
+dn: ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: users
+
+dn: ou=groups,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: groups
+
+dn: ou=roles,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: roles
+
+# Countries
+dn: ou=USA,ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: USA
+
+dn: ou=GBR,ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: GBR
+
+dn: ou=CAN,ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: CAN
+
+dn: ou=AUS,ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: AUS
+
+dn: ou=NZL,ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: NZL
+
+dn: ou=FRA,ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: FRA
+
+# Roles
+dn: cn=admin,ou=roles,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: admin
+description: Administrator role
+member: uid=alice,ou=USA,ou=users,dc=dive25,dc=local
+
+dn: cn=user,ou=roles,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: user
+description: User role
+member: uid=alice,ou=USA,ou=users,dc=dive25,dc=local
+member: uid=bob,ou=GBR,ou=users,dc=dive25,dc=local
+member: uid=charlie,ou=CAN,ou=users,dc=dive25,dc=local
+member: uid=diana,ou=AUS,ou=users,dc=dive25,dc=local
+member: uid=evan,ou=NZL,ou=users,dc=dive25,dc=local
+member: uid=francois,ou=FRA,ou=users,dc=dive25,dc=local

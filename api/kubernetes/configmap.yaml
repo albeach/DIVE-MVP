@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: dive25-config
+  namespace: dive25
+data:
+  keycloak-url: "https://keycloak.dive25.com/auth"
+  keycloak-realm: "dive25"
+  keycloak-client-id: "dive25-api"
+  opa-url: "http://dive25-opa:8181/v1/data"
+  ldap-url: "ldap://dive25-openldap:389"
+  ldap-bind-dn: "cn=admin,dc=dive25,dc=com"
+  ldap-search-base: "dc=dive25,dc=com"
+  cors-allowed-origins: "https://dive25.com,https://api.dive25.com"

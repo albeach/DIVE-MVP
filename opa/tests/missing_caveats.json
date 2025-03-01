@@ -1,0 +1,30 @@
+{
+    "input": {
+        "user": {
+            "uniqueId": "charlie789",
+            "username": "charlie",
+            "clearance": "SECRET",
+            "countryOfAffiliation": "CAN",
+            "caveats": [
+                "NATO"
+            ],
+            "coi": [
+                "OpAlpha",
+                "OpBravo"
+            ]
+        },
+        "resource": {
+            "id": "doc789",
+            "classification": "SECRET",
+            "releasableTo": [
+                "FVEY"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coiTags": [
+                "OpAlpha"
+            ]
+        }
+    }
+}

@@ -1,0 +1,47 @@
+{
+    "appName": "DIVE25 Document Access System",
+    "nav": {
+        "home": "Home",
+        "documents": "Documents",
+        "profile": "Profile",
+        "signIn": "Sign In",
+        "signOut": "Sign Out"
+    },
+    "login": {
+        "title": "Sign in to your account",
+        "signIn": "Sign In",
+        "selectProvider": "Select your identity provider",
+        "withCredentials": "Sign in with credentials"
+    },
+    "home": {
+        "subtitle": "Secure access to classified documents across NATO partner nations",
+        "welcomeBack": "Welcome back! What would you like to do?",
+        "viewDocuments": "View Documents",
+        "uploadDocument": "Upload Document",
+        "loginPrompt": "Please sign in to access the document repository",
+        "securityNotice": "This system is for authorized users only. All activities are monitored and recorded."
+    },
+    "security": {
+        "classification": "Classification",
+        "releasability": "Releasability",
+        "caveats": "Caveats",
+        "warning": "This system contains information up to"
+    },
+    "errors": {
+        "failedToLoadDocuments": "Failed to load documents",
+        "failedToLoadDocument": "Failed to load document",
+        "unknownError": "An unknown error occurred",
+        "unauthorized": "You are not authorized to access this resource",
+        "forbidden": "You do not have permission to access this resource",
+        "notFound": "The requested resource could not be found",
+        "serverError": "A server error occurred. Please try again later."
+    },
+    "back": "Back",
+    "loading": "Loading...",
+    "pagination": {
+        "previous": "Previous",
+        "next": "Next",
+        "page": "Page",
+        "of": "of"
+    }
+}

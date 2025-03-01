@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: dive25-api
+  namespace: dive25
+  labels:
+    app: dive25-api
+spec:
+  selector:
+    app: dive25-api
+  ports:
+  - port: 80
+    targetPort: 3000
+    protocol: TCP
+  type: ClusterIP

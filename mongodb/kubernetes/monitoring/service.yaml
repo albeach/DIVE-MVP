@@ -1,0 +1,20 @@
+# mongodb/kubernetes/monitoring/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-exporter
+  namespace: dive25-mongodb
+  labels:
+    app: mongodb-exporter
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9216"
+spec:
+  ports:
+  - port: 9216
+    targetPort: 9216
+    protocol: TCP
+    name: metrics
+  selector:
+    app: mongodb-exporter
+  type: ClusterIP

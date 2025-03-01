@@ -1,0 +1,7 @@
+# mongodb/kubernetes/namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dive25-mongodb
+  labels:
+    app: dive25-mongodb

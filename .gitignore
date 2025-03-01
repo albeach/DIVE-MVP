@@ -1,0 +1,86 @@
+# ==================================================
+# Operating System Files
+# ==================================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# ==================================================
+# Editor and IDE Files
+# ==================================================
+# Vim
+*.swp
+
+# Visual Studio Code
+.vscode/
+
+# JetBrains IDEs (IntelliJ, PyCharm, WebStorm, etc.)
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Other common editors
+*.tmp
+*~
+
+# ==================================================
+# Log Files and Debug Files
+# ==================================================
+*.log
+
+# ==================================================
+# Dependency Directories
+# ==================================================
+# Node.js
+node_modules/
+
+# Python
+__pycache__/
+*.py[cod]
+
+# Ruby Gems
+*.gem
+
+# Other package managers (adjust as needed)
+vendor/
+
+# ==================================================
+# Build and Distribution Directories
+# ==================================================
+dist/
+build/
+
+# ==================================================
+# Compiled Source Code and Artifacts
+# ==================================================
+# Java
+*.class
+*.jar
+*.war
+*.ear
+
+# C/C++ and similar languages
+*.o
+*.obj
+*.so
+*.dll
+*.exe
+
+# ==================================================
+# Backup and Temporary Files
+# ==================================================
+*.bak
+*.old
+merge-repo.js

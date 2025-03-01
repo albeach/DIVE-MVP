@@ -1,0 +1,52 @@
+{
+    "title": "Documents",
+    "upload": "Upload Document",
+    "documentDetails": "Document Details",
+    "metadata": "Metadata",
+    "download": "Download",
+    "noDocumentsFound": "No documents found matching your criteria.",
+    "documentNotFound": "The requested document could not be found.",
+    "filters": {
+        "searchPlaceholder": "Search documents...",
+        "advancedFilters": "Advanced Filters",
+        "clearFilters": "Clear Filters",
+        "classification": "Classification",
+        "country": "Country",
+        "fromDate": "From Date",
+        "toDate": "To Date",
+        "allClassifications": "All Classifications",
+        "allCountries": "All Countries"
+    },
+    "filename": "Filename",
+    "classification": "Classification",
+    "uploadDate": "Upload Date",
+    "size": "Size",
+    "creator": "Creator",
+    "metadata": {
+        "classification": "Classification",
+        "uploadDate": "Upload Date",
+        "releasability": "Releasability",
+        "caveats": "Caveats",
+        "coi": "Communities of Interest",
+        "creator": "Creator",
+        "fileInfo": "File Information"
+    },
+    "uploadForm": {
+        "bannerPreview": "Banner Preview",
+        "fileUpload": "File Upload",
+        "fileRequired": "Please select a file to upload",
+        "dragAndDrop": "Drag and drop your file here, or click to browse",
+        "dropFileHere": "Drop your file here",
+        "fileTypes": "PDF, Word, Excel, PowerPoint, Text, and Image files accepted",
+        "fileSize": "Maximum file size: 10MB",
+        "securityMarkings": "Security Markings",
+        "classification": "Classification",
+        "classificationRequired": "Classification is required",
+        "caveats": "Caveats",
+        "releasability": "Releasability",
+        "coi": "Communities of Interest",
+        "uploadDocument": "Upload Document"
+    },
+    "uploadSuccess": "Document uploaded successfully",
+    "uploadError": "Failed to upload document"
+}

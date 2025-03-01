@@ -1,0 +1,30 @@
+{
+    "input": {
+        "user": {
+            "uniqueId": "francois222",
+            "username": "francois",
+            "clearance": "NATO SECRET",
+            "countryOfAffiliation": "FRA",
+            "caveats": [
+                "NATO"
+            ],
+            "coi": [
+                "OpGamma",
+                "MissionZ"
+            ]
+        },
+        "resource": {
+            "id": "doc222",
+            "classification": "NATO CONFIDENTIAL",
+            "releasableTo": [
+                "NATO"
+            ],
+            "caveats": [
+                "NATO"
+            ],
+            "coiTags": [
+                "OpGamma"
+            ]
+        }
+    }
+}

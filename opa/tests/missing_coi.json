@@ -1,0 +1,29 @@
+{
+    "input": {
+        "user": {
+            "uniqueId": "diana101",
+            "username": "diana",
+            "clearance": "SECRET",
+            "countryOfAffiliation": "AUS",
+            "caveats": [
+                "FVEY"
+            ],
+            "coi": [
+                "MissionX"
+            ]
+        },
+        "resource": {
+            "id": "doc101",
+            "classification": "SECRET",
+            "releasableTo": [
+                "FVEY"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coiTags": [
+                "OpAlpha"
+            ]
+        }
+    }
+}

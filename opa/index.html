@@ -1,0 +1,201 @@
+<!-- opa/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DIVE25 OPA Policy Tester</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        h1 {
+            color: #003366;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        textarea {
+            width: 100%;
+            height: 300px;
+            font-family: monospace;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .columns {
+            display: flex;
+            gap: 20px;
+        }
+
+        .column {
+            flex: 1;
+        }
+
+        button {
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+
+        button:hover {
+            background-color: #003366;
+        }
+
+        .result {
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 4px;
+        }
+
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>DIVE25 OPA Policy Tester</h1>
+        <p>Use this tool to test your Open Policy Agent policies with different inputs.</p>
+
+        <div class="columns">
+            <div class="column">
+                <div class="form-group">
+                    <label for="policy-path">Policy Path:</label>
+                    <input type="text" id="policy-path" value="dive25/document_access/allow"
+                        style="width: 100%; padding: 8px;">
+                </div>
+
+                <div class="form-group">
+                    <label for="input-json">Input JSON:</label>
+                    <textarea id="input-json">
+{
+  "user": {
+    "uniqueId": "alice123",
+    "username": "alice",
+    "clearance": "TOP SECRET",
+    "countryOfAffiliation": "USA",
+    "caveats": ["FVEY", "NATO"],
+    "coi": ["OpAlpha", "OpBravo"]
+  },
+  "resource": {
+    "id": "doc123",
+    "classification": "SECRET",
+    "releasableTo": ["USA", "GBR", "CAN", "AUS", "NZL"],
+    "caveats": ["FVEY"],
+    "coiTags": ["OpAlpha"]
+  }
+}
+                    </textarea>
+                </div>
+
+                <button id="evaluate">Evaluate Policy</button>
+            </div>
+
+            <div class="column">
+                <div class="form-group">
+                    <label for="result">Result:</label>
+                    <div id="result-container">
+                        <pre id="result">Policy evaluation results will appear here.</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('evaluate').addEventListener('click', async () => {
+            const policyPath = document.getElementById('policy-path').value;
+            const inputJson = document.getElementById('input-json').value;
+            const resultContainer = document.getElementById('result-container');
+            const resultElement = document.getElementById('result');
+
+            try {
+                // Parse input JSON to validate it
+                const input = JSON.parse(inputJson);
+
+                // Make API request to OPA
+                const response = await fetch(`/v1/data/${policyPath}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ input })
+                });
+
+                const data = await response.json();
+
+                // Display formatted result
+                resultElement.textContent = JSON.stringify(data, null, 2);
+
+                // Apply styling based on result
+                if (data.result === true) {
+                    resultContainer.className = 'result success';
+                } else if (data.result === false) {
+                    resultContainer.className = 'result error';
+                } else {
+                    resultContainer.className = 'result';
+                }
+            } catch (error) {
+                resultElement.textContent = `Error: ${error.message}`;
+                resultContainer.className = 'result error';
+            }
+        });
+
+        // Load preset test cases
+        document.getElementById('preset-basic-fvey').addEventListener('click', () => {
+            fetch('/tests/basic_fvey_access.json')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('input-json').value = JSON.stringify(data.input, null, 2);
+                });
+        });
+    </script>
+</body>
+
+</html>

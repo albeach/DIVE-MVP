@@ -1,0 +1,10 @@
+# openldap/bootstrap/01-dive25-schema.ldif
+# DIVE25 Custom Schema
+dn: cn=dive25,cn=schema,cn=config
+objectClass: olcSchemaConfig
+cn: dive25
+olcAttributeTypes: ( 1.3.6.1.4.1.40042.1.1 NAME 'clearance' DESC 'Security clearance level' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+olcAttributeTypes: ( 1.3.6.1.4.1.40042.1.2 NAME 'countryOfAffiliation' DESC 'Country affiliation' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )
+olcAttributeTypes: ( 1.3.6.1.4.1.40042.1.3 NAME 'caveats' DESC 'Security caveats' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+olcAttributeTypes: ( 1.3.6.1.4.1.40042.1.4 NAME 'aCPCOI' DESC 'Communities of Interest' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+olcObjectClasses: ( 1.3.6.1.4.1.40042.2.1 NAME 'dive25Person' DESC 'DIVE25 person with security attributes' SUP inetOrgPerson STRUCTURAL MUST ( uid $ cn ) MAY ( clearance $ countryOfAffiliation $ caveats $ aCPCOI ) )

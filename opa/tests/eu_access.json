@@ -1,0 +1,29 @@
+{
+    "input": {
+        "user": {
+            "uniqueId": "hans333",
+            "username": "hans",
+            "clearance": "EU SECRET",
+            "countryOfAffiliation": "DEU",
+            "caveats": [
+                "EU"
+            ],
+            "coi": [
+                "MissionX"
+            ]
+        },
+        "resource": {
+            "id": "doc333",
+            "classification": "EU CONFIDENTIAL",
+            "releasableTo": [
+                "EU"
+            ],
+            "caveats": [
+                "EU"
+            ],
+            "coiTags": [
+                "MissionX"
+            ]
+        }
+    }
+}

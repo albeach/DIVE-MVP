@@ -1,0 +1,36 @@
+# opa/docker-compose.yml
+version: '3.8'
+
+services:
+  opa:
+    image: openpolicyagent/opa:latest
+    container_name: dive25-opa
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./policies:/policies
+      - ./data:/data
+    command: ["run", "--server", "--log-level=info", "--addr=:8181", "/policies"]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  opa-bundle-server:
+    image: nginx:alpine
+    container_name: dive25-opa-bundle-server
+    volumes:
+      - ./bundles:/usr/share/nginx/html/bundles
+    ports:
+      - "8182:80"
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+networks:
+  dive25-network:
+    external: true

@@ -1,0 +1,29 @@
+{
+    "alias": "us-gov-oidc",
+    "displayName": "US Government OIDC",
+    "providerId": "oidc",
+    "enabled": true,
+    "updateProfileFirstLoginMode": "on",
+    "trustEmail": true,
+    "storeToken": false,
+    "addReadTokenRoleOnCreate": false,
+    "authenticateByDefault": false,
+    "linkOnly": false,
+    "firstBrokerLoginFlowAlias": "first broker login",
+    "config": {
+        "clientId": "dive25",
+        "clientSecret": "change-me-in-production",
+        "tokenUrl": "https://us-gov-idp.example.com/oauth2/token",
+        "authorizationUrl": "https://us-gov-idp.example.com/oauth2/authorize",
+        "jwksUrl": "https://us-gov-idp.example.com/oauth2/jwks",
+        "userInfoUrl": "https://us-gov-idp.example.com/oauth2/userinfo",
+        "logoutUrl": "https://us-gov-idp.example.com/oauth2/logout",
+        "validateSignature": "true",
+        "useJwksUrl": "true",
+        "clientAuthMethod": "client_secret_basic",
+        "syncMode": "IMPORT",
+        "defaultScope": "openid profile email",
+        "disableUserInfo": "false",
+        "allowedClockSkew": "10"
+    }
+}

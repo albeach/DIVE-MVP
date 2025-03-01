@@ -1,0 +1,35 @@
+# mongodb/kubernetes/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb
+  namespace: dive25-mongodb
+  labels:
+    app: mongodb
+spec:
+  ports:
+  - port: 27017
+    targetPort: 27017
+    protocol: TCP
+    name: mongodb
+  selector:
+    app: mongodb
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mongodb-headless
+  namespace: dive25-mongodb
+  labels:
+    app: mongodb
+spec:
+  ports:
+  - port: 27017
+    targetPort: 27017
+    protocol: TCP
+    name: mongodb
+  selector:
+    app: mongodb
+  clusterIP: None
+  publishNotReadyAddresses: true

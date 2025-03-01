@@ -1,0 +1,30 @@
+{
+    "input": {
+        "user": {
+            "uniqueId": "evan555",
+            "username": "evan",
+            "clearance": "SECRET",
+            "countryOfAffiliation": "NZL",
+            "caveats": [
+                "FVEY"
+            ],
+            "coi": [
+                "OpAlpha"
+            ]
+        },
+        "resource": {
+            "id": "doc555",
+            "classification": "SECRET",
+            "releasableTo": [
+                "USA",
+                "GBR"
+            ],
+            "caveats": [
+                "FVEY"
+            ],
+            "coiTags": [
+                "OpAlpha"
+            ]
+        }
+    }
+}

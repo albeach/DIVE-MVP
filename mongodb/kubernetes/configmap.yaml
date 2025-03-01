@@ -1,0 +1,97 @@
+# mongodb/kubernetes/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mongodb-config
+  namespace: dive25-mongodb
+data:
+  mongod.conf: |
+    # mongod.conf for Kubernetes deployment
+    
+    storage:
+      dbPath: /data/db
+      journal:
+        enabled: true
+      wiredTiger:
+        engineConfig:
+          cacheSizeGB: 2
+    
+    net:
+      port: 27017
+      bindIp: 0.0.0.0
+    
+    security:
+      authorization: enabled
+      keyFile: /data/key/mongo-keyfile
+      javascriptEnabled: false
+    
+    operationProfiling:
+      slowOpThresholdMs: 100
+      mode: slowOp
+    
+    processManagement:
+      timeZoneInfo: /usr/share/zoneinfo
+    
+    systemLog:
+      destination: file
+      logAppend: true
+      path: /var/log/mongodb/mongod.log
+      verbosity: 1
+      timeStampFormat: iso8601-local
+    
+    replication:
+      replSetName: "rs0"
+
+  init-mongo.js: |
+    // Initialize the replica set
+    rs.initiate({
+      _id: "rs0",
+      members: [
+        { _id: 0, host: "mongodb-0.mongodb-headless.dive25-mongodb.svc.cluster.local:27017" },
+        { _id: 1, host: "mongodb-1.mongodb-headless.dive25-mongodb.svc.cluster.local:27017" },
+        { _id: 2, host: "mongodb-2.mongodb-headless.dive25-mongodb.svc.cluster.local:27017" }
+      ]
+    });
+    
+    // Wait for the replica set to initialize
+    while (rs.status().ok !== 1) {
+      sleep(1000);
+    }
+    
+    // Create admin user
+    db = db.getSiblingDB('admin');
+    db.createUser({
+      user: 'admin',
+      pwd: passwordPrompt(),
+      roles: [{ role: 'root', db: 'admin' }]
+    });
+    
+    // Create application database and users
+    db = db.getSiblingDB('dive25');
+    
+    // Create application user
+    db.createUser({
+      user: 'dive25_app',
+      pwd: passwordPrompt(),
+      roles: [{ role: 'readWrite', db: 'dive25' }],
+      mechanisms: ['SCRAM-SHA-256']
+    });
+    
+    // Create admin user for the dive25 database
+    db.createUser({
+      user: 'dive25_admin',
+      pwd: passwordPrompt(),
+      roles: [
+        { role: 'dbAdmin', db: 'dive25' },
+        { role: 'readWrite', db: 'dive25' }
+      ],
+      mechanisms: ['SCRAM-SHA-256']
+    });
+    
+    // Create read-only user for the dive25 database
+    db.createUser({
+      user: 'dive25_readonly',
+      pwd: passwordPrompt(),
+      roles: [{ role: 'read', db: 'dive25' }],
+      mechanisms: ['SCRAM-SHA-256']
+    });

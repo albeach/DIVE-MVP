@@ -1,0 +1,178 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - MONGODB_URI=mongodb://mongo:27017/dive25
+      - KEYCLOAK_AUTH_SERVER_URL=http://keycloak:8080/auth
+      - KEYCLOAK_REALM=dive25
+      - KEYCLOAK_CLIENT_ID=dive25-api
+      - KEYCLOAK_CLIENT_SECRET=your-client-secret
+      - OPA_URL=http://opa:8181/v1/data
+      - LDAP_URL=ldap://openldap:389
+      - CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080
+    depends_on:
+      - mongo
+      - keycloak
+      - opa
+      - openldap
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:21.0
+    ports:
+      - "8080:8080"
+    environment:
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_DB=postgres
+      - KC_DB_URL=jdbc:postgresql://postgres:5432/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=keycloak
+    depends_on:
+      - postgres
+    command: ['start-dev']
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:15
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=keycloak
+      - POSTGRES_USER=keycloak
+      - POSTGRES_PASSWORD=keycloak
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  opa:
+    image: openpolicyagent/opa:latest
+    ports:
+      - "8181:8181"
+    volumes:
+      - ./opa-policies:/policies
+    command: ['run', '--server', '--log-level=debug', '/policies']
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  openldap:
+    image: osixia/openldap:latest
+    ports:
+      - "389:389"
+      - "636:636"
+    environment:
+      - LDAP_ORGANISATION=DIVE25
+      - LDAP_DOMAIN=dive25.local
+      - LDAP_ADMIN_PASSWORD=admin
+    volumes:
+      - ldap-data:/var/lib/ldap
+      - ldap-config:/etc/ldap/slapd.d
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  ldap-admin:
+    image: osixia/phpldapadmin:latest
+    ports:
+      - "8085:80"
+    environment:
+      - PHPLDAPADMIN_LDAP_HOSTS=openldap
+      - PHPLDAPADMIN_HTTPS=false
+    depends_on:
+      - openldap
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - api
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    ports:
+      - "3100:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+  kong:
+    image: kong:latest
+    ports:
+      - "8000:8000" # Proxy
+      - "8001:8001" # Admin API
+      - "8443:8443" # Proxy SSL
+      - "8444:8444" # Admin API SSL
+    environment:
+      - KONG_DATABASE=off
+      - KONG_DECLARATIVE_CONFIG=/etc/kong/kong.yml
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+    volumes:
+      - ./kong:/etc/kong
+    networks:
+      - dive25-network
+    restart: unless-stopped
+
+networks:
+  dive25-network:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  postgres-data:
+  ldap-data:
+  ldap-config:
+  prometheus-data:
+  grafana-data:
