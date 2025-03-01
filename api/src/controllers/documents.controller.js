@@ -3,9 +3,12 @@ const {
     getDocumentById,
     getDocuments,
     updateDocument,
-    deleteDocument
+    deleteDocument,
+    getFile
 } = require('../services/documents.service');
+const { createAuditLog } = require('../services/audit.service');
 const logger = require('../utils/logger');
+const { ApiError } = require('../utils/error.utils');
 
 /**
  * Create a new document
@@ -15,7 +18,13 @@ const logger = require('../utils/logger');
  */
 const create = async (req, res, next) => {
     try {
-        const document = await createDocument(req.body, req.user);
+        // Check if file was uploaded
+        if (!req.file) {
+            throw new ApiError('No file uploaded', 400);
+        }
+
+        // Create document with file
+        const document = await createDocument(req.body, req.file, req.user);
 
         res.status(201).json({
             success: true,
@@ -123,10 +132,84 @@ const remove = async (req, res, next) => {
     }
 };
 
+/**
+ * Download document file
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const download = async (req, res, next) => {
+    try {
+        // Get document
+        const document = await getDocumentById(req.params.id, req.user);
+
+        // Get file
+        const fileBuffer = await getFile(document.fileId);
+
+        // Set headers
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Content-Disposition', `attachment; filename="${document.filename}"`);
+        res.setHeader('Content-Length', document.size);
+
+        // Send file
+        res.send(fileBuffer);
+
+        // Create audit log
+        await createAuditLog({
+            userId: req.user.uniqueId,
+            username: req.user.username,
+            action: 'DOCUMENT_DOWNLOAD',
+            resourceId: document._id,
+            resourceType: 'document',
+            details: {
+                filename: document.filename,
+                classification: document.metadata.classification
+            },
+            success: true
+        });
+    } catch (error) {
+        logger.error('Document download error:', error);
+        next(error);
+    }
+};
+
+/**
+ * Preview document file
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const preview = async (req, res, next) => {
+    try {
+        // Get document
+        const document = await getDocumentById(req.params.id, req.user);
+
+        // Get file
+        const fileBuffer = await getFile(document.fileId);
+
+        // Set headers
+        res.setHeader('Content-Type', document.mimeType);
+        res.setHeader('Content-Disposition', 'inline');
+        res.setHeader('Content-Length', document.size);
+
+        // Send file
+        res.send(fileBuffer);
+
+        // Update last accessed date
+        document.lastAccessedDate = new Date();
+        await document.save();
+    } catch (error) {
+        logger.error('Document preview error:', error);
+        next(error);
+    }
+};
+
 module.exports = {
     create,
     getById,
     getAll,
     update,
-    remove
+    remove,
+    download,
+    preview
 };

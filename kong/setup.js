@@ -1,25 +1,56 @@
 // kong/setup.js
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
+const yaml = require('js-yaml');
 
 const KONG_ADMIN_URL = process.env.KONG_ADMIN_URL || 'http://localhost:8001';
 const API_URL = process.env.API_URL || 'http://dive25-api:3000';
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://dive25-frontend:3000';
 const KEYCLOAK_URL = process.env.KEYCLOAK_URL || 'http://keycloak:8080';
 
+// Load the Kong configuration from YAML file
+const loadKongConfig = () => {
+    try {
+        const configPath = path.join(__dirname, 'kong.yml');
+        const fileContents = fs.readFileSync(configPath, 'utf8');
+        return yaml.load(fileContents);
+    } catch (error) {
+        console.error('Error loading Kong configuration:', error.message);
+        process.exit(1);
+    }
+};
+
 const setupKong = async () => {
     try {
         console.log('Setting up Kong gateway for DIVE25...');
 
-        // Create services
-        await createService('dive25-api', `${API_URL}`);
-        await createService('dive25-frontend', `${FRONTEND_URL}`);
+        // Try to use declarative configuration first
+        try {
+            console.log('Attempting to apply declarative configuration...');
+            const kongConfig = loadKongConfig();
 
-        // Create routes
-        await createRoute('dive25-api', '/api');
-        await createRoute('dive25-frontend', '/');
+            await axios.post(`${KONG_ADMIN_URL}/config`, {
+                config: kongConfig
+            });
 
-        // Add plugins to API routes
-        await addPlugins('dive25-api');
+            console.log('Declarative configuration applied successfully!');
+        } catch (configError) {
+            console.warn('Failed to apply declarative configuration, falling back to API calls:',
+                configError.response?.data || configError.message);
+
+            // Fallback to original implementation
+            // Create services
+            await createService('dive25-api', `${API_URL}`);
+            await createService('dive25-frontend', `${FRONTEND_URL}`);
+
+            // Create routes
+            await createRoute('dive25-api', '/api');
+            await createRoute('dive25-frontend', '/');
+
+            // Add plugins to API routes
+            await addPlugins('dive25-api');
+        }
 
         console.log('Kong setup completed successfully!');
     } catch (error) {

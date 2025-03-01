@@ -4,6 +4,7 @@ import { useRouter } from 'next/router';
 import Keycloak from 'keycloak-js';
 import { User } from '@/types/user';
 import { Spinner } from '@/components/ui/Spinner';
+import toast from 'react-hot-toast';
 
 interface AuthContextProps {
   isAuthenticated: boolean;
@@ -12,6 +13,8 @@ interface AuthContextProps {
   keycloak: Keycloak | null;
   login: () => void;
   logout: () => void;
+  refreshToken: () => Promise<boolean>;
+  hasRole: (roles: string[]) => boolean;
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
@@ -37,10 +40,19 @@ export function AuthProvider({ children }: AuthProviderProps) {
           clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'dive25-frontend'
         });
 
+        keycloakInstance.onTokenExpired = () => {
+          console.log('Token expired, attempting to refresh...');
+          keycloakInstance.updateToken(30).catch(() => {
+            toast.error('Your session has expired. Please log in again.');
+            keycloakInstance.login();
+          });
+        };
+
         const authenticated = await keycloakInstance.init({
           onLoad: 'check-sso',
           silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
           pkceMethod: 'S256',
+          checkLoginIframe: false
         });
 
         setKeycloak(keycloakInstance);
@@ -64,23 +76,28 @@ export function AuthProvider({ children }: AuthProviderProps) {
           };
           
           setUser(userProfile as User);
-
-          // Set up token refresh
-          keycloakInstance.onTokenExpired = () => {
-            keycloakInstance.updateToken(30).catch(() => {
-              console.error('Failed to refresh token');
-            });
-          };
+          
+          // Expose keycloak instance for API client
+          window.__keycloak = keycloakInstance;
         }
 
         setIsLoading(false);
       } catch (error) {
         console.error('Keycloak initialization failed:', error);
+        toast.error('Authentication service initialization failed');
         setIsLoading(false);
       }
     };
 
     initKeycloak();
+
+    // Cleanup function
+    return () => {
+      // Clear the global keycloak instance
+      if (window.__keycloak) {
+        window.__keycloak = undefined;
+      }
+    };
   }, []);
 
   // Login function
@@ -101,13 +118,39 @@ export function AuthProvider({ children }: AuthProviderProps) {
     }
   };
 
+  // Token refresh function
+  const refreshToken = async (): Promise<boolean> => {
+    if (keycloak) {
+      try {
+        const refreshed = await keycloak.updateToken(30);
+        return refreshed;
+      } catch (error) {
+        console.error('Failed to refresh token:', error);
+        toast.error('Your session has expired. Please log in again.');
+        login();
+        return false;
+      }
+    }
+    return false;
+  };
+
+  // Check if user has any of the specified roles
+  const hasRole = (roles: string[]): boolean => {
+    if (!user || !user.roles || user.roles.length === 0) {
+      return false;
+    }
+    return roles.some(role => user.roles.includes(role));
+  };
+
   const value = {
     isAuthenticated,
     isLoading,
     user,
     keycloak,
     login,
-    logout
+    logout,
+    refreshToken,
+    hasRole
   };
 
   if (isLoading) {
@@ -131,4 +174,11 @@ export function useAuth() {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
+}
+
+// Type definition for the global window object
+declare global {
+  interface Window {
+    __keycloak?: Keycloak;
+  }
 }

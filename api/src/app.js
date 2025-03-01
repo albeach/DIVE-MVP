@@ -10,6 +10,7 @@ const config = require('./config');
 const logger = require('./utils/logger');
 const { connectToMongoDB } = require('./config/mongodb.config');
 const { setupPrometheusMetrics } = require('./utils/metrics');
+const { checkHealth, checkLiveness } = require('./utils/healthcheck');
 
 // Initialize express app
 const app = express();
@@ -41,6 +42,28 @@ app.use(errorHandler);
 // Health check endpoint
 app.get('/health', (req, res) => {
     res.status(200).json({ status: 'ok' });
+});
+
+// Liveness check endpoint - simple check if the application is running
+app.get('/health/live', (req, res) => {
+    const healthInfo = checkLiveness();
+    res.status(200).json(healthInfo);
+});
+
+// Readiness check endpoint - comprehensive check of all dependencies
+app.get('/health/ready', async (req, res) => {
+    try {
+        const healthInfo = await checkHealth();
+        const statusCode = healthInfo.status === 'ok' ? 200 : 503;
+        res.status(statusCode).json(healthInfo);
+    } catch (error) {
+        logger.error('Health check error:', error);
+        res.status(500).json({
+            status: 'error',
+            timestamp: new Date().toISOString(),
+            error: 'Health check failed'
+        });
+    }
 });
 
 // Start the server

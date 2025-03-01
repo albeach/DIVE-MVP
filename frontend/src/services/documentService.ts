@@ -1,5 +1,5 @@
 // frontend/src/services/documentService.ts
-import { apiClient } from './apiClient';
+import { apiClient, fileClient } from './apiClient';
 import {
     Document,
     DocumentResponse,
@@ -59,15 +59,24 @@ export async function uploadDocument(data: DocumentUploadData): Promise<Document
         policyIdentifier: data.policyIdentifier || 'NATO'
     }));
 
-    const response = await apiClient.post('/documents', formData, {
-        headers: {
-            'Content-Type': 'multipart/form-data',
-        },
-    });
-
+    const response = await fileClient.post('/documents', formData);
     return response.data.document;
 }
 
 export async function deleteDocument(id: string): Promise<void> {
     await apiClient.delete(`/documents/${id}`);
+}
+
+export async function downloadDocument(id: string): Promise<Blob> {
+    const response = await fileClient.get(`/documents/${id}/download`, {
+        responseType: 'blob'
+    });
+    return response.data;
+}
+
+export async function previewDocument(id: string): Promise<Blob> {
+    const response = await fileClient.get(`/documents/${id}/preview`, {
+        responseType: 'blob'
+    });
+    return response.data;
 }

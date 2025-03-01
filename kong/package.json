@@ -1,0 +1,13 @@
+{
+    "name": "dive25-kong-setup",
+    "version": "1.0.0",
+    "description": "Setup script for DIVE25 Kong API Gateway",
+    "main": "setup.js",
+    "scripts": {
+        "setup": "node setup.js"
+    },
+    "dependencies": {
+        "axios": "^1.6.2",
+        "js-yaml": "^4.1.0"
+    }
+}

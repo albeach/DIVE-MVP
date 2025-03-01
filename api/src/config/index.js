@@ -1,9 +1,15 @@
 require('dotenv').config();
+const path = require('path');
 
 module.exports = {
     env: process.env.NODE_ENV || 'development',
     port: parseInt(process.env.PORT, 10) || 3000,
     logLevel: process.env.LOG_LEVEL || 'info',
+
+    storage: {
+        basePath: process.env.STORAGE_PATH || path.join(__dirname, '../../storage'),
+        tempPath: process.env.TEMP_STORAGE_PATH || path.join(__dirname, '../../temp')
+    },
 
     mongodb: {
         uri: process.env.MONGODB_URI || 'mongodb://localhost:27017/dive25',
