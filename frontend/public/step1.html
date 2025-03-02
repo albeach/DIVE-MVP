@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Authentication Step 1</title>
+    <script type="text/javascript">
+        // This file is critical for Keycloak authentication
+        // It needs to be as simple and reliable as possible
+        (function () {
+            try {
+                console.log('[Step1] Running at:', window.location.href);
+
+                // List of expected origins - add all your domains/environments here
+                var expectedOrigins = [
+                    'https://dive25.local',
+                    'https://frontend.dive25.local',
+                    'https://keycloak.dive25.local',
+                    'http://localhost:3000',
+                    'http://localhost:3001',
+                    'http://localhost:8080'
+                ];
+
+                // Auto-detect localhost based origins
+                if (window.location.hostname === 'localhost' ||
+                    window.location.hostname === '127.0.0.1') {
+                    var origin = window.location.protocol + '//' + window.location.host;
+                    if (expectedOrigins.indexOf(origin) === -1) {
+                        expectedOrigins.push(origin);
+                    }
+                }
+
+                // Get parent origin with fallbacks
+                var parentOrigin = '*'; // Default/fallback is wildcard
+
+                // 1. Try ancestorOrigins API (Chrome, Safari)
+                if (window.location.ancestorOrigins && window.location.ancestorOrigins.length) {
+                    parentOrigin = window.location.ancestorOrigins[0];
+                    console.log('[Step1] Using ancestor origin:', parentOrigin);
+                }
+                // 2. Try referrer header
+                else if (document.referrer) {
+                    try {
+                        var referrerUrl = new URL(document.referrer);
+                        parentOrigin = referrerUrl.origin;
+                        console.log('[Step1] Using referrer origin:', parentOrigin);
+                    } catch (e) {
+                        console.log('[Step1] Error parsing referrer:', e);
+                    }
+                }
+                // 3. Extract from URL parameters if available
+                else {
+                    try {
+                        var urlParams = new URLSearchParams(window.location.search);
+                        var originParam = urlParams.get('parent_origin');
+                        if (originParam) {
+                            parentOrigin = originParam;
+                            console.log('[Step1] Using origin from URL param:', parentOrigin);
+                        }
+                    } catch (e) {
+                        console.log('[Step1] Error extracting origin from params:', e);
+                    }
+                }
+
+                console.log('[Step1] Final parent origin:', parentOrigin);
+
+                // Set up message listener that accepts messages from same origin or detected parent origin
+                function receiveMessage(event) {
+                    console.log('[Step1] Received message from:', event.origin);
+
+                    // Check if origin is expected
+                    var isExpectedOrigin = event.origin === location.origin ||
+                        event.origin === parentOrigin ||
+                        expectedOrigins.indexOf(event.origin) >= 0;
+
+                    if (!isExpectedOrigin) {
+                        console.warn('[Step1] Ignoring message from unexpected origin:', event.origin);
+                        return;
+                    }
+
+                    // Use postToParent function to respond
+                    postToParent();
+                }
+
+                // Register the message listener
+                window.addEventListener('message', receiveMessage, false);
+
+                // Function to handle the actual message posting
+                function postToParent() {
+                    if (window.parent) {
+                        try {
+                            // Specific origin first
+                            window.parent.postMessage(window.location.href, parentOrigin);
+                            console.log('[Step1] Posted to specific origin:', parentOrigin);
+
+                            // Then try each expected origin if using wildcard
+                            if (parentOrigin === '*') {
+                                expectedOrigins.forEach(function (origin) {
+                                    try {
+                                        window.parent.postMessage(window.location.href, origin);
+                                        console.log('[Step1] Posted to expected origin:', origin);
+                                    } catch (e) {
+                                        console.log('[Step1] Error posting to', origin, e);
+                                    }
+                                });
+                            }
+
+                            // Always try wildcard as last resort
+                            window.parent.postMessage(window.location.href, '*');
+                            console.log('[Step1] Posted with wildcard origin');
+                        } catch (e) {
+                            console.error('[Step1] Error posting message:', e);
+                        }
+                    }
+                }
+
+                // Post message on page load
+                postToParent();
+
+                // Try again after short delays
+                setTimeout(postToParent, 50);
+                setTimeout(postToParent, 250);
+
+            } catch (error) {
+                console.error('[Step1] Top-level error:', error);
+
+                // Last resort - try to post with minimal checks
+                try {
+                    if (window.parent) {
+                        window.parent.postMessage(window.location.href, '*');
+                    }
+                } catch (e) {
+                    console.error('[Step1] Failed even with minimal approach:', e);
+                }
+            }
+        })();
+    </script>
+</head>
+
+<body>
+    <!-- Authentication step1 page - used by Keycloak for iframe communication -->
+</body>
+
+</html>

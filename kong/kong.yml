@@ -1,118 +1,217 @@
-# kong/kong.yml - Declarative configuration for Kong
 _format_version: "2.1"
 _transform: true
 
-services:
-  - name: dive25-api
-    url: ${API_URL:-http://dive25-api:3000}
-    routes:
-      - name: dive25-api-route
-        paths:
-          - /api
-        strip_path: false
-        preserve_host: true
-    plugins:
-      - name: cors
-        config:
-          origins:
-            - "*"
-          methods:
-            - GET
-            - POST
-            - PUT
-            - DELETE
-            - OPTIONS
-            - HEAD
-            - PATCH
-          headers:
-            - Accept
-            - Accept-Version
-            - Content-Length
-            - Content-MD5
-            - Content-Type
-            - Date
-            - X-Auth-Token
-            - Authorization
-          exposed_headers:
-            - X-Auth-Token
-          max_age: 3600
-          credentials: true
-      - name: rate-limiting
-        config:
-          minute: 100
-          hour: 1000
-          policy: local
-      - name: jwt
-        config:
-          claims_to_verify:
-            - exp
-          key_claim_name: kid
-          secret_is_base64: false
-          run_on_preflight: true
-      - name: request-transformer
-        config:
-          add:
-            headers:
-              - X-Forwarded-Proto:https
-      - name: http-log
-        config:
-          http_endpoint: http://dive25-api:3000/api/v1/audit/log
-          method: POST
-          timeout: 10000
-          keepalive: 60000
-          retry_count: 5
-          queue_size: 100
-          flush_timeout: 2
+# Global plugins (applied to all services)
+plugins:
+  - name: request-transformer
+    config:
+      add:
+        headers:
+          - "X-Forwarded-Proto:https"
+  - name: cors
+    config:
+      origins:
+        - https://dive25.local
+        - https://frontend.dive25.local
+        - https://api.dive25.local
+        - https://*.dive25.local
+      methods:
+        - GET
+        - POST
+        - PUT
+        - DELETE
+        - OPTIONS
+      headers:
+        - Accept
+        - Accept-Version
+        - Content-Length
+        - Content-MD5
+        - Content-Type
+        - Date
+        - X-Auth-Token
+        - Authorization
+      credentials: true
+      max_age: 3600
+      preflight_continue: false
 
-  - name: dive25-frontend
-    url: ${FRONTEND_URL:-http://dive25-frontend:3000}
+services:
+  # Frontend Service
+  - name: frontend-service
+    url: http://dive25-frontend:3000
     routes:
-      - name: dive25-frontend-route
+      - name: frontend-route
+        hosts:
+          - dive25.local
+          - frontend.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # API Service
+  - name: api-service
+    url: http://dive25-api:3000
+    routes:
+      - name: api-route
+        hosts:
+          - api.dive25.local
         paths:
           - /
+          - /health
+          - /health/live
+          - /health/ready
+          - /api
+          - /api/v1
         strip_path: false
         preserve_host: true
+        protocols:
+          - http
+          - https
     plugins:
-      - name: cors
+      - name: redirect
         config:
-          origins:
-            - http://localhost:3000
-            - https://dive25.local
-            - https://dive25.com
-          methods:
-            - GET
-            - POST
-            - PUT
-            - DELETE
-            - OPTIONS
-          headers:
-            - Accept
-            - Accept-Version
-            - Content-Length
-            - Content-MD5
-            - Content-Type
-            - Date
-            - X-Auth-Token
-            - Authorization
-          exposed_headers:
-            - X-Auth-Token
-          credentials: true
-          max_age: 3600
-
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # Keycloak Service
   - name: keycloak-service
-    url: http://keycloak:8080
+    url: http://dive25-keycloak:8080
     routes:
       - name: keycloak-route
-        paths:
-          - /auth
-        strip_path: false
-
-consumers:
-  - username: dive25-frontend
-    jwt_secrets:
-      - algorithm: RS256
-        key: "dive25-frontend"
-  - username: dive25-api
-    jwt_secrets:
-      - algorithm: RS256
-        key: "dive25-api"
+        hosts:
+          - keycloak.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # MongoDB Express Service
+  - name: mongo-express-service
+    url: http://dive25-mongo-express:8081
+    routes:
+      - name: mongo-express-route
+        hosts:
+          - mongo-express.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # Grafana Service
+  - name: grafana-service
+    url: http://dive25-grafana:3000
+    routes:
+      - name: grafana-route
+        hosts:
+          - grafana.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # Prometheus Service
+  - name: prometheus-service
+    url: http://dive25-prometheus:9090
+    routes:
+      - name: prometheus-route
+        hosts:
+          - prometheus.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # phpLDAPadmin Service
+  - name: phpldapadmin-service
+    url: http://dive25-phpldapadmin:80
+    routes:
+      - name: phpldapadmin-route
+        hosts:
+          - phpldapadmin.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # Kong Admin Service (exposed via subdomain)
+  - name: kong-admin-service
+    url: http://dive25-kong:8001
+    routes:
+      - name: kong-admin-route
+        hosts:
+          - kong.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http
+  
+  # Konga Service
+  - name: konga-service
+    url: http://dive25-konga:1337
+    routes:
+      - name: konga-route
+        hosts:
+          - konga.dive25.local
+        protocols:
+          - http
+          - https
+    plugins:
+      - name: redirect
+        config:
+          status_code: 301
+          location: https://%(host)s%(request_uri)s
+          preserve_query_string: true
+        protocols:
+          - http

@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Keycloak Theme Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #333;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 10px;
+        }
+
+        .test-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .test-section h2 {
+            margin-top: 0;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        #results {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background-color: #f9f9f9;
+            min-height: 100px;
+        }
+
+        .log-entry {
+            margin-bottom: 5px;
+        }
+
+        .success {
+            color: green;
+        }
+
+        .error {
+            color: red;
+        }
+
+        .warning {
+            color: orange;
+        }
+
+        .info {
+            color: blue;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>Keycloak Theme Test</h1>
+
+        <div class="test-section">
+            <h2>Theme Resources Test</h2>
+            <p>Test direct access to theme resources to verify theme loading:</p>
+            <button onclick="testThemeResources()">Test Theme Resources</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Keycloak Configuration</h2>
+            <p>Check Keycloak configuration and endpoints:</p>
+            <button onclick="testKeycloakConfig()">Test Keycloak Config</button>
+        </div>
+
+        <div class="test-section">
+            <h2>Login Page Test</h2>
+            <p>Open Keycloak login page in different ways:</p>
+            <button onclick="openLoginPage('direct')">Direct Login Page</button>
+            <button onclick="openLoginPage('iframe')">Login Page in iframe</button>
+        </div>
+
+        <div id="results">
+            <h3>Test Results:</h3>
+            <div id="log"></div>
+        </div>
+    </div>
+
+    <script>
+        // Determine Keycloak URL based on environment
+        function getKeycloakUrl() {
+            // Check if we're on localhost
+            if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+                return 'http://localhost:8080/auth';
+            }
+            // Otherwise use the domain-based URL
+            return 'https://keycloak.dive25.local/auth';
+        }
+
+        // Log function
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = message;
+            logDiv.appendChild(entry);
+            console.log(`[${type}] ${message}`);
+        }
+
+        // Test theme resources
+        async function testThemeResources() {
+            log('Testing theme resources...', 'info');
+
+            const keycloakUrl = getKeycloakUrl();
+            const realm = 'dive25';
+
+            // Test paths to check
+            const testPaths = [
+                // Theme CSS
+                `/resources/dive25/login/resources/css/dive25-styles.css`,
+                // Theme JS
+                `/resources/dive25/login/resources/js/dive25-scripts.js`,
+                // Default theme resources for comparison
+                `/resources/base/login/resources/css/login.css`,
+                `/resources/keycloak/login/resources/css/login.css`
+            ];
+
+            for (const path of testPaths) {
+                try {
+                    const fullUrl = `${keycloakUrl}${path}`;
+                    log(`Testing resource: ${fullUrl}`, 'info');
+
+                    const response = await fetch(fullUrl, {
+                        method: 'HEAD',
+                        mode: 'cors'
+                    });
+
+                    if (response.ok) {
+                        log(`✅ Resource exists: ${path}`, 'success');
+                    } else {
+                        log(`❌ Resource not found: ${path} (${response.status})`, 'error');
+                    }
+                } catch (error) {
+                    log(`❌ Error testing resource ${path}: ${error.message}`, 'error');
+                }
+            }
+        }
+
+        // Test Keycloak configuration
+        async function testKeycloakConfig() {
+            log('Testing Keycloak configuration...', 'info');
+
+            const keycloakUrl = getKeycloakUrl();
+            const realm = 'dive25';
+
+            try {
+                // Test well-known endpoint
+                const wellKnownUrl = `${keycloakUrl}/realms/${realm}/.well-known/openid-configuration`;
+                log(`Testing OpenID config: ${wellKnownUrl}`, 'info');
+
+                const response = await fetch(wellKnownUrl, {
+                    method: 'GET',
+                    mode: 'cors'
+                });
+
+                if (response.ok) {
+                    const config = await response.json();
+                    log(`✅ OpenID configuration loaded successfully`, 'success');
+                    log(`Issuer: ${config.issuer}`, 'info');
+                    log(`Authorization endpoint: ${config.authorization_endpoint}`, 'info');
+                    log(`Token endpoint: ${config.token_endpoint}`, 'info');
+                } else {
+                    log(`❌ Failed to load OpenID configuration: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Error testing Keycloak config: ${error.message}`, 'error');
+            }
+        }
+
+        // Open login page
+        function openLoginPage(mode) {
+            const keycloakUrl = getKeycloakUrl();
+            const realm = 'dive25';
+            const clientId = 'dive25-frontend';
+            const redirectUri = encodeURIComponent(window.location.origin + '/silent-check-sso.html');
+
+            const loginUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid`;
+
+            log(`Opening login page: ${loginUrl}`, 'info');
+
+            if (mode === 'direct') {
+                window.open(loginUrl, '_blank');
+            } else if (mode === 'iframe') {
+                // Create iframe
+                const iframe = document.createElement('iframe');
+                iframe.src = loginUrl;
+                iframe.style.width = '100%';
+                iframe.style.height = '500px';
+                iframe.style.border = '1px solid #ddd';
+
+                // Add to results
+                const results = document.getElementById('results');
+                results.appendChild(iframe);
+
+                log('Login page opened in iframe', 'info');
+            }
+        }
+    </script>
+</body>
+
+</html>

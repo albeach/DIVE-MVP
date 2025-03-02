@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="32px" height="32px" viewBox="0 0 32 32" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <title>DIVE25 Logo</title>
+  <g stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+    <circle fill="#003d7a" cx="16" cy="16" r="16"/>
+    <path d="M7,9 L7,23 L16,23 C18.7614,23 21,20.7614 21,18 L21,14 C21,11.2386 18.7614,9 16,9 L7,9 Z" stroke="#FFFFFF" stroke-width="2"/>
+    <path d="M24,10 L24,22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+    <path d="M24,13 L26,15" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+    <path d="M24,19 L26,17" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+  </g>
+</svg> 

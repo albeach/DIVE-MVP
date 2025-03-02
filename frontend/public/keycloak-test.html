@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Keycloak Connectivity Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 5px;
+            background: #f5f5f5;
+        }
+
+        .success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .warning {
+            background: #fff8e1;
+            color: #f57f17;
+        }
+
+        button {
+            padding: 8px 16px;
+            background: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        pre {
+            background: #f5f5f5;
+            padding: 10px;
+            overflow: auto;
+            border-radius: 3px;
+            max-height: 200px;
+        }
+
+        #logContainer {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Keycloak Connectivity Test</h1>
+    <p>This page will test your connectivity to the Keycloak server and diagnose potential issues.</p>
+
+    <div>
+        <button id="testCorsButton">Test CORS</button>
+        <button id="testKeycloakEndpoint">Test Keycloak Endpoint</button>
+        <button id="testIframeComm">Test Iframe Communication</button>
+        <button id="testThirdPartyCookies">Test Third-Party Cookies</button>
+        <button id="clearLog">Clear Log</button>
+    </div>
+
+    <div id="results"></div>
+
+    <h2>Log</h2>
+    <div id="logContainer"></div>
+
+    <script>
+        // Configuration
+        const keycloakUrl = document.location.origin.includes('localhost')
+            ? 'http://localhost:8080/auth'
+            : 'https://keycloak.dive25.local/auth';
+        const realm = 'dive25';
+
+        // Logging function
+        function log(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const timestamp = new Date().toISOString().substr(11, 8);
+            logContainer.innerHTML += `<div class="${type}">[${timestamp}] ${message}</div>`;
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(`[${type}] ${message}`);
+        }
+
+        // Add a result to the page
+        function addResult(title, message, status) {
+            const results = document.getElementById('results');
+            results.innerHTML += `
+                <div class="result ${status}">
+                    <h3>${title}</h3>
+                    <p>${message}</p>
+                </div>
+            `;
+        }
+
+        // Test CORS configuration
+        document.getElementById('testCorsButton').addEventListener('click', async () => {
+            log('Starting CORS test...');
+            try {
+                const url = `${keycloakUrl}/realms/${realm}/.well-known/openid-configuration`;
+                log(`Fetching: ${url}`);
+
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    log('CORS test successful', 'success');
+                    addResult('CORS Test', 'Connection to Keycloak successful', 'success');
+                    log('OpenID Configuration: ' + JSON.stringify(data).substring(0, 100) + '...');
+                } else {
+                    log(`CORS test failed: ${response.status} ${response.statusText}`, 'error');
+                    addResult('CORS Test', `Failed with status: ${response.status}`, 'error');
+                }
+            } catch (error) {
+                log(`CORS test error: ${error.message}`, 'error');
+                addResult('CORS Test', `Error: ${error.message}`, 'error');
+            }
+        });
+
+        // Test Keycloak endpoint
+        document.getElementById('testKeycloakEndpoint').addEventListener('click', async () => {
+            log('Testing Keycloak endpoint...');
+            try {
+                const endpoints = [
+                    `${keycloakUrl}/realms/${realm}/.well-known/openid-configuration`,
+                    `${keycloakUrl}/realms/${realm}/protocol/openid-connect/auth`,
+                    `${keycloakUrl}/realms/${realm}/protocol/openid-connect/token`
+                ];
+
+                let allSuccessful = true;
+
+                for (const endpoint of endpoints) {
+                    log(`Checking endpoint: ${endpoint}`);
+                    try {
+                        const response = await fetch(endpoint, {
+                            method: 'GET',
+                            headers: {
+                                'Accept': 'application/json'
+                            },
+                            mode: 'cors'
+                        });
+
+                        if (response.ok) {
+                            log(`Endpoint ${endpoint} is accessible`, 'success');
+                        } else {
+                            log(`Endpoint ${endpoint} returned ${response.status}`, 'error');
+                            allSuccessful = false;
+                        }
+                    } catch (e) {
+                        log(`Error accessing ${endpoint}: ${e.message}`, 'error');
+                        allSuccessful = false;
+                    }
+                }
+
+                if (allSuccessful) {
+                    addResult('Keycloak Endpoints', 'All required endpoints are accessible', 'success');
+                } else {
+                    addResult('Keycloak Endpoints', 'Some endpoints are not accessible', 'error');
+                }
+            } catch (error) {
+                log(`Endpoint test error: ${error.message}`, 'error');
+                addResult('Keycloak Endpoints', `Error: ${error.message}`, 'error');
+            }
+        });
+
+        // Test iframe communication
+        document.getElementById('testIframeComm').addEventListener('click', () => {
+            log('Testing iframe communication...');
+
+            // Create an iframe
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            iframe.src = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/login-status-iframe.html`;
+
+            // Setup message listener
+            const messageListener = function (event) {
+                log(`Received message from iframe: ${event.origin}`, 'success');
+                log(`Message data: ${JSON.stringify(event.data)}`);
+                window.removeEventListener('message', messageListener);
+            };
+
+            window.addEventListener('message', messageListener);
+
+            // Set a timeout to detect if no message is received
+            setTimeout(() => {
+                if (document.body.contains(iframe)) {
+                    log('No message received from iframe - possible CSP or CORS issue', 'warning');
+                    addResult('Iframe Communication', 'No response from iframe - check browser console for details', 'warning');
+                    document.body.removeChild(iframe);
+                }
+            }, 3000);
+
+            // Add the iframe to the page
+            document.body.appendChild(iframe);
+
+            // Post a message to the iframe
+            setTimeout(() => {
+                try {
+                    iframe.contentWindow.postMessage('ping', '*');
+                    log('Posted message to iframe');
+                } catch (e) {
+                    log(`Error posting to iframe: ${e.message}`, 'error');
+                    addResult('Iframe Communication', `Error: ${e.message}`, 'error');
+                }
+            }, 1000);
+        });
+
+        // Test third-party cookies
+        document.getElementById('testThirdPartyCookies').addEventListener('click', () => {
+            log('Testing third-party cookies...');
+
+            // Create an iframe to another origin
+            const iframe = document.createElement('iframe');
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = 'none';
+
+            // Choose an appropriate URL based on where we're running
+            iframe.src = keycloakUrl + '/check-cookies.html';
+
+            // Create this file in Keycloak's themes welcome_content dir if it doesn't exist
+
+            // Add the iframe to the page
+            document.body.appendChild(iframe);
+
+            // Set up the message listener
+            window.addEventListener('message', function cookieListener(event) {
+                if (event.data && typeof event.data === 'string' &&
+                    (event.data.includes('cookie') || event.data.includes('Cookie'))) {
+
+                    log(`Received cookie test result: ${event.data}`);
+
+                    if (event.data.includes('success')) {
+                        addResult('Third-Party Cookies', 'Third-party cookies are enabled', 'success');
+                    } else {
+                        addResult('Third-Party Cookies', 'Third-party cookies appear to be blocked', 'warning');
+                        log('Keycloak requires third-party cookies for silent authentication', 'warning');
+                    }
+
+                    document.body.removeChild(iframe);
+                    window.removeEventListener('message', cookieListener);
+                }
+            });
+
+            // Fallback if we don't get a response
+            setTimeout(() => {
+                if (document.body.contains(iframe)) {
+                    log('No response from cookie test - third-party cookies may be blocked', 'warning');
+                    addResult('Third-Party Cookies', 'No response - third-party cookies may be blocked', 'warning');
+                    document.body.removeChild(iframe);
+                }
+            }, 3000);
+        });
+
+        // Clear log button
+        document.getElementById('clearLog').addEventListener('click', () => {
+            document.getElementById('logContainer').innerHTML = '';
+            document.getElementById('results').innerHTML = '';
+        });
+
+        // Initial log message
+        log('Keycloak test page loaded. Click a button to run tests.');
+        log(`Testing against Keycloak at: ${keycloakUrl}`);
+    </script>
+</body>
+
+</html>
