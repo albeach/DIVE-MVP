@@ -1,4 +1,4 @@
-// opa/policies/dive25/partner_policies.rego
+# opa/policies/dive25/partner_policies.rego
 package dive25.partner_policies
 
 import data.access_policy.clearance
@@ -49,7 +49,7 @@ partner_policies = {
 }
 
 # The main rule grants access if all partner-specific conditions are satisfied
-allow = true {
+allow = true if {
     partner_type := get_partner_type(input.user.countryOfAffiliation)
     policy := partner_policies[partner_type]
     
@@ -58,225 +58,221 @@ allow = true {
     normalized_resource_classification := normalize_classification(input.resource.classification)
     normalized_resource_classification in [normalize_classification(c) | c := policy.allowed_classifications[_]]
     
-    # Ensure the user's clearance is sufficient for the resource classification
-    user_clearance_level := clearance[normalize_classification(input.user.clearance)]
-    resource_clearance_level := clearance[normalized_resource_classification]
-    user_clearance_level >= resource_clearance_level
+    # Check that the user's clearance level is sufficient for the resource's classification
+    clearance_level_sufficient(input.user, input.resource)
     
-    # Verify that any required caveats are present in the user's caveats
-    all_required_caveats_present(policy.required_caveats, input.user.caveats)
+    # Check that the user has all required caveats for the resource
+    all_required_caveats_present(input.user, input.resource)
     
-    # Verify that all resource COI tags are allowed for this partner type
-    # and the user has access to all required COI tags
-    all_coi_tags_allowed(policy.allowed_coi_tags, input.resource.coiTags)
-    all_coi_tags_present(input.resource.coiTags, input.user.coi)
+    # Check that the user's partner type is authorized for all COI tags on the resource
+    all_coi_tags_allowed(input.user, input.resource)
     
-    # Verify releasability matches user's country affiliation
-    country_releasability_check(input.resource.releasableTo, input.user.countryOfAffiliation)
+    # Check that the user has all required COI tags for the resource
+    all_coi_tags_present(input.user, input.resource)
+    
+    # Check that the user's country of affiliation is allowed to access the resource
+    # based on the resource's releasability
+    country_releasability_check(input.user, input.resource)
 }
 
-# Helper function: get_partner_type returns the partner type for a given country
-get_partner_type(country) = "FVEY" {
-    fvey_nations[country]
+# Determine the partner type based on the country code
+get_partner_type(country) = "five_eyes" if {
+    country in ["USA", "GBR", "CAN", "AUS", "NZL"]
 }
 
-get_partner_type(country) = "NATO" {
-    nato_nations[country]
+get_partner_type(country) = "nato" if {
+    country in ["ALB", "BEL", "BGR", "HRV", "CZE", "DNK", "EST", "FRA", "DEU", "GRC", "HUN", "ISL", "ITA", "LVA", "LTU", "LUX", "MNE", "NLD", "MKD", "NOR", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "TUR"]
 }
 
-get_partner_type(country) = "EU" {
-    eu_nations[country]
+get_partner_type(country) = "eu" if {
+    country in ["AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "SWE"]
 }
 
-# If country doesn't belong to any defined partner group, return default
-get_partner_type(country) = "DEFAULT" {
-    not fvey_nations[country]
-    not nato_nations[country]
-    not eu_nations[country]
+get_partner_type(country) = "other" if {
+    not country in ["USA", "GBR", "CAN", "AUS", "NZL"]
+    not country in ["ALB", "BEL", "BGR", "HRV", "CZE", "DNK", "EST", "FRA", "DEU", "GRC", "HUN", "ISL", "ITA", "LVA", "LTU", "LUX", "MNE", "NLD", "MKD", "NOR", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "TUR"]
+    not country in ["AUT", "BEL", "BGR", "HRV", "CYP", "CZE", "DNK", "EST", "FIN", "FRA", "DEU", "GRC", "HUN", "IRL", "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "POL", "PRT", "ROU", "SVK", "SVN", "ESP", "SWE"]
 }
 
-# Verifies that all required caveats are present in the user's caveats
-all_required_caveats_present(required_caveats, user_caveats) {
-    count(required_caveats) == 0
-}
-
-all_required_caveats_present(required_caveats, user_caveats) {
-    count(required_caveats) > 0
-    every caveat in required_caveats {
-        caveat in user_caveats
+# Check if the user's clearance level is sufficient for the resource's classification
+clearance_level_sufficient(user, resource) if {
+    clearance_levels := {
+        "NONE": 0,
+        "CONFIDENTIAL": 1,
+        "SECRET": 2,
+        "TOP SECRET": 3
     }
+    
+    user_clearance := clearance_levels[user.clearanceLevel]
+    resource_classification := clearance_levels[resource.classification]
+    
+    user_clearance >= resource_classification
 }
 
-# Verifies that all resource COI tags are allowed for the partner type
-all_coi_tags_allowed(allowed_tags, resource_tags) {
-    count(resource_tags) == 0
+# Check if the user has all required caveats for the resource
+all_required_caveats_present(user, resource) if {
+    # If the resource has no caveats, this check passes
+    count(resource.caveats) == 0
 }
 
-all_coi_tags_allowed(allowed_tags, resource_tags) {
-    count(resource_tags) > 0
-    every tag in resource_tags {
-        tag in allowed_tags
+all_required_caveats_present(user, resource) if {
+    # All resource caveats must be present in the user's caveats
+    count(resource.caveats) > 0
+    missing_caveats := {caveat | 
+        caveat := resource.caveats[_]
+        not caveat in user.caveats
     }
+    count(missing_caveats) == 0
 }
 
-# Verifies that the user has access to all COI tags required by the resource
-all_coi_tags_present(resource_tags, user_tags) {
-    count(resource_tags) == 0
+# Check if the user's partner type is authorized for all COI tags on the resource
+all_coi_tags_allowed(user, resource) if {
+    # If the resource has no COI tags, this check passes
+    count(resource.coiTags) == 0
 }
 
-all_coi_tags_present(resource_tags, user_tags) {
-    count(resource_tags) > 0
-    every tag in resource_tags {
-        tag in user_tags
+all_coi_tags_allowed(user, resource) if {
+    # All resource COI tags must be allowed for the user's partner type
+    count(resource.coiTags) > 0
+    partner_type := get_partner_type(user.countryOfAffiliation)
+    policy := partner_policies[partner_type]
+    
+    unauthorized_coi_tags := {tag |
+        tag := resource.coiTags[_]
+        not tag in policy.allowed_coi_tags
     }
+    
+    count(unauthorized_coi_tags) == 0
 }
 
-# Checks if the user's country is in the resource's releasability list
-country_releasability_check(releasableTo, country) {
-    count(releasableTo) == 0  # If no releasability constraints, allow access
+# Check if the user has all required COI tags for the resource
+all_coi_tags_present(user, resource) if {
+    # If the resource has no COI tags, this check passes
+    count(resource.coiTags) == 0
 }
 
-country_releasability_check(releasableTo, country) {
-    count(releasableTo) > 0
-    releasableTo[_] == country  # Direct country match
+all_coi_tags_present(user, resource) if {
+    # All resource COI tags must be present in the user's COI tags
+    count(resource.coiTags) > 0
+    missing_coi_tags := {tag | 
+        tag := resource.coiTags[_]
+        not tag in user.coiTags
+    }
+    count(missing_coi_tags) == 0
 }
 
-country_releasability_check(releasableTo, country) {
-    count(releasableTo) > 0
-    "FVEY" in releasableTo
-    fvey_nations[country]  # Country is part of FVEY
+# Check if the user's country of affiliation is allowed to access the resource
+# based on the resource's releasability
+country_releasability_check(user, resource) if {
+    # If the resource has no releasability restrictions, this check passes
+    count(resource.releasability) == 0
 }
 
-country_releasability_check(releasableTo, country) {
-    count(releasableTo) > 0
-    "NATO" in releasableTo
-    nato_nations[country]  # Country is part of NATO
+country_releasability_check(user, resource) if {
+    # The user's country must be in the resource's releasability list
+    count(resource.releasability) > 0
+    user.countryOfAffiliation in resource.releasability
 }
 
-country_releasability_check(releasableTo, country) {
-    count(releasableTo) > 0
-    "EU" in releasableTo
-    eu_nations[country]  # Country is part of EU
+# Normalize classification to handle different formats and aliases
+normalize_classification(classification) = "UNCLASSIFIED" if {
+    classification in ["UNCLASSIFIED", "U", "UNCLAS"]
 }
 
-# normalize_classification maps partner-specific classifications to standard keys
-normalize_classification(classification) = normalized {
-    classification == "NATO CONFIDENTIAL"
-    normalized := "CONFIDENTIAL"
+normalize_classification(classification) = "CONFIDENTIAL" if {
+    classification in ["CONFIDENTIAL", "C", "CONF"]
 }
 
-normalize_classification(classification) = normalized {
-    classification == "NATO SECRET"
-    normalized := "SECRET"
+normalize_classification(classification) = "SECRET" if {
+    classification in ["SECRET", "S"]
 }
 
-normalize_classification(classification) = normalized {
-    classification == "COSMIC TOP SECRET"
-    normalized := "TOP SECRET"
+normalize_classification(classification) = "TOP SECRET" if {
+    classification in ["TOP SECRET", "TS"]
 }
 
-normalize_classification(classification) = normalized {
-    classification == "EU CONFIDENTIAL"
-    normalized := "CONFIDENTIAL"
-}
-
-normalize_classification(classification) = normalized {
-    classification == "EU SECRET"
-    normalized := "SECRET"
-}
-
-normalize_classification(classification) = normalized {
-    classification == "EU TOP SECRET"
-    normalized := "TOP SECRET"
-}
-
-# If no normalization is needed, the classification remains unchanged
-normalize_classification(classification) = classification {
-    not classification == "NATO CONFIDENTIAL"
-    not classification == "NATO SECRET"
-    not classification == "COSMIC TOP SECRET"
-    not classification == "EU CONFIDENTIAL"
-    not classification == "EU SECRET"
-    not classification == "EU TOP SECRET"
+normalize_classification(classification) = classification if {
+    not classification in ["UNCLASSIFIED", "U", "UNCLAS"]
+    not classification in ["CONFIDENTIAL", "C", "CONF"]
+    not classification in ["SECRET", "S"]
+    not classification in ["TOP SECRET", "TS"]
 }
 
 # Error message for classification mismatch
-error = msg {
-    partner_type := get_partner_type(input.user.countryOfAffiliation)
+classification_mismatch_error(user, resource) = msg if {
+    partner_type := get_partner_type(user.countryOfAffiliation)
     policy := partner_policies[partner_type]
+    normalized_resource_classification := normalize_classification(resource.classification)
+    allowed_classifications := [normalize_classification(c) | c := policy.allowed_classifications[_]]
+    not normalized_resource_classification in allowed_classifications
     
-    normalized_resource_classification := normalize_classification(input.resource.classification)
-    not normalized_resource_classification in [normalize_classification(c) | c := policy.allowed_classifications[_]]
-    
-    msg := sprintf("User from %s not authorized to access %s classification", [input.user.countryOfAffiliation, input.resource.classification])
+    msg := sprintf("User from %s (partner type: %s) is not authorized to access resources classified as %s. Allowed classifications: %v", 
+                  [user.countryOfAffiliation, partner_type, resource.classification, policy.allowed_classifications])
 }
 
-# Error message for clearance level insufficiency
-error = msg {
-    partner_type := get_partner_type(input.user.countryOfAffiliation)
-    policy := partner_policies[partner_type]
+# Error message for insufficient clearance level
+clearance_level_error(user, resource) = msg if {
+    clearance_levels := {
+        "NONE": 0,
+        "CONFIDENTIAL": 1,
+        "SECRET": 2,
+        "TOP SECRET": 3
+    }
     
-    normalized_resource_classification := normalize_classification(input.resource.classification)
-    normalized_resource_classification in [normalize_classification(c) | c := policy.allowed_classifications[_]]
+    user_clearance := clearance_levels[user.clearanceLevel]
+    resource_classification := clearance_levels[resource.classification]
     
-    user_clearance_level := clearance[normalize_classification(input.user.clearance)]
-    resource_clearance_level := clearance[normalized_resource_classification]
-    user_clearance_level < resource_clearance_level
+    user_clearance < resource_classification
     
-    msg := sprintf("User clearance %s insufficient for resource classification %s", [input.user.clearance, input.resource.classification])
+    msg := sprintf("User has insufficient clearance level (%s) for resource classified as %s", 
+                  [user.clearanceLevel, resource.classification])
 }
 
-# Error message for missing caveats
-error = msg {
-    partner_type := get_partner_type(input.user.countryOfAffiliation)
-    policy := partner_policies[partner_type]
-    
-    normalized_resource_classification := normalize_classification(input.resource.classification)
-    normalized_resource_classification in [normalize_classification(c) | c := policy.allowed_classifications[_]]
-    
-    user_clearance_level := clearance[normalize_classification(input.user.clearance)]
-    resource_clearance_level := clearance[normalized_resource_classification]
-    user_clearance_level >= resource_clearance_level
-    
-    count(policy.required_caveats) > 0
-    missing_caveats := [caveat | caveat := policy.required_caveats[_]; not caveat in input.user.caveats]
+# Error message for missing required caveats
+missing_caveats_error(user, resource) = msg if {
+    count(resource.caveats) > 0
+    missing_caveats := {caveat | 
+        caveat := resource.caveats[_]
+        not caveat in user.caveats
+    }
     count(missing_caveats) > 0
     
-    msg := sprintf("User missing required caveats: %v", [missing_caveats])
+    msg := sprintf("User is missing required caveats: %v", [missing_caveats])
 }
 
-# Error message for COI access
-error = msg {
-    partner_type := get_partner_type(input.user.countryOfAffiliation)
+# Error message for unauthorized COI access
+coi_access_error(user, resource) = msg if {
+    count(resource.coiTags) > 0
+    partner_type := get_partner_type(user.countryOfAffiliation)
     policy := partner_policies[partner_type]
     
-    count(input.resource.coiTags) > 0
-    unauthorized_coi := [tag | tag := input.resource.coiTags[_]; not tag in policy.allowed_coi_tags]
-    count(unauthorized_coi) > 0
+    unauthorized_coi_tags := {tag |
+        tag := resource.coiTags[_]
+        not tag in policy.allowed_coi_tags
+    }
     
-    msg := sprintf("Partner type %s not authorized for COI tags: %v", [partner_type, unauthorized_coi])
+    count(unauthorized_coi_tags) > 0
+    
+    msg := sprintf("Partner type %s is not authorized for COI tags: %v", [partner_type, unauthorized_coi_tags])
 }
 
 # Error message for missing COI tags
-error = msg {
-    partner_type := get_partner_type(input.user.countryOfAffiliation)
-    policy := partner_policies[partner_type]
-    
-    count(input.resource.coiTags) > 0
-    every tag in policy.allowed_coi_tags {
-        tag in input.resource.coiTags
+missing_coi_tags_error(user, resource) = msg if {
+    count(resource.coiTags) > 0
+    missing_coi_tags := {tag | 
+        tag := resource.coiTags[_]
+        not tag in user.coiTags
     }
+    count(missing_coi_tags) > 0
     
-    missing_coi := [tag | tag := input.resource.coiTags[_]; not tag in input.user.coi]
-    count(missing_coi) > 0
-    
-    msg := sprintf("User missing required COI tags: %v", [missing_coi])
+    msg := sprintf("User is missing required COI tags: %v", [missing_coi_tags])
 }
 
 # Error message for releasability restrictions
-error = msg {
-    count(input.resource.releasableTo) > 0
-    not country_releasability_check(input.resource.releasableTo, input.user.countryOfAffiliation)
+releasability_error(user, resource) = msg if {
+    count(resource.releasability) > 0
+    not user.countryOfAffiliation in resource.releasability
     
-    msg := sprintf("Resource not releasable to %s", [input.user.countryOfAffiliation])
+    msg := sprintf("Resource is not releasable to %s. Releasable to: %v", 
+                  [user.countryOfAffiliation, resource.releasability])
 }

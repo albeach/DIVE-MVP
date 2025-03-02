@@ -1,4 +1,4 @@
-// opa/policies/access_policy.rego
+# opa/policies/access_policy.rego
 package access_policy
 
 # Define clearance hierarchy from lowest to highest
@@ -87,7 +87,7 @@ eu_nations = {
 }
 
 # Default access for basic resources
-default_access {
+default_access if {
     # Unclassified resources are accessible to all users
     input.resource.classification == "UNCLASSIFIED"
 }

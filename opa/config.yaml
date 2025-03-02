@@ -3,14 +3,15 @@ services:
   - name: decision_log
     url: http://prometheus:9090/api/v1/write
 
-bundles:
-  authz:
-    service: bundle_service
-    resource: bundles/dive25-policies
-    persist: true
-    polling:
-      min_delay_seconds: 10
-      max_delay_seconds: 20
+# Commenting out the bundles section as it's causing errors
+# bundles:
+#   authz:
+#     service: bundle_service
+#     resource: bundles/dive25-policies
+#     persist: true
+#     polling:
+#       min_delay_seconds: 10
+#       max_delay_seconds: 20
 
 decision_logs:
   service: decision_log

@@ -1,4 +1,4 @@
-package access_policy
+package dive25.access_policy
 
 # Define clearance hierarchy
 clearance = {

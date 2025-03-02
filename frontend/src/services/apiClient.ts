@@ -1,5 +1,5 @@
 // frontend/src/services/apiClient.ts - Updated with better file handling
-import axios from 'axios';
+import axios, { AxiosRequestConfig, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import toast from 'react-hot-toast';
 
 // Create axios instance with default config
@@ -21,11 +21,11 @@ const fileClient = axios.create({
 });
 
 // Request interceptor to add authorization header for both clients
-const addAuthHeader = (config) => {
+const addAuthHeader = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
     // Get token from Keycloak if available
     const keycloakInstance = window.__keycloak;
     if (keycloakInstance?.token) {
-        config.headers.Authorization = `Bearer ${keycloakInstance.token}`;
+        config.headers.set('Authorization', `Bearer ${keycloakInstance.token}`);
     }
     return config;
 };
@@ -34,7 +34,7 @@ apiClient.interceptors.request.use(addAuthHeader, (error) => Promise.reject(erro
 fileClient.interceptors.request.use(addAuthHeader, (error) => Promise.reject(error));
 
 // Response interceptor for error handling (shared logic)
-const handleResponseError = (error) => {
+const handleResponseError = (error: AxiosError): Promise<never> => {
     const { response } = error;
 
     // Handle different error scenarios

@@ -1,7 +1,7 @@
 // frontend/src/components/documents/DocumentMetadata.tsx
 import { useTranslation } from 'next-i18next';
 import { Document } from '@/types/document';
-import { formatDate } from '@/utils/formatters';
+import { formatDate, formatFileSize } from '@/utils/formatters';
 import { Badge } from '@/components/ui/Badge';
 
 interface DocumentMetadataProps {

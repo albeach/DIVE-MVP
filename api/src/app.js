@@ -11,6 +11,7 @@ const logger = require('./utils/logger');
 const { connectToMongoDB } = require('./config/mongodb.config');
 const { setupPrometheusMetrics } = require('./utils/metrics');
 const { checkHealth, checkLiveness } = require('./utils/healthcheck');
+const swagger = require('./swagger');
 
 // Initialize express app
 const app = express();
@@ -35,6 +36,9 @@ setupPrometheusMetrics(app);
 
 // Apply API routes
 app.use('/api/v1', routes);
+
+// Serve Swagger UI
+swagger.serve(app);
 
 // Apply error handler middleware
 app.use(errorHandler);
@@ -96,8 +100,18 @@ const shutdown = async () => {
 // Listen for termination signals
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
-process.on('uncaughtException', (error) => {
-    logger.error('Uncaught exception:', error);
+process.on('uncaughtException', (err) => {
+    logger.error({
+        msg: 'Uncaught exception',
+        error: {
+            message: err.message,
+            stack: err.stack,
+            name: err.name,
+            code: err.code,
+            details: err.toString()
+        }
+    });
+    // Initiate shutdown after uncaught exception
     shutdown();
 });
 

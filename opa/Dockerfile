@@ -1,5 +1,5 @@
 # opa/Dockerfile
-FROM openpolicyagent/opa:latest
+FROM --platform=linux/arm64 openpolicyagent/opa:latest
 
 # Copy policies
 COPY ./policies /opt/opa/policies
@@ -7,5 +7,5 @@ COPY ./policies /opt/opa/policies
 # Copy config
 COPY ./config.yaml /opt/opa/config.yaml
 
-# Set entrypoint
-ENTRYPOINT ["/opa", "run", "--server", "--config-file=/opt/opa/config.yaml", "--log-level=debug", "/opt/opa/policies"]
+# Set entrypoint - adding the --watch flag to automatically reload policies
+ENTRYPOINT ["/opa", "run", "--server", "--addr=0.0.0.0:8181", "--log-level=debug", "--watch", "/opt/opa/policies"]

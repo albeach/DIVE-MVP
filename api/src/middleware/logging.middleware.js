@@ -21,7 +21,7 @@ const logFormat = ':remote-addr :method :url :status :response-time ms - :res[co
 const httpLogger = morgan(logFormat, {
     stream: {
         write: (message) => {
-            logger.http(message.trim());
+            logger.info({ msg: 'HTTP Request', httpLog: message.trim() });
         }
     }
 });

@@ -38,11 +38,35 @@ const checkMongoDB = async () => {
 const checkOPA = async () => {
     try {
         // Simple query to test OPA connection
-        await opaClient.get('/');
+        logger.debug('Attempting OPA health check');
+        const response = await opaClient.get('/health');
+        logger.debug('OPA health check response:', response.data);
         return { status: 'up' };
     } catch (error) {
-        logger.error('OPA health check failed:', error);
-        return { status: 'down', message: error.message };
+        logger.error('OPA health check failed:', {
+            message: error.message,
+            code: error.code,
+            response: error.response ? {
+                status: error.response.status,
+                data: error.response.data
+            } : 'No response',
+            request: error.request ? 'Request sent but no response received' : 'Request setup failed'
+        });
+
+        // Try to get more information about the connection
+        try {
+            logger.debug('Attempting to diagnose OPA connection issue');
+            const baseUrl = new URL(opaClient.defaults.baseURL);
+            logger.debug(`OPA base URL: ${baseUrl.toString()}`);
+        } catch (diagError) {
+            logger.error('Error diagnosing OPA connection:', diagError.message);
+        }
+
+        return {
+            status: 'down',
+            message: error.message,
+            details: error.code || 'Unknown error'
+        };
     }
 };
 

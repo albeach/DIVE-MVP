@@ -1,5 +1,5 @@
 // frontend/src/components/documents/DocumentUploadForm.tsx
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'next-i18next';
 import { useDropzone } from 'react-dropzone';
 import { useForm, Controller } from 'react-hook-form';
@@ -31,7 +31,7 @@ export function DocumentUploadForm({ onSubmit, isUploading }: DocumentUploadForm
   // Update banner preview when form values change
   React.useEffect(() => {
     setPreviewClassification(watchClassification);
-    setPreviewCaveats(watchCaveats);
+    setPreviewCaveats(watchCaveats || []);
   }, [watchClassification, watchCaveats]);
   
   // Handle file upload with react-dropzone

@@ -27,6 +27,13 @@
         "caveats": "Caveats",
         "warning": "This system contains information up to"
     },
+    "footer": {
+        "privacyPolicy": "Privacy Policy",
+        "termsOfService": "Terms of Service",
+        "contact": "Contact",
+        "allRightsReserved": "All Rights Reserved.",
+        "securityNotice": "This system is for authorized use only. Unauthorized access is prohibited."
+    },
     "errors": {
         "failedToLoadDocuments": "Failed to load documents",
         "failedToLoadDocument": "Failed to load document",

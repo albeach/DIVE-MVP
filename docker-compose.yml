@@ -4,6 +4,7 @@ services:
   # MongoDB for document metadata
   mongodb:
     image: mongo:6.0
+    platform: linux/arm64
     container_name: dive25-mongodb
     restart: unless-stopped
     environment:
@@ -26,6 +27,7 @@ services:
   # MongoDB Express for MongoDB administration
   mongo-express:
     image: mongo-express:latest
+    platform: linux/arm64
     container_name: dive25-mongo-express
     restart: unless-stopped
     ports:
@@ -44,6 +46,7 @@ services:
   # PostgreSQL for Keycloak
   postgres:
     image: postgres:15
+    platform: linux/arm64
     container_name: dive25-postgres
     restart: unless-stopped
     environment:
@@ -78,6 +81,7 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HOSTNAME: keycloak
       KC_HTTP_RELATIVE_PATH: /auth
+      KC_FEATURES: admin-api,impersonation,import-realm
     volumes:
       - ./keycloak/realm-export.json:/opt/keycloak/bin/realm-export.json
       - ./keycloak/clients:/opt/keycloak/bin/clients
@@ -96,6 +100,25 @@ services:
       retries: 3
       start_period: 60s
 
+# Add to your docker-compose.yml
+  keycloak-config:
+    image: curlimages/curl:latest
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./keycloak/configure-keycloak.sh:/configure-keycloak.sh
+      - ./keycloak/realm-export.json:/realm-export.json
+      - ./keycloak/identity-providers:/identity-providers
+      - ./keycloak/test-users:/test-users
+    environment:
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+    entrypoint: ["/bin/sh", "/configure-keycloak.sh"]
+    networks:
+      - dive25-network
+
   # OpenLDAP Directory Service
   openldap:
     image: osixia/openldap:latest
@@ -110,7 +133,7 @@ services:
       LDAP_READONLY_USER: "true"
       LDAP_READONLY_USER_USERNAME: "readonly"
       LDAP_READONLY_USER_PASSWORD: "readonly_password"
-      LDAP_TLS_VERIFY_CLIENT: "try"
+      LDAP_TLS: "false"
     volumes:
       - ldap_data:/var/lib/ldap
       - ldap_config:/etc/ldap/slapd.d
@@ -148,10 +171,11 @@ services:
     build:
       context: ./opa
       dockerfile: Dockerfile
+    platform: linux/arm64
     container_name: dive25-opa
     restart: unless-stopped
     volumes:
-      - ./opa/policies:/policies
+      - ./opa/policies:/opt/opa/policies
       - ./opa/data:/data
     ports:
       - "8181:8181"
@@ -382,30 +406,18 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${API_BASE_URL:-http://localhost:3000/api/v1}
+        NEXT_PUBLIC_KEYCLOAK_URL: ${KEYCLOAK_BASE_URL:-http://localhost:8080}
+        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM:-dive25}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-dive25-frontend}
+    platform: linux/arm64
     container_name: dive25-frontend
     restart: unless-stopped
-    environment:
-      NODE_ENV: development
-      NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
-      NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
-      NEXT_PUBLIC_KEYCLOAK_REALM: dive25
-      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: dive25-frontend
-    volumes:
-      - ./frontend/src:/app/src
-      - ./frontend/public:/app/public
     ports:
       - "3001:3000"
-    depends_on:
-      - api
     networks:
       - dive25-network
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
 
 networks:
   dive25-network:

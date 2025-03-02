@@ -1,10 +1,11 @@
 // frontend/src/components/hoc/withAuth.tsx
+import React from 'react';
 import { useRouter } from 'next/router';
 import { useEffect } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { Spinner } from '@/components/ui/Spinner';
 
-export function withAuth<T>(Component: React.ComponentType<T>) {
+export function withAuth<T extends JSX.IntrinsicAttributes>(Component: React.ComponentType<T>) {
   return function WithAuth(props: T) {
     const { isAuthenticated, isLoading, login } = useAuth();
     const router = useRouter();

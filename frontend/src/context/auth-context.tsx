@@ -139,7 +139,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     if (!user || !user.roles || user.roles.length === 0) {
       return false;
     }
-    return roles.some(role => user.roles.includes(role));
+    return roles.some(role => user.roles?.includes(role) || false);
   };
 
   const value = {

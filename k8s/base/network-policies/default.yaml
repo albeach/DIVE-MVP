@@ -1,0 +1,40 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-communication
+spec:
+  podSelector:
+    matchLabels:
+      app: dive25-api
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: kong
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: mongodb
+    - podSelector:
+        matchLabels:
+          app: opa
+    - podSelector:
+        matchLabels:
+          app: keycloak
+    - podSelector:
+        matchLabels:
+          app: openldap
