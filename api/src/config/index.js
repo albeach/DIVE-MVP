@@ -44,7 +44,7 @@ module.exports = {
     cors: {
         allowedOrigins: process.env.CORS_ALLOWED_ORIGINS
             ? process.env.CORS_ALLOWED_ORIGINS.split(',')
-            : ['http://localhost:3000']
+            : ['http://localhost:3000', 'http://localhost:3001', 'https://localhost:3000', 'https://localhost:3001', 'http://api.dive25.local', 'https://api.dive25.local', 'http://dive25.local', 'https://dive25.local']
     },
 
     jwt: {

@@ -1,6 +1,64 @@
 const { verifyToken, getUserFromToken } = require('../services/auth.service');
 const { ApiError } = require('../utils/error.utils');
 const logger = require('../utils/logger');
+const jwt = require('jsonwebtoken');
+const config = require('../config');
+
+/**
+ * Generate a mock login token for development and testing
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const mockLogin = async (req, res, next) => {
+    try {
+        // This endpoint is for development and testing only
+        if (config.env === 'production') {
+            throw new ApiError('Endpoint not available in production', 404);
+        }
+
+        const { username = 'testuser', roles = ['user'] } = req.body;
+
+        // Create a mock user
+        const user = {
+            id: 'test-user-id',
+            uniqueId: `user-${Date.now()}`,
+            username,
+            email: `${username}@example.com`,
+            givenName: 'Test',
+            surname: 'User',
+            organization: 'Test Organization',
+            countryOfAffiliation: 'US',
+            clearance: 'UNCLASSIFIED',
+            caveats: [],
+            coi: [],
+            roles
+        };
+
+        // Sign a JWT token
+        const token = jwt.sign(
+            {
+                sub: user.id,
+                username: user.username,
+                roles: user.roles,
+                uniqueId: user.uniqueId
+            },
+            config.jwt.jwtSecret || 'test-secret',
+            { expiresIn: '1h' }
+        );
+
+        logger.info(`Mock login generated for user: ${username}`);
+
+        res.status(200).json({
+            success: true,
+            token,
+            user
+        });
+    } catch (error) {
+        logger.error('Mock login error:', error);
+        next(error);
+    }
+};
 
 /**
  * Verify user token and return user info
@@ -70,5 +128,6 @@ const logout = async (req, res, next) => {
 
 module.exports = {
     verifyUser,
-    logout
+    logout,
+    mockLogin
 };

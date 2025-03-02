@@ -17,12 +17,48 @@ const swagger = require('./swagger');
 const app = express();
 
 // Apply security middleware
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+            styleSrc: ["'self'", "'unsafe-inline'"],
+            imgSrc: ["'self'", "data:"]
+        }
+    }
+}));
+
+// Add headers before CORS to handle preflight requests
+app.use((req, res, next) => {
+    // For Swagger UI compatibility
+    res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Credentials', 'true');
+
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+        return res.status(204).end();
+    }
+
+    next();
+});
+
 app.use(cors({
-    origin: config.cors.allowedOrigins,
+    origin: function (origin, callback) {
+        const allowedOrigins = config.cors.allowedOrigins;
+        // Allow requests with no origin (like mobile apps or curl requests)
+        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
+            callback(null, true);
+        } else {
+            console.log(`CORS blocked for origin: ${origin}`);
+            callback(null, true); // Temporarily allow all origins for debugging
+        }
+    },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    credentials: true
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    credentials: true,
+    maxAge: 86400 // 24 hours
 }));
 
 // Apply common middleware

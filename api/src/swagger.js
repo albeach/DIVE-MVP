@@ -17,8 +17,24 @@ const options = {
         },
         servers: [
             {
-                url: `${config.env === 'production' ? 'https://api.dive25.com' : 'https://api.dive25.local'}/api/v1`,
-                description: `${config.env === 'production' ? 'Production' : 'Development'} server`,
+                url: `http://localhost:3000/api/v1`,
+                description: 'Local Development server (http)',
+            },
+            {
+                url: `https://localhost:3000/api/v1`,
+                description: 'Local Development server (https)',
+            },
+            {
+                url: `http://api.dive25.local/api/v1`,
+                description: 'Development server (http)',
+            },
+            {
+                url: `https://api.dive25.local/api/v1`,
+                description: 'Development server (https)',
+            },
+            {
+                url: `https://api.dive25.com/api/v1`,
+                description: 'Production server',
             },
         ],
         components: {
@@ -29,6 +45,30 @@ const options = {
                     bearerFormat: 'JWT',
                 },
             },
+            schemas: {
+                Error: {
+                    type: 'object',
+                    properties: {
+                        message: {
+                            type: 'string'
+                        },
+                        code: {
+                            type: 'string'
+                        }
+                    }
+                },
+                GenericResponse: {
+                    type: 'object',
+                    properties: {
+                        success: {
+                            type: 'boolean'
+                        },
+                        message: {
+                            type: 'string'
+                        }
+                    }
+                }
+            }
         },
         security: [
             {
@@ -46,7 +86,21 @@ const specs = swaggerJsdoc(options);
 
 module.exports = {
     serve: (app) => {
-        app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(specs));
+        // First, serve the OpenAPI spec
+        app.get('/api/v1/docs/swagger.json', (req, res) => {
+            res.setHeader('Content-Type', 'application/json');
+            res.send(specs);
+        });
+
+        // Then, serve Swagger UI
+        app.use('/api/v1/docs', swaggerUi.serve, swaggerUi.setup(specs, {
+            explorer: true,
+            swaggerOptions: {
+                persistAuthorization: true,
+                filter: true,
+                displayRequestDuration: true
+            }
+        }));
     },
     specs,
 };

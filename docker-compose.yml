@@ -379,9 +379,10 @@ services:
       KEYCLOAK_CLIENT_SECRET: change-me-in-production
       OPA_URL: http://opa:8181/v1/data
       LDAP_URL: ldap://openldap:389
-      CORS_ALLOWED_ORIGINS: http://localhost:3000,https://dive25.local,https://dive25.com
+      CORS_ALLOWED_ORIGINS: http://localhost:3000,http://localhost:3001,https://localhost:3000,https://localhost:3001,http://api.dive25.local,https://api.dive25.local,http://dive25.local,https://dive25.local
       STORAGE_PATH: /app/storage
       TEMP_STORAGE_PATH: /app/temp
+      JWT_SECRET: ${JWT_SECRET:-develop-secret-key-replace-in-production}
     volumes:
       - ./api/src:/app/src
       - api_storage:/app/storage
