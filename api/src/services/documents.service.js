@@ -1,5 +1,5 @@
 const { Document, documentValidationSchema } = require('../models/document.model');
-const { evaluateAccessPolicy } = require('./opa.service');
+const { checkDocumentAccess } = require('./opa.service');
 const { createAuditLog } = require('./audit.service');
 const logger = require('../utils/logger');
 const { ApiError } = require('../utils/error.utils');
@@ -115,8 +115,27 @@ const deleteFile = async (fileId) => {
  */
 const createDocument = async (documentData, file, user) => {
     try {
+        // Parse metadata from documentData if it's a string
+        const metadata = typeof documentData.metadata === 'string'
+            ? JSON.parse(documentData.metadata)
+            : documentData.metadata || {};
+
+        // Combine the document data
+        const completeDocumentData = {
+            filename: file.originalname,
+            metadata: {
+                ...metadata,
+                creator: {
+                    id: user.uniqueId,
+                    name: `${user.givenName} ${user.surname}`,
+                    organization: user.organization,
+                    country: user.countryOfAffiliation
+                }
+            }
+        };
+
         // Validate document data
-        const { error, value } = documentValidationSchema.validate(documentData);
+        const { error, value } = documentValidationSchema.validate(completeDocumentData);
         if (error) {
             throw new ApiError(`Invalid document data: ${error.message}`, 400);
         }
@@ -131,14 +150,20 @@ const createDocument = async (documentData, file, user) => {
             mimeType: fileInfo.mimeType,
             size: fileInfo.size,
             metadata: {
-                ...value.metadata,
+                classification: metadata.classification || 'UNCLASSIFIED',
+                releasability: metadata.releasability || [],
+                caveats: metadata.caveats || [],
+                coi: metadata.coi || [],
+                policyIdentifier: metadata.policyIdentifier || 'NATO',
                 creator: {
                     id: user.uniqueId,
                     name: `${user.givenName} ${user.surname}`,
                     organization: user.organization,
                     country: user.countryOfAffiliation
                 }
-            }
+            },
+            uploadDate: new Date(),
+            lastModifiedDate: new Date()
         });
 
         // Save document
@@ -183,22 +208,9 @@ const getDocumentById = async (id, user) => {
         }
 
         // Check if user has access to the document
-        const accessAllowed = await evaluateAccessPolicy({
-            user: {
-                clearance: user.clearance,
-                countryOfAffiliation: user.countryOfAffiliation,
-                caveats: user.caveats,
-                coi: user.coi
-            },
-            resource: {
-                classification: document.metadata.classification,
-                releasability: document.metadata.releasability,
-                caveats: document.metadata.caveats,
-                coi: document.metadata.coi
-            }
-        });
+        const { allowed, explanation } = await checkDocumentAccess(user, document);
 
-        if (!accessAllowed) {
+        if (!allowed) {
             // Create audit log for denied access
             await createAuditLog({
                 userId: user.uniqueId,
@@ -208,12 +220,13 @@ const getDocumentById = async (id, user) => {
                 resourceType: 'document',
                 details: {
                     filename: document.filename,
-                    classification: document.metadata.classification
+                    classification: document.metadata.classification,
+                    reason: explanation
                 },
                 success: false
             });
 
-            throw new ApiError('Access denied', 403);
+            throw new ApiError(`Access denied: ${explanation}`, 403);
         }
 
         // Update last accessed date
@@ -251,7 +264,7 @@ const getDocumentById = async (id, user) => {
  * @param {Object} user - User requesting the documents
  * @returns {Promise<Object>} Documents and pagination info
  */
-const getDocuments = async (filters, options, user) => {
+const getDocuments = async (filters = {}, options = {}, user) => {
     try {
         const page = parseInt(options.page) || 1;
         const limit = parseInt(options.limit) || 10;
@@ -281,6 +294,16 @@ const getDocuments = async (filters, options, user) => {
             }
         }
 
+        // Apply search filter if specified
+        if (filters.search) {
+            query.$or = [
+                { filename: { $regex: filters.search, $options: 'i' } },
+                { 'metadata.classification': { $regex: filters.search, $options: 'i' } },
+                { 'metadata.creator.name': { $regex: filters.search, $options: 'i' } },
+                { 'metadata.creator.organization': { $regex: filters.search, $options: 'i' } }
+            ];
+        }
+
         // Find documents
         const documents = await Document.find(query)
             .sort(options.sort || { uploadDate: -1 })
@@ -292,28 +315,35 @@ const getDocuments = async (filters, options, user) => {
 
         // Filter documents based on user's access rights
         const accessibleDocuments = [];
+        const accessChecks = [];
 
         for (const document of documents) {
-            // Check if user has access to the document
-            const accessAllowed = await evaluateAccessPolicy({
-                user: {
-                    clearance: user.clearance,
-                    countryOfAffiliation: user.countryOfAffiliation,
-                    caveats: user.caveats,
-                    coi: user.coi
-                },
-                resource: {
-                    classification: document.metadata.classification,
-                    releasability: document.metadata.releasability,
-                    caveats: document.metadata.caveats,
-                    coi: document.metadata.coi
-                }
-            });
+            const accessCheckPromise = checkDocumentAccess(user, document)
+                .then(({ allowed }) => {
+                    if (allowed) {
+                        accessibleDocuments.push(document);
+                    }
+                    return { document, allowed };
+                });
 
-            if (accessAllowed) {
-                accessibleDocuments.push(document);
-            }
+            accessChecks.push(accessCheckPromise);
         }
+
+        // Wait for all access checks to complete
+        await Promise.all(accessChecks);
+
+        // Create audit log for document listing
+        await createAuditLog({
+            userId: user.uniqueId,
+            username: user.username,
+            action: 'DOCUMENT_LIST',
+            details: {
+                filters: JSON.stringify(filters),
+                resultCount: accessibleDocuments.length,
+                totalCount: total
+            },
+            success: true
+        });
 
         return {
             documents: accessibleDocuments,
@@ -345,6 +375,28 @@ const updateDocument = async (id, updateData, user) => {
             throw new ApiError('Document not found', 404);
         }
 
+        // Check if user has access to the document
+        const { allowed, explanation } = await checkDocumentAccess(user, document);
+
+        if (!allowed) {
+            // Create audit log for denied access
+            await createAuditLog({
+                userId: user.uniqueId,
+                username: user.username,
+                action: 'ACCESS_DENIED',
+                resourceId: document._id,
+                resourceType: 'document',
+                details: {
+                    operation: 'update',
+                    filename: document.filename,
+                    reason: explanation
+                },
+                success: false
+            });
+
+            throw new ApiError(`Access denied: ${explanation}`, 403);
+        }
+
         // Check if user is the creator or has admin role
         if (document.metadata.creator.id !== user.uniqueId && !user.roles.includes('admin')) {
             // Create audit log for denied access
@@ -356,7 +408,8 @@ const updateDocument = async (id, updateData, user) => {
                 resourceType: 'document',
                 details: {
                     operation: 'update',
-                    filename: document.filename
+                    filename: document.filename,
+                    reason: 'Not the document owner or admin'
                 },
                 success: false
             });
@@ -441,6 +494,28 @@ const deleteDocument = async (id, user) => {
             throw new ApiError('Document not found', 404);
         }
 
+        // Check if user has access to the document
+        const { allowed, explanation } = await checkDocumentAccess(user, document);
+
+        if (!allowed) {
+            // Create audit log for denied access
+            await createAuditLog({
+                userId: user.uniqueId,
+                username: user.username,
+                action: 'ACCESS_DENIED',
+                resourceId: document._id,
+                resourceType: 'document',
+                details: {
+                    operation: 'delete',
+                    filename: document.filename,
+                    reason: explanation
+                },
+                success: false
+            });
+
+            throw new ApiError(`Access denied: ${explanation}`, 403);
+        }
+
         // Check if user is the creator or has admin role
         if (document.metadata.creator.id !== user.uniqueId && !user.roles.includes('admin')) {
             // Create audit log for denied access
@@ -452,7 +527,8 @@ const deleteDocument = async (id, user) => {
                 resourceType: 'document',
                 details: {
                     operation: 'delete',
-                    filename: document.filename
+                    filename: document.filename,
+                    reason: 'Not the document owner or admin'
                 },
                 success: false
             });
@@ -460,8 +536,19 @@ const deleteDocument = async (id, user) => {
             throw new ApiError('You do not have permission to delete this document', 403);
         }
 
-        // Delete document
+        // Get file ID for deletion
+        const fileId = document.fileId;
+
+        // Delete document from database
         await Document.deleteOne({ _id: id });
+
+        // Delete file from storage
+        try {
+            await deleteFile(fileId);
+        } catch (fileError) {
+            logger.error(`Failed to delete file ${fileId} for document ${id}:`, fileError);
+            // We continue since the document was already deleted from the database
+        }
 
         // Create audit log
         await createAuditLog({

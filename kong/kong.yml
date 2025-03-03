@@ -11,10 +11,10 @@ plugins:
   - name: cors
     config:
       origins:
-        - https://dive25.local
-        - https://frontend.dive25.local
-        - https://api.dive25.local
-        - https://*.dive25.local
+        - "https://dive25.local"
+        - "https://*.dive25.local"
+        - "https://dive25.com"
+        - "https://*.dive25.com"
       methods:
         - GET
         - POST
@@ -33,6 +33,21 @@ plugins:
       credentials: true
       max_age: 3600
       preflight_continue: false
+  - name: rate-limiting
+    config:
+      minute: 60
+      hour: 1000
+      policy: local
+      hide_client_headers: false
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
+          - "X-Content-Type-Options:nosniff"
+          - "X-XSS-Protection:1; mode=block"
+          - "X-Frame-Options:SAMEORIGIN"
+          - "Content-Security-Policy:default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.dive25.local https://*.dive25.com; frame-ancestors 'self'"
 
 services:
   # Frontend Service
@@ -43,6 +58,12 @@ services:
         hosts:
           - dive25.local
           - frontend.dive25.local
+          - dive25.com 
+          - www.dive25.com
+        paths:
+          - /
+        strip_path: false
+        preserve_host: true
         protocols:
           - http
           - https
@@ -62,13 +83,15 @@ services:
       - name: api-route
         hosts:
           - api.dive25.local
+          - api.dive25.com
         paths:
           - /
+          - /api
+          - /api/v1
           - /health
           - /health/live
           - /health/ready
-          - /api
-          - /api/v1
+          - /metrics
         strip_path: false
         preserve_host: true
         protocols:
@@ -82,6 +105,14 @@ services:
           preserve_query_string: true
         protocols:
           - http
+      - name: ip-restriction
+        config:
+          whitelist:
+            - 127.0.0.1/32
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+          message: "Access denied by IP restriction policy"
   
   # Keycloak Service
   - name: keycloak-service
@@ -90,6 +121,7 @@ services:
       - name: keycloak-route
         hosts:
           - keycloak.dive25.local
+          - keycloak.dive25.com
         protocols:
           - http
           - https
@@ -101,8 +133,16 @@ services:
           preserve_query_string: true
         protocols:
           - http
+      - name: ip-restriction
+        config:
+          whitelist:
+            - 127.0.0.1/32
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+          message: "Access denied by IP restriction policy"
   
-  # MongoDB Express Service
+  # MongoDB Express Service (only in development)
   - name: mongo-express-service
     url: http://dive25-mongo-express:8081
     routes:
@@ -120,6 +160,14 @@ services:
           preserve_query_string: true
         protocols:
           - http
+      - name: ip-restriction
+        config:
+          whitelist:
+            - 127.0.0.1/32
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+          message: "Access denied by IP restriction policy"
   
   # Grafana Service
   - name: grafana-service
@@ -128,6 +176,7 @@ services:
       - name: grafana-route
         hosts:
           - grafana.dive25.local
+          - grafana.dive25.com
         protocols:
           - http
           - https
@@ -139,6 +188,14 @@ services:
           preserve_query_string: true
         protocols:
           - http
+      - name: ip-restriction
+        config:
+          whitelist:
+            - 127.0.0.1/32
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+          message: "Access denied by IP restriction policy"
   
   # Prometheus Service
   - name: prometheus-service
@@ -147,6 +204,7 @@ services:
       - name: prometheus-route
         hosts:
           - prometheus.dive25.local
+          - prometheus.dive25.com
         protocols:
           - http
           - https
@@ -158,14 +216,22 @@ services:
           preserve_query_string: true
         protocols:
           - http
+      - name: ip-restriction
+        config:
+          whitelist:
+            - 127.0.0.1/32
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+          message: "Access denied by IP restriction policy"
   
-  # phpLDAPadmin Service
-  - name: phpldapadmin-service
-    url: http://dive25-phpldapadmin:80
+  # OPA Service (only internal access)
+  - name: opa-service
+    url: http://dive25-opa:8181
     routes:
-      - name: phpldapadmin-route
+      - name: opa-route
         hosts:
-          - phpldapadmin.dive25.local
+          - opa.dive25.local
         protocols:
           - http
           - https
@@ -177,41 +243,11 @@ services:
           preserve_query_string: true
         protocols:
           - http
-  
-  # Kong Admin Service (exposed via subdomain)
-  - name: kong-admin-service
-    url: http://dive25-kong:8001
-    routes:
-      - name: kong-admin-route
-        hosts:
-          - kong.dive25.local
-        protocols:
-          - http
-          - https
-    plugins:
-      - name: redirect
+      - name: ip-restriction
         config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
-        protocols:
-          - http
-  
-  # Konga Service
-  - name: konga-service
-    url: http://dive25-konga:1337
-    routes:
-      - name: konga-route
-        hosts:
-          - konga.dive25.local
-        protocols:
-          - http
-          - https
-    plugins:
-      - name: redirect
-        config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
-        protocols:
-          - http
+          whitelist:
+            - 127.0.0.1/32
+            - 10.0.0.0/8
+            - 172.16.0.0/12
+            - 192.168.0.0/16
+          message: "Access denied by IP restriction policy"

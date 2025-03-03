@@ -85,3 +85,4 @@ build/
 *.bak
 *.old
 merge-repo.js
+certs/

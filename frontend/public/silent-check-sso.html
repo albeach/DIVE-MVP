@@ -7,6 +7,9 @@
         // This file is critical for Keycloak silent authentication
         // It needs to be as simple and reliable as possible
         (function () {
+            // Performance measurement
+            var startTime = performance.now();
+
             // The most important thing: post the location back to the parent
             try {
                 console.log('[Silent SSO] Running at:', window.location.href);
@@ -18,8 +21,17 @@
                     'https://keycloak.dive25.local',
                     'http://localhost:3000',
                     'http://localhost:3001',
-                    'http://localhost:8080'
+                    'http://localhost:8080',
+                    'http://localhost:8090',
+                    'http://127.0.0.1:3000',
+                    'http://127.0.0.1:8080'
                 ];
+
+                // Extract origin from environment variable if available
+                var envOrigin = '${FRONTEND_URL}' || '${REACT_APP_FRONTEND_URL}';
+                if (envOrigin && envOrigin.indexOf('$') !== 0 && expectedOrigins.indexOf(envOrigin) === -1) {
+                    expectedOrigins.push(envOrigin);
+                }
 
                 // Auto-detect localhost based origins
                 if (window.location.hostname === 'localhost' ||
@@ -32,18 +44,19 @@
 
                 // Get parent origin with fallbacks
                 var parentOrigin = '*'; // Default/fallback is wildcard
+                var parentOriginSource = 'default';
 
                 // 1. Try ancestorOrigins API (Chrome, Safari)
                 if (window.location.ancestorOrigins && window.location.ancestorOrigins.length) {
                     parentOrigin = window.location.ancestorOrigins[0];
-                    console.log('[Silent SSO] Using ancestor origin:', parentOrigin);
+                    parentOriginSource = 'ancestorOrigins';
                 }
                 // 2. Try referrer header
                 else if (document.referrer) {
                     try {
                         var referrerUrl = new URL(document.referrer);
                         parentOrigin = referrerUrl.origin;
-                        console.log('[Silent SSO] Using referrer origin:', parentOrigin);
+                        parentOriginSource = 'referrer';
                     } catch (e) {
                         console.log('[Silent SSO] Error parsing referrer:', e);
                     }
@@ -54,34 +67,46 @@
                         var urlParams = new URLSearchParams(window.location.search);
                         var originParam = urlParams.get('parent_origin');
                         if (originParam) {
-                            parentOrigin = originParam;
-                            console.log('[Silent SSO] Using origin from URL param:', parentOrigin);
+                            parentOrigin = decodeURIComponent(originParam);
+                            parentOriginSource = 'urlParam';
                         }
                     } catch (e) {
                         console.log('[Silent SSO] Error extracting origin from params:', e);
                     }
                 }
 
-                console.log('[Silent SSO] Final parent origin:', parentOrigin);
+                console.log('[Silent SSO] Parent origin (' + parentOriginSource + '):', parentOrigin);
 
                 // Function to handle the actual message posting
-                function postToParent() {
+                function postToParent(attempt) {
+                    attempt = attempt || 1;
+                    console.log('[Silent SSO] Posting attempt:', attempt);
+
                     if (window.parent) {
                         try {
-                            // Specific origin first
-                            window.parent.postMessage(window.location.href, parentOrigin);
-                            console.log('[Silent SSO] Posted to specific origin:', parentOrigin);
+                            // First, try to use the detected origin
+                            if (parentOrigin !== '*') {
+                                try {
+                                    window.parent.postMessage(window.location.href, parentOrigin);
+                                    console.log('[Silent SSO] Posted to detected origin:', parentOrigin);
+                                } catch (e) {
+                                    console.log('[Silent SSO] Error posting to detected origin:', e);
+                                }
+                            }
 
-                            // Then try each expected origin if using wildcard
-                            if (parentOrigin === '*') {
-                                expectedOrigins.forEach(function (origin) {
-                                    try {
-                                        window.parent.postMessage(window.location.href, origin);
-                                        console.log('[Silent SSO] Posted to expected origin:', origin);
-                                    } catch (e) {
-                                        console.log('[Silent SSO] Error posting to', origin, e);
-                                    }
-                                });
+                            // Then try each expected origin
+                            var successCount = 0;
+                            expectedOrigins.forEach(function (origin) {
+                                try {
+                                    window.parent.postMessage(window.location.href, origin);
+                                    successCount++;
+                                } catch (e) {
+                                    console.log('[Silent SSO] Error posting to', origin, e);
+                                }
+                            });
+
+                            if (successCount > 0) {
+                                console.log('[Silent SSO] Successfully posted to', successCount, 'expected origins');
                             }
 
                             // Always try wildcard as last resort
@@ -97,7 +122,19 @@
                     // Also handle popup flow
                     if (window.opener) {
                         try {
-                            window.opener.postMessage(window.location.href, parentOrigin);
+                            // Try specific origin
+                            if (parentOrigin !== '*') {
+                                window.opener.postMessage(window.location.href, parentOrigin);
+                            }
+
+                            // Try expected origins
+                            expectedOrigins.forEach(function (origin) {
+                                try {
+                                    window.opener.postMessage(window.location.href, origin);
+                                } catch (e) {
+                                    // Silent catch
+                                }
+                            });
 
                             // Always try wildcard for opener too
                             window.opener.postMessage(window.location.href, '*');
@@ -106,16 +143,30 @@
                             console.error('[Silent SSO] Error posting to opener:', e);
                         }
                     }
+
+                    // Performance reporting
+                    var duration = performance.now() - startTime;
+                    console.log('[Silent SSO] Attempt ' + attempt + ' completed in ' + duration.toFixed(2) + 'ms');
                 }
 
                 // Try posting immediately
-                postToParent();
+                postToParent(1);
 
                 // Also try again after a short delay (helps with timing issues)
-                setTimeout(postToParent, 50);
+                setTimeout(function () { postToParent(2); }, 50);
 
                 // And another attempt with longer delay
-                setTimeout(postToParent, 250);
+                setTimeout(function () { postToParent(3); }, 250);
+
+                // Final attempt for very slow connections
+                setTimeout(function () { postToParent(4); }, 1000);
+
+                // Signal completion
+                setTimeout(function () {
+                    console.log('[Silent SSO] All posting attempts completed');
+                    var totalDuration = performance.now() - startTime;
+                    console.log('[Silent SSO] Total processing time: ' + totalDuration.toFixed(2) + 'ms');
+                }, 1050);
             } catch (error) {
                 console.error('[Silent SSO] Top-level error:', error);
 
@@ -138,6 +189,9 @@
 <body>
     <!-- Silent SSO check page - used by Keycloak -->
     <!-- The script automatically posts the current URL back to the parent window -->
+    <noscript>
+        <p>JavaScript is required for the silent authentication check.</p>
+    </noscript>
 </body>
 
 </html>

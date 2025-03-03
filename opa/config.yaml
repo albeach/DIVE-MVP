@@ -1,26 +1,71 @@
 # opa/config.yaml
+
+# API Service configuration
 services:
-  - name: decision_log
-    url: http://prometheus:9090/api/v1/write
+  - name: dive25-api
+    url: "${API_URL:-http://dive25-api:3000}"
+    credentials:
+      bearer:
+        token: "${OPA_API_TOKEN:-system-token}"  # Uses env variable or fallback to a default
+    status:
+      service: dive25-api  # Report status back to API
+      partition_name: opa  # Partition name for status reports
 
-# Commenting out the bundles section as it's causing errors
-# bundles:
-#   authz:
-#     service: bundle_service
-#     resource: bundles/dive25-policies
-#     persist: true
-#     polling:
-#       min_delay_seconds: 10
-#       max_delay_seconds: 20
-
+# Decision logs to help with audit and debugging
 decision_logs:
-  service: decision_log
+  service: dive25-api
   reporting:
     min_delay_seconds: 30
     max_delay_seconds: 60
+  console: ${CONSOLE_DECISION_LOGGING:-false}  # Enable console logging in development
 
-persistence_directory: /var/lib/opa
+# Enable REST API
+rest_api:
+  http_server_timeout: ${HTTP_SERVER_TIMEOUT:-10}
+  addr: ":8181"
+  cors:
+    allowed_origins:
+      - "${FRONTEND_URL:-http://frontend:3000}"
+      - "${API_URL:-http://dive25-api:3000}"
+    allowed_headers:
+      - Authorization
+      - Content-Type
+    credentials: true  # Allow credentials in CORS requests
+  authentication:
+    require_authentication: ${REQUIRE_AUTH:-false}  # For development; set to true in production
+    bearer:
+      token: "${OPA_ADMIN_TOKEN:-admin-token}"  # Uses env variable or fallback to a default
+      
+# Bundle configuration for policy distribution
+bundles:
+  dive25:
+    service: dive25-api
+    resource: "/api/v1/opa/bundles/dive25"
+    persist: true
+    polling:
+      min_delay_seconds: ${BUNDLE_MIN_POLL_SECONDS:-60}
+      max_delay_seconds: ${BUNDLE_MAX_POLL_SECONDS:-120}
+    signing:
+      keyid: "${BUNDLE_KEYID:-global_key}"
+      scope: "${BUNDLE_SCOPE:-dive25}"
 
+# Persistence for policy data
+persistence_directory: "${PERSISTENCE_DIR:-/data}"
+plugins_directory: "${PLUGINS_DIR:-/opt/opa/plugins}"
+
+# Logging configuration
+logging:
+  level: "${LOG_LEVEL:-info}"
+  format: "${LOG_FORMAT:-json}"
+
+# System identification
 labels:
   app: dive25-opa
-  region: dive25
+  environment: "${ENVIRONMENT:-development}"
+  component: "policy-engine"
+  version: "${OPA_VERSION:-latest}"
+
+# Status reporting configuration
+status:
+  console: ${CONSOLE_STATUS_REPORTING:-true}
+  service: dive25-api  # Report status back to API
