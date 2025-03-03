@@ -1,0 +1,55 @@
+# Security Clearance Groups
+dn: cn=unclassified,ou=clearances,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: unclassified
+description: Unclassified clearance level
+member: cn=admin,dc=dive25,dc=local
+
+dn: cn=confidential,ou=clearances,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: confidential
+description: Confidential clearance level
+member: cn=admin,dc=dive25,dc=local
+
+dn: cn=secret,ou=clearances,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: secret
+description: Secret clearance level
+member: cn=admin,dc=dive25,dc=local
+
+dn: cn=top-secret,ou=clearances,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: top-secret
+description: Top Secret clearance level
+member: cn=admin,dc=dive25,dc=local
+
+# Country Access Groups
+dn: cn=usa,ou=countries,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: usa
+description: USA access
+member: cn=admin,dc=dive25,dc=local
+
+dn: cn=gbr,ou=countries,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: gbr
+description: Great Britain access
+member: cn=admin,dc=dive25,dc=local
+
+dn: cn=can,ou=countries,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: can
+description: Canada access
+member: cn=admin,dc=dive25,dc=local
+
+dn: cn=aus,ou=countries,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: aus
+description: Australia access
+member: cn=admin,dc=dive25,dc=local
+
+dn: cn=nzl,ou=countries,ou=security,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: nzl
+description: New Zealand access
+member: cn=admin,dc=dive25,dc=local

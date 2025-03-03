@@ -5,6 +5,7 @@ import Keycloak from 'keycloak-js';
 import { User } from '@/types/user';
 import { Spinner } from '@/components/ui/Spinner';
 import toast from 'react-hot-toast';
+import { getKeycloak } from '@/lib/keycloak';
 
 interface AuthContextProps {
   isAuthenticated: boolean;
@@ -37,12 +38,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       try {
         console.time('keycloak-init');
         
-        // Create keycloak instance with full URL
-        const keycloakInstance = new Keycloak({
-          url: (process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080') + '/auth',
-          realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'dive25',
-          clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'dive25-frontend'
-        });
+        // Use our configured Keycloak instance
+        const keycloakInstance = getKeycloak();
 
         // Configure token refresh behavior
         keycloakInstance.onTokenExpired = () => {
@@ -148,12 +145,8 @@ export function AuthProvider({ children }: AuthProviderProps) {
       console.error('Cannot login: Keycloak not initialized');
       toast.error('Authentication service not available');
       
-      // Create a new keycloak instance and try login
-      const keycloakInstance = new Keycloak({
-        url: (process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080') + '/auth',
-        realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'dive25',
-        clientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'dive25-frontend'
-      });
+      // Use our configured Keycloak instance for fallback login
+      const keycloakInstance = getKeycloak();
       
       keycloakInstance.init({
         onLoad: 'login-required',

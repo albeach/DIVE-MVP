@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" viewBox="0 0 200 80">
+  <style>
+    .text { font-family: Arial, sans-serif; font-weight: bold; }
+    .dive { fill: #003366; }
+    .number { fill: #ff9900; }
+  </style>
+  <rect width="200" height="80" fill="#ffffff" rx="10" ry="10" />
+  <text x="30" y="50" class="text dive" font-size="36">DIVE</text>
+  <text x="120" y="50" class="text number" font-size="36">25</text>
+  <path d="M20,60 L180,60" stroke="#0066cc" stroke-width="3" />
+</svg> 

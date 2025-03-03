@@ -1,0 +1,27 @@
+_format_version: "2.1"
+_transform: true
+
+services:
+  - name: dive25-api
+    url: http://api:3000
+    routes:
+      - name: ldap-auth-route
+        paths:
+          - /api/v1/secured
+    plugins:
+      - name: ldap-auth
+        config:
+          ldap_host: openldap
+          ldap_port: 389
+          base_dn: ou=users,dc=dive25,dc=local
+          attribute: uid
+          cache_ttl: 60
+          header_type: ldap
+          keepalive: 60000
+          timeout: 10000
+          start_tls: false
+          verify_ldap_host: false
+
+consumers:
+  - username: ldap-user
+    custom_id: ldap-auth 

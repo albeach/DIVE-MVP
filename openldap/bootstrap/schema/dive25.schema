@@ -1,0 +1,28 @@
+# DIVE25 Custom Schema
+# Custom object classes and attributes for DIVE25 application
+
+# Attribute definitions
+attributetype ( 1.3.6.1.4.1.99999.1.1.1 NAME 'clearanceLevel'
+    DESC 'Security clearance level'
+    EQUALITY caseIgnoreMatch
+    SUBSTR caseIgnoreSubstringsMatch
+    SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{64} )
+
+attributetype ( 1.3.6.1.4.1.99999.1.1.2 NAME 'countryCode'
+    DESC 'Country code for security access'
+    EQUALITY caseIgnoreMatch
+    SUBSTR caseIgnoreSubstringsMatch
+    SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{16} )
+
+attributetype ( 1.3.6.1.4.1.99999.1.1.3 NAME 'dive25Role'
+    DESC 'DIVE25 application role'
+    EQUALITY caseIgnoreMatch
+    SUBSTR caseIgnoreSubstringsMatch
+    SYNTAX 1.3.6.1.4.1.1466.115.121.1.15{32} )
+
+# Object class for DIVE25 users
+objectclass ( 1.3.6.1.4.1.99999.2.1.1 NAME 'dive25Person'
+    DESC 'DIVE25 custom user attributes'
+    SUP inetOrgPerson
+    AUXILIARY
+    MAY ( clearanceLevel $ countryCode $ dive25Role ) )

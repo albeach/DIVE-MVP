@@ -1,150 +1,110 @@
-_format_version: "2.1"
+_format_version: "3.0"
 _transform: true
-
-# Global plugins (applied to all services)
-plugins:
-  - name: request-transformer
-    config:
-      add:
-        headers:
-          - "X-Forwarded-Proto:https"
-  - name: cors
-    config:
-      origins:
-        - "https://dive25.local"
-        - "https://*.dive25.local"
-        - "https://dive25.com"
-        - "https://*.dive25.com"
-      methods:
-        - GET
-        - POST
-        - PUT
-        - DELETE
-        - OPTIONS
-      headers:
-        - Accept
-        - Accept-Version
-        - Content-Length
-        - Content-MD5
-        - Content-Type
-        - Date
-        - X-Auth-Token
-        - Authorization
-      credentials: true
-      max_age: 3600
-      preflight_continue: false
-  - name: rate-limiting
-    config:
-      minute: 60
-      hour: 1000
-      policy: local
-      hide_client_headers: false
-  - name: response-transformer
-    config:
-      add:
-        headers:
-          - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
-          - "X-Content-Type-Options:nosniff"
-          - "X-XSS-Protection:1; mode=block"
-          - "X-Frame-Options:SAMEORIGIN"
-          - "Content-Security-Policy:default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.dive25.local https://*.dive25.com; frame-ancestors 'self'"
 
 services:
   # Frontend Service
   - name: frontend-service
-    url: http://dive25-frontend:3000
+    url: http://frontend:3000
     routes:
       - name: frontend-route
         hosts:
           - dive25.local
           - frontend.dive25.local
-          - dive25.com 
-          - www.dive25.com
-        paths:
-          - /
-        strip_path: false
-        preserve_host: true
         protocols:
           - http
           - https
     plugins:
-      - name: redirect
+      - name: oidc-auth
         config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
-        protocols:
-          - http
+          client_id: dive25-frontend
+          client_secret: change-me-in-production
+          discovery: https://keycloak.dive25.local/auth/realms/dive25/.well-known/openid-configuration
+          introspection_endpoint: https://keycloak.dive25.local/auth/realms/dive25/protocol/openid-connect/token/introspect
+          bearer_only: false
+          realm: dive25
+          redirect_uri_path: /callback
+          logout_path: /logout
+          redirect_after_logout_uri: /
+          ssl_verify: false
+          session_secret: change_me_in_production
   
   # API Service
   - name: api-service
-    url: http://dive25-api:3000
+    url: http://api:3000
     routes:
       - name: api-route
         hosts:
           - api.dive25.local
-          - api.dive25.com
-        paths:
-          - /
-          - /api
-          - /api/v1
-          - /health
-          - /health/live
-          - /health/ready
-          - /metrics
-        strip_path: false
-        preserve_host: true
         protocols:
           - http
           - https
     plugins:
-      - name: redirect
+      - name: oidc-auth
         config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
-        protocols:
-          - http
-      - name: ip-restriction
-        config:
-          whitelist:
-            - 127.0.0.1/32
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-          message: "Access denied by IP restriction policy"
+          client_id: dive25-api
+          client_secret: change-me-in-production
+          discovery: https://keycloak.dive25.local/auth/realms/dive25/.well-known/openid-configuration
+          introspection_endpoint: https://keycloak.dive25.local/auth/realms/dive25/protocol/openid-connect/token/introspect
+          bearer_only: true
+          realm: dive25
+          ssl_verify: false
   
   # Keycloak Service
   - name: keycloak-service
-    url: http://dive25-keycloak:8080
+    url: http://keycloak:8080
     routes:
       - name: keycloak-route
         hosts:
           - keycloak.dive25.local
           - keycloak.dive25.com
+        paths:
+          - /auth
         protocols:
           - http
           - https
+        strip_path: false
+      - name: keycloak-resources-route
+        hosts:
+          - keycloak.dive25.local
+          - keycloak.dive25.com
+        paths:
+          - /resources
+          - /auth/resources
+        protocols:
+          - http
+          - https
+        strip_path: false
     plugins:
+      - name: header-modifier
+        config:
+          remove:
+            response:
+              headers:
+                - Content-Security-Policy
+                - X-Frame-Options
+          replace:
+            response:
+              headers:
+                Content-Security-Policy: "frame-ancestors 'self' https://dive25.local https://frontend.dive25.local https://*.dive25.local"
       - name: redirect
         config:
           status_code: 301
           location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
+          keep_incoming_path: true
         protocols:
           - http
       - name: ip-restriction
         config:
-          whitelist:
+          allow:
             - 127.0.0.1/32
             - 10.0.0.0/8
             - 172.16.0.0/12
             - 192.168.0.0/16
           message: "Access denied by IP restriction policy"
   
-  # MongoDB Express Service (only in development)
+  # MongoDB Express Service
   - name: mongo-express-service
-    url: http://dive25-mongo-express:8081
+    url: http://mongo-express:8081
     routes:
       - name: mongo-express-route
         hosts:
@@ -152,102 +112,68 @@ services:
         protocols:
           - http
           - https
-    plugins:
-      - name: redirect
-        config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
-        protocols:
-          - http
-      - name: ip-restriction
-        config:
-          whitelist:
-            - 127.0.0.1/32
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-          message: "Access denied by IP restriction policy"
   
   # Grafana Service
   - name: grafana-service
-    url: http://dive25-grafana:3000
+    url: http://grafana:3000
     routes:
       - name: grafana-route
         hosts:
           - grafana.dive25.local
-          - grafana.dive25.com
         protocols:
           - http
           - https
-    plugins:
-      - name: redirect
-        config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
-        protocols:
-          - http
-      - name: ip-restriction
-        config:
-          whitelist:
-            - 127.0.0.1/32
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-          message: "Access denied by IP restriction policy"
   
   # Prometheus Service
   - name: prometheus-service
-    url: http://dive25-prometheus:9090
+    url: http://prometheus:9090
     routes:
       - name: prometheus-route
         hosts:
           - prometheus.dive25.local
-          - prometheus.dive25.com
         protocols:
           - http
           - https
-    plugins:
-      - name: redirect
-        config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
-        protocols:
-          - http
-      - name: ip-restriction
-        config:
-          whitelist:
-            - 127.0.0.1/32
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-          message: "Access denied by IP restriction policy"
   
-  # OPA Service (only internal access)
-  - name: opa-service
-    url: http://dive25-opa:8181
+  # phpLDAPadmin Service
+  - name: phpldapadmin-service
+    url: http://phpldapadmin:80
     routes:
-      - name: opa-route
+      - name: phpldapadmin-route
         hosts:
-          - opa.dive25.local
+          - phpldapadmin.dive25.local
         protocols:
           - http
           - https
-    plugins:
-      - name: redirect
-        config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          preserve_query_string: true
+  
+  # Kong Admin Service (exposed via subdomain)
+  - name: kong-admin-service
+    url: http://kong:8001
+    routes:
+      - name: kong-admin-route
+        hosts:
+          - kong.dive25.local
         protocols:
           - http
-      - name: ip-restriction
-        config:
-          whitelist:
-            - 127.0.0.1/32
-            - 10.0.0.0/8
-            - 172.16.0.0/12
-            - 192.168.0.0/16
-          message: "Access denied by IP restriction policy"
+          - https
+  
+  # Konga Service
+  - name: konga-service
+    url: http://konga:1337
+    routes:
+      - name: konga-route
+        hosts:
+          - konga.dive25.local
+        protocols:
+          - http
+          - https
+
+# Redirects from HTTP to HTTPS
+plugins:
+  - name: redirect
+    config:
+      status_code: 301
+      https_port: 8443
+    enabled: true
+    protocols:
+      - http

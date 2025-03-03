@@ -13,6 +13,13 @@ const { setupPrometheusMetrics } = require('./utils/metrics');
 const { checkHealth, checkLiveness } = require('./utils/healthcheck');
 const swagger = require('./swagger');
 
+// Import routes
+const authRoutes = require('./routes/auth.routes');
+const userRoutes = require('./routes/user.routes');
+const documentRoutes = require('./routes/document.routes');
+const healthRoutes = require('./routes/health.routes');
+const ldapRoutes = require('./routes/ldap.routes');
+
 // Initialize express app
 const app = express();
 
@@ -72,6 +79,13 @@ setupPrometheusMetrics(app);
 
 // Apply API routes
 app.use('/api/v1', routes);
+
+// Register routes
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/documents', documentRoutes);
+app.use('/health', healthRoutes);
+app.use('/api/v1/ldap', ldapRoutes);
 
 // Serve Swagger UI
 swagger.serve(app);

@@ -1,0 +1,70 @@
+# Sample Users
+dn: uid=admin,ou=users,dc=dive25,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: admin
+cn: Administrator
+sn: Admin
+givenName: DIVE25
+displayName: DIVE25 Administrator
+uidNumber: 10000
+gidNumber: 10000
+userPassword: {SSHA}YLg8pz30S7s1XxRxkpZnNXFNay1KSFRyOHc9PQ==
+loginShell: /bin/bash
+homeDirectory: /home/admin
+mail: admin@dive25.local
+description: DIVE25 Administrator account
+
+dn: uid=user1,ou=users,dc=dive25,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: user1
+cn: User One
+sn: One
+givenName: User
+displayName: User One
+uidNumber: 10001
+gidNumber: 10001
+userPassword: {SSHA}YLg8pz30S7s1XxRxkpZnNXFNay1KSFRyOHc9PQ==
+loginShell: /bin/bash
+homeDirectory: /home/user1
+mail: user1@dive25.local
+description: Regular user account
+
+dn: uid=user2,ou=users,dc=dive25,dc=local
+objectClass: inetOrgPerson
+objectClass: posixAccount
+objectClass: shadowAccount
+uid: user2
+cn: User Two
+sn: Two
+givenName: User
+displayName: User Two
+uidNumber: 10002
+gidNumber: 10002
+userPassword: {SSHA}YLg8pz30S7s1XxRxkpZnNXFNay1KSFRyOHc9PQ==
+loginShell: /bin/bash
+homeDirectory: /home/user2
+mail: user2@dive25.local
+description: Regular user account
+
+# Role-based Groups
+dn: cn=administrators,ou=groups,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: administrators
+description: DIVE25 Administrators
+member: uid=admin,ou=users,dc=dive25,dc=local
+
+dn: cn=analysts,ou=groups,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: analysts
+description: DIVE25 Analysts
+member: uid=user1,ou=users,dc=dive25,dc=local
+
+dn: cn=researchers,ou=groups,dc=dive25,dc=local
+objectClass: groupOfNames
+cn: researchers
+description: DIVE25 Researchers
+member: uid=user2,ou=users,dc=dive25,dc=local

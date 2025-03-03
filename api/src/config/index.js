@@ -39,6 +39,14 @@ module.exports = {
         bindCredentials: process.env.LDAP_BIND_CREDENTIALS || 'admin',
         searchBase: process.env.LDAP_SEARCH_BASE || 'dc=example,dc=com',
         userSearchFilter: process.env.LDAP_USER_SEARCH_FILTER || '(uid={{username}})',
+        userSearchAttributes: process.env.LDAP_USER_SEARCH_ATTRIBUTES ?
+            process.env.LDAP_USER_SEARCH_ATTRIBUTES.split(',') :
+            ['uid', 'cn', 'mail', 'givenName', 'sn', 'o', 'countryOfAffiliation', 'clearance', 'caveats', 'coi'],
+        groupSearchBase: process.env.LDAP_GROUP_SEARCH_BASE || 'ou=groups,dc=example,dc=com',
+        groupSearchFilter: process.env.LDAP_GROUP_SEARCH_FILTER || '(member={{dn}})',
+        groupSearchAttributes: process.env.LDAP_GROUP_SEARCH_ATTRIBUTES ?
+            process.env.LDAP_GROUP_SEARCH_ATTRIBUTES.split(',') :
+            ['cn', 'description'],
     },
 
     cors: {

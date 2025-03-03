@@ -1,4 +1,4 @@
-const { createLdapClient, bindLdapClient, searchBase, userSearchFilter } = require('../config/ldap.config');
+const { createLdapClient, bindLdapClient, searchBase, userSearchFilter, userSearchAttributes, groupSearchBase, groupSearchFilter, groupSearchAttributes } = require('../config/ldap.config');
 const logger = require('../utils/logger');
 const { ApiError } = require('../utils/error.utils');
 
@@ -16,7 +16,7 @@ const searchUser = async (username) => {
         const searchOptions = {
             scope: 'sub',
             filter: userSearchFilter.replace('{{username}}', username),
-            attributes: ['uid', 'cn', 'mail', 'givenName', 'sn', 'o', 'countryOfAffiliation', 'clearance', 'caveats', 'coi']
+            attributes: userSearchAttributes
         };
 
         return new Promise((resolve, reject) => {
@@ -75,7 +75,7 @@ const getAllUsers = async (page = 1, limit = 10) => {
         const searchOptions = {
             scope: 'sub',
             filter: '(objectClass=person)',
-            attributes: ['uid', 'cn', 'mail', 'givenName', 'sn', 'o', 'countryOfAffiliation', 'clearance', 'caveats', 'coi'],
+            attributes: userSearchAttributes,
             sizeLimit: 0
         };
 
@@ -130,7 +130,89 @@ const getAllUsers = async (page = 1, limit = 10) => {
     }
 };
 
+/**
+ * Get user's groups from LDAP
+ * @param {string} userDN - User's Distinguished Name
+ * @returns {Promise<Array>} List of groups
+ */
+const getUserGroups = async (userDN) => {
+    const client = createLdapClient();
+
+    try {
+        await bindLdapClient(client);
+
+        const searchOptions = {
+            scope: 'sub',
+            filter: groupSearchFilter.replace('{{dn}}', userDN),
+            attributes: groupSearchAttributes
+        };
+
+        return new Promise((resolve, reject) => {
+            client.search(groupSearchBase, searchOptions, (err, res) => {
+                if (err) {
+                    logger.error('LDAP group search error:', err);
+                    return reject(new ApiError('LDAP group search failed', 500));
+                }
+
+                const groups = [];
+
+                res.on('searchEntry', (entry) => {
+                    groups.push(entry.object);
+                });
+
+                res.on('error', (err) => {
+                    logger.error('LDAP group search result error:', err);
+                    reject(new ApiError('LDAP group search failed', 500));
+                });
+
+                res.on('end', (result) => {
+                    if (result.status !== 0) {
+                        logger.error('LDAP group search ended with non-zero status:', result.status);
+                        return reject(new ApiError('LDAP group search failed', 500));
+                    }
+
+                    client.unbind();
+                    resolve(groups);
+                });
+            });
+        });
+    } catch (error) {
+        client.unbind();
+        logger.error('LDAP group search error:', error);
+        throw error;
+    }
+};
+
+/**
+ * Get user with groups
+ * @param {string} username - Username to search for
+ * @returns {Promise<Object>} User with groups
+ */
+const getUserWithGroups = async (username) => {
+    try {
+        const user = await searchUser(username);
+
+        if (user && user.dn) {
+            const groups = await getUserGroups(user.dn);
+            return {
+                ...user,
+                groups: groups.map(group => ({
+                    cn: group.cn,
+                    description: group.description
+                }))
+            };
+        }
+
+        return user;
+    } catch (error) {
+        logger.error('Error getting user with groups:', error);
+        throw error;
+    }
+};
+
 module.exports = {
     searchUser,
-    getAllUsers
+    getAllUsers,
+    getUserGroups,
+    getUserWithGroups
 };

@@ -1,6 +1,7 @@
 // frontend/src/pages/_app.tsx
 import React from 'react';
 import '@/styles/globals.css';
+import '@/styles/keycloak-theme.css';
 import { AppProps } from 'next/app';
 import { useRouter } from 'next/router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

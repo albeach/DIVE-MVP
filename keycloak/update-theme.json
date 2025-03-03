@@ -1,6 +1,1 @@
-{
-    "loginTheme": "dive25",
-    "accountTheme": "dive25",
-    "adminTheme": "dive25",
-    "emailTheme": "dive25"
-}
+{"login": true,"welcome": true,"admin": true,"account": true}

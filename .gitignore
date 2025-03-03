@@ -86,3 +86,6 @@ build/
 *.old
 merge-repo.js
 certs/
+frontend/.next/*
+frontend/node_modules/
+frontend/dist/

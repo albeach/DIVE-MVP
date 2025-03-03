@@ -44,4 +44,8 @@ module.exports = {
     bindLdapClient,
     searchBase: config.ldap.searchBase,
     userSearchFilter: config.ldap.userSearchFilter,
+    userSearchAttributes: config.ldap.userSearchAttributes,
+    groupSearchBase: config.ldap.groupSearchBase,
+    groupSearchFilter: config.ldap.groupSearchFilter,
+    groupSearchAttributes: config.ldap.groupSearchAttributes
 };

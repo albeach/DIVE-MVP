@@ -1,0 +1,40 @@
+# Define the base structure for dive25.local
+# Organization
+dn: dc=dive25,dc=local
+objectClass: dcObject
+objectClass: organization
+dc: dive25
+o: DIVE25
+description: DIVE25 Organization Root
+
+# Create Organizational Units
+dn: ou=users,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: users
+description: DIVE25 Users
+
+dn: ou=groups,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: groups
+description: DIVE25 Groups
+
+dn: ou=roles,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: roles
+description: DIVE25 Roles
+
+# Create security-related Organizational Units
+dn: ou=security,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: security
+description: Security-related information
+
+dn: ou=clearances,ou=security,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: clearances
+description: Security clearance levels
+
+dn: ou=countries,ou=security,dc=dive25,dc=local
+objectClass: organizationalUnit
+ou: countries
+description: Country access codes

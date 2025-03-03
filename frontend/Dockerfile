@@ -43,6 +43,9 @@ WORKDIR /app
 # Set environment to production
 ENV NODE_ENV=production
 
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
 # Add non-root user for security
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs

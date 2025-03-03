@@ -79,13 +79,13 @@ services:
       KC_HTTP_RELATIVE_PATH: /auth
       KC_FEATURES: admin-api,impersonation,import-realm
       KC_SPI_CONTENT_SECURITY_POLICY_ENABLED: "true"
-      KC_SPI_CONTENT_SECURITY_POLICY_FRAME_ANCESTORS: "'self' * http://* https://*"
-      KC_SPI_CONTENT_SECURITY_POLICY_FRAME_SRC: "'self' * http://* https://*"
+      KC_SPI_CONTENT_SECURITY_POLICY_FRAME_ANCESTORS: "'self' https://dive25.local https://frontend.dive25.local"
+      KC_SPI_CONTENT_SECURITY_POLICY_FRAME_SRC: "'self' https://dive25.local https://frontend.dive25.local"
       KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI: "true"
       KC_PROXY: edge
       KC_HTTP_ENABLED: "true"
-      KC_HOSTNAME_URL: "https://keycloak.dive25.local"
-      KC_HOSTNAME_ADMIN_URL: "https://keycloak.dive25.local"
+      KC_HOSTNAME: "keycloak"
+      KC_HOSTNAME_ADMIN: "keycloak"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "false"
       KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_SUPPRESS_LOGOUT_CONFIRMATION_SCREEN: "true"
@@ -93,6 +93,10 @@ services:
       KC_HTTP_CORS: "true"
       KC_HTTP_CORS_ALLOWED_ORIGINS: "*"
       KC_HTTP_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
+      KC_HOSTNAME_PORT: "8080"
+      KC_HOSTNAME_PORT_HTTPS: "8080"
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_OVERRIDE_WELL_KNOWN: "true"
+      KC_HOSTNAME_PATH: "/auth"
     volumes:
       - keycloak_data:/opt/keycloak/data
     ports:
@@ -144,6 +148,8 @@ services:
       LDAP_READONLY_USER_PASSWORD: ${LDAP_READONLY_PASSWORD:-readonly_password}
       LDAP_TLS: "false"
       LDAP_SKIP_DEFAULT_BOOTSTRAP: "false"
+      LDAP_REPLICATION: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
     volumes:
       - ldap_data:/var/lib/ldap
       - ldap_config:/etc/ldap/slapd.d
@@ -231,7 +237,9 @@ services:
       - dive25-network
 
   kong:
-    image: kong:latest
+    build:
+      context: ./kong
+      dockerfile: Dockerfile
     container_name: dive25-kong
     restart: unless-stopped
     environment:
@@ -248,12 +256,19 @@ services:
       KONG_SSL_CERT: /etc/kong/certs/dive25-cert.pem
       KONG_SSL_CERT_KEY: /etc/kong/certs/dive25-key.pem
       KONG_DECLARATIVE_CONFIG: /etc/kong/kong.yml
+      KONG_PLUGINS: bundled,ldap-auth,oidc-auth
+      KONG_LOG_LEVEL: info
     volumes:
       - ./kong/kong.yml:/etc/kong/kong.yml:ro
+      - ./kong/kong.ldap.yml:/etc/kong/ldap/kong.ldap.yml:ro
+      - ./kong/configure-ldap.sh:/etc/kong/ldap/configure-ldap.sh:ro
+      - ./kong/configure-oidc.sh:/usr/local/bin/configure-oidc.sh:ro
       - ./kong/certs:/etc/kong/certs:ro
+      - ./kong/custom_plugins/oidc-auth:/usr/local/share/lua/5.1/kong/plugins/oidc-auth:ro
     depends_on:
       - kong-database
       - kong-migrations
+      - openldap
     ports:
       - "80:8000"
       - "443:8443"
@@ -267,6 +282,42 @@ services:
       timeout: 10s
       retries: 10
       start_period: 10s
+
+  # Kong LDAP Configuration
+  kong-ldap-config:
+    image: curlimages/curl:latest
+    container_name: dive25-kong-ldap-config
+    depends_on:
+      kong:
+        condition: service_healthy
+      openldap:
+        condition: service_healthy
+    volumes:
+      - ./kong/configure-ldap.sh:/configure-ldap.sh:ro
+      - ./kong/kong.ldap.yml:/etc/kong/ldap/kong.ldap.yml:ro
+    environment:
+      - KONG_ADMIN_URL=http://kong:8001
+    entrypoint: ["/bin/sh", "/configure-ldap.sh"]
+    networks:
+      - dive25-network
+
+  # Kong OIDC Configuration
+  kong-oidc-config:
+    image: curlimages/curl:latest
+    container_name: dive25-kong-oidc-config
+    depends_on:
+      kong:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./kong/configure-oidc.sh:/configure-oidc.sh:ro
+    environment:
+      - KONG_ADMIN_URL=http://kong:8001
+      - KEYCLOAK_URL=http://keycloak:8080
+    entrypoint: ["/bin/sh", "/configure-oidc.sh"]
+    networks:
+      - dive25-network
 
   # Kong Admin UI
   konga:
@@ -417,7 +468,7 @@ services:
     networks:
       - dive25-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health/live"]
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000', res => res.statusCode === 200 ? process.exit(0) : process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -444,7 +495,7 @@ services:
     networks:
       - dive25-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 30s
       timeout: 10s
       retries: 3
