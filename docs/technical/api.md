@@ -647,11 +647,11 @@ See the [client libraries documentation](./client-libraries.md) for usage detail
 
 ## API Changelog
 
-### v1.0.0 (2023-03-01)
+### v1.0.0 (2025-02-13)
 
 - Initial API release
 
-### v1.1.0 (2023-04-15)
+### v1.1.0 (2025-03-02)
 
 - Added document version history endpoints
 - Added bulk document operations
