@@ -1,0 +1,587 @@
+name: DIVE25 Enhanced CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop, feature/*, release/*]
+  pull_request:
+    branches: [main, develop]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly security scans on Sunday at midnight
+
+env:
+  NODE_VERSION: '18.x'
+  REGISTRY: ghcr.io
+  REGISTRY_USERNAME: ${{ github.actor }}
+  REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/dive25
+
+jobs:
+  lint:
+    name: Lint Code
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        component: [frontend, api]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd ${{ matrix.component }}
+          npm ci
+
+      - name: Run linters
+        run: |
+          cd ${{ matrix.component }}
+          npm run lint
+
+      - name: Run Prettier check
+        run: |
+          cd ${{ matrix.component }}
+          npm run format:check
+
+  docs-lint:
+    name: Check Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Check Markdown links
+        uses: gaurav-nelson/github-action-markdown-link-check@v1
+        with:
+          use-quiet-mode: 'yes'
+          folder-path: 'docs/'
+
+      - name: Check spelling
+        uses: crate-ci/typos@master
+        with:
+          files: ./docs/
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Run dependency scanning
+        uses: snyk/actions/node@master
+        with:
+          args: --all-projects
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+
+      - name: Run container scanning
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Run SAST scanning
+        uses: github/codeql-action/init@v2
+        with:
+          languages: javascript, typescript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  unit-test:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: [lint]
+    strategy:
+      matrix:
+        component: [frontend, api]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.component }}/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd ${{ matrix.component }}
+          npm ci
+
+      - name: Run unit tests with coverage
+        run: |
+          cd ${{ matrix.component }}
+          npm run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          directory: ${{ matrix.component }}/coverage
+          flags: ${{ matrix.component }}-unit
+          name: ${{ matrix.component }}-unit-coverage
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ matrix.component }}-unit-test-results
+          path: ${{ matrix.component }}/test-results
+
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    services:
+      mongodb:
+        image: mongo:6.0
+        ports:
+          - 27017:27017
+        env:
+          MONGO_INITDB_ROOT_USERNAME: admin
+          MONGO_INITDB_ROOT_PASSWORD: admin_password
+      openldap:
+        image: osixia/openldap:latest
+        ports:
+          - 389:389
+          - 636:636
+        env:
+          LDAP_ORGANISATION: "DIVE25"
+          LDAP_DOMAIN: "dive25.local"
+          LDAP_ADMIN_PASSWORD: "admin_password"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: api/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd api
+          npm ci
+
+      - name: Run integration tests
+        run: |
+          cd api
+          npm run test:integration
+        env:
+          MONGODB_URI: mongodb://admin:admin_password@localhost:27017/dive25_test?authSource=admin
+          LDAP_URL: ldap://localhost:389
+          LDAP_BIND_DN: cn=admin,dc=dive25,dc=local
+          LDAP_BIND_CREDENTIALS: admin_password
+          LDAP_SEARCH_BASE: dc=dive25,dc=local
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          directory: api/coverage
+          flags: api-integration
+          name: api-integration-coverage
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: api-integration-test-results
+          path: api/test-results
+
+  e2e-test:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: e2e/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd e2e
+          npm ci
+
+      - name: Start services with Docker Compose
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+
+      - name: Wait for services to be ready
+        run: |
+          ./scripts/wait-for-services.sh
+
+      - name: Install Playwright browsers
+        run: |
+          cd e2e
+          npx playwright install --with-deps
+
+      - name: Run E2E tests
+        run: |
+          cd e2e
+          npm run test:e2e
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-test-results
+          path: e2e/test-results
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v3
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+        if: always()
+
+      - name: Stop Docker Compose services
+        run: |
+          docker-compose -f docker-compose.test.yml down
+        if: always()
+
+  accessibility-test:
+    name: Accessibility Tests
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Run accessibility tests
+        run: |
+          cd frontend
+          npm run test:a11y
+
+      - name: Upload accessibility test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: a11y-test-results
+          path: frontend/a11y-test-results
+
+  performance-test:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    needs: [unit-test]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: performance/package-lock.json
+
+      - name: Install k6
+        run: |
+          sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69
+          echo "deb https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update
+          sudo apt-get install k6
+
+      - name: Start test environment
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+
+      - name: Wait for services to be ready
+        run: |
+          ./scripts/wait-for-services.sh
+
+      - name: Run performance tests
+        run: |
+          cd performance
+          k6 run scripts/api-load-test.js
+
+      - name: Upload performance test results
+        uses: actions/upload-artifact@v3
+        with:
+          name: performance-test-results
+          path: performance/results
+
+      - name: Stop Docker Compose services
+        run: |
+          docker-compose -f docker-compose.test.yml down
+        if: always()
+
+  build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: [security-scan, integration-test, e2e-test, accessibility-test, performance-test]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop' || startsWith(github.ref, 'refs/heads/release/'))
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ env.REGISTRY_USERNAME }}
+          password: ${{ env.REGISTRY_PASSWORD }}
+
+      - name: Extract metadata for API
+        id: meta-api
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/api
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=semver,pattern={{version}},event=tag
+
+      - name: Build and push API image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./api
+          push: true
+          tags: ${{ steps.meta-api.outputs.tags }}
+          labels: ${{ steps.meta-api.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+
+      - name: Extract metadata for Frontend
+        id: meta-frontend
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.IMAGE_PREFIX }}/frontend
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
+            type=semver,pattern={{version}},event=tag
+
+      - name: Build and push Frontend image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./frontend
+          push: true
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            NODE_ENV=production
+
+  deploy-dev:
+    name: Deploy to Development
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/develop'
+    environment: development
+    concurrency: deployment-dev
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Install Kustomize
+        uses: imranismail/setup-kustomize@v1
+        with:
+          kustomize-version: "4.5.7"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update Kustomize images
+        run: |
+          cd k8s/environments/development
+          kustomize edit set image ghcr.io/dive25/api=${{ env.IMAGE_PREFIX }}/api:sha-${{ github.sha }}
+          kustomize edit set image ghcr.io/dive25/frontend=${{ env.IMAGE_PREFIX }}/frontend:sha-${{ github.sha }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kustomize build k8s/environments/development | kubectl apply -f -
+          kubectl rollout status deployment/dev-dive25-api -n dive25-dev --timeout=180s
+          kubectl rollout status deployment/dev-dive25-frontend -n dive25-dev --timeout=180s
+
+      - name: Run post-deployment tests
+        run: |
+          ./scripts/post-deployment-test.sh dev
+        env:
+          API_URL: https://api-dev.dive25.example.com
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: startsWith(github.ref, 'refs/heads/release/')
+    environment: staging
+    concurrency: deployment-staging
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Install Kustomize
+        uses: imranismail/setup-kustomize@v1
+        with:
+          kustomize-version: "4.5.7"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update Kustomize images
+        run: |
+          cd k8s/environments/staging
+          kustomize edit set image ghcr.io/dive25/api=${{ env.IMAGE_PREFIX }}/api:sha-${{ github.sha }}
+          kustomize edit set image ghcr.io/dive25/frontend=${{ env.IMAGE_PREFIX }}/frontend:sha-${{ github.sha }}
+
+      - name: Deploy to Kubernetes
+        run: |
+          kustomize build k8s/environments/staging | kubectl apply -f -
+          kubectl rollout status deployment/staging-dive25-api -n dive25-staging --timeout=180s
+          kubectl rollout status deployment/staging-dive25-frontend -n dive25-staging --timeout=180s
+
+      - name: Run post-deployment tests
+        run: |
+          ./scripts/post-deployment-test.sh staging
+        env:
+          API_URL: https://api-staging.dive25.example.com
+
+      - name: Run user acceptance tests
+        run: |
+          cd e2e
+          npm ci
+          npx playwright install --with-deps
+          npm run test:uat
+        env:
+          BASE_URL: https://staging.dive25.example.com
+
+  deploy-prod:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    concurrency: deployment-prod
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install Kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Install Kustomize
+        uses: imranismail/setup-kustomize@v1
+        with:
+          kustomize-version: "4.5.7"
+
+      - name: Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Update Kustomize images
+        run: |
+          cd k8s/environments/production
+          kustomize edit set image ghcr.io/dive25/api=${{ env.IMAGE_PREFIX }}/api:sha-${{ github.sha }}
+          kustomize edit set image ghcr.io/dive25/frontend=${{ env.IMAGE_PREFIX }}/frontend:sha-${{ github.sha }}
+
+      - name: Deploy to Kubernetes (Canary)
+        run: |
+          cd k8s/environments/production
+          # Create canary deployment with 10% traffic
+          kustomize edit set replicas dive25-api-canary=1
+          kustomize edit set replicas dive25-frontend-canary=1
+          kustomize build . | kubectl apply -f -
+
+      - name: Wait for canary deployment to stabilize
+        run: |
+          kubectl rollout status deployment/canary-dive25-api -n dive25-prod --timeout=180s
+          kubectl rollout status deployment/canary-dive25-frontend -n dive25-prod --timeout=180s
+
+      - name: Run smoke tests on canary
+        run: |
+          ./scripts/smoke-test.sh production canary
+        env:
+          API_URL: https://api.dive25.example.com
+
+      - name: Promote canary to full deployment
+        run: |
+          cd k8s/environments/production
+          # Update main deployment to use new image
+          kustomize edit set replicas dive25-api=3
+          kustomize edit set replicas dive25-frontend=3
+          kustomize build . | kubectl apply -f -
+
+      - name: Wait for main deployment to stabilize
+        run: |
+          kubectl rollout status deployment/prod-dive25-api -n dive25-prod --timeout=180s
+          kubectl rollout status deployment/prod-dive25-frontend -n dive25-prod --timeout=180s
+
+      - name: Remove canary deployment
+        run: |
+          cd k8s/environments/production
+          kustomize edit set replicas dive25-api-canary=0
+          kustomize edit set replicas dive25-frontend-canary=0
+          kustomize build . | kubectl apply -f -
+
+  notify:
+    name: Send Notification
+    runs-on: ubuntu-latest
+    needs: [deploy-dev, deploy-staging, deploy-prod]
+    if: always()
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always() 

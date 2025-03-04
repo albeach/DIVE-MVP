@@ -1,0 +1,25 @@
+{
+    "name": "dive25-e2e-tests",
+    "version": "1.0.0",
+    "description": "End-to-end tests for DIVE25 Document Access System",
+    "main": "index.js",
+    "scripts": {
+        "test:e2e": "playwright test",
+        "test:e2e:ui": "playwright test --ui",
+        "test:e2e:debug": "playwright test --debug",
+        "test:uat": "playwright test --grep @uat",
+        "report": "playwright show-report"
+    },
+    "keywords": [
+        "dive25",
+        "e2e",
+        "testing",
+        "playwright"
+    ],
+    "author": "",
+    "license": "ISC",
+    "devDependencies": {
+        "@playwright/test": "^1.36.0",
+        "@types/node": "^20.3.2"
+    }
+}

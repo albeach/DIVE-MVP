@@ -1,145 +1,63 @@
 # DIVE25 Document Access System Documentation
 
-## Overview
+Welcome to the comprehensive documentation for the DIVE25 Document Access System. This collection of documents provides detailed information about the system architecture, deployment procedures, user guides, and technical specifications.
 
-The DIVE25 Document Access System is a secure, federated document access system designed for NATO partner nations. It provides secure access to classified documents with proper authentication and authorization controls based on NATO security standards.
+## 1. System Architecture
 
-The system implements a modern microservices architecture with:
+* [System Overview](architecture/overview.md) - High-level overview of the system architecture
+* [Component Diagram](architecture/components.md) - Detailed breakdown of system components
+* [Data Flow](architecture/dataflow.md) - Information on how data moves through the system
+* [Security Architecture](architecture/security.md) - Details on security implementation
 
-- Authentication via Keycloak (supporting federation with external Identity Providers)
-- Directory services through OpenLDAP for user attribute management
-- MongoDB for document metadata storage
-- Open Policy Agent (OPA) for attribute-based access control (ABAC)
-- Kong API Gateway for API management and security
-- Full monitoring stack with Prometheus and Grafana
-- Modern React-based frontend (Next.js) with responsive design
-- RESTful Node.js backend API
+## 2. Deployment
 
-## Getting Started
+* [Installation Guide](deployment/installation.md) - Instructions for installing the system
+* [Configuration Guide](deployment/configuration.md) - System configuration options
+* [Environment Setup](deployment/environment.md) - Setting up required environment variables
+* [CI/CD Pipeline](deployment/ci-cd.md) - Continuous Integration and Deployment pipeline documentation
+* [Kubernetes Deployment](deployment/kubernetes.md) - Deploying on Kubernetes
 
-### For New Users
+## 3. User Documentation
 
-1. [System Overview](architecture/overview.md) - Understand the system components
-2. [Installation Guide](deployment/installation.md) - Set up your local environment
-3. [User Guide](user/guide.md) - Learn how to use the system
+* [User Guide](user/guide.md) - Comprehensive guide for end users
+* [Administrative Guide](user/admin.md) - Guide for system administrators
+* [Troubleshooting](user/troubleshooting.md) - Common issues and their solutions
 
-### For Developers
+## 4. Technical Documentation
 
-1. [Development Setup](deployment/development.md) - Set up your development environment
-2. [API Documentation](technical/api.md) - Understand the API interfaces
-3. [Coding Standards](development/standards.md) - Follow our coding conventions
+* [API Documentation](technical/api.md) - Complete API reference
+* [Database Schema](technical/database.md) - Database structure and relationships
+* [Authentication](technical/authentication.md) - Authentication mechanisms
+* [Integration Guide](technical/integration.md) - Integrating with other systems
 
-### For System Administrators
+## 5. Developer Documentation
 
-1. [Deployment Guide](deployment/guide.md) - Deploy to production
-2. [Operations Guide](operations/guide.md) - Day-to-day operations
-3. [Security Practices](operations/security.md) - Keep the system secure
+* [Development Setup](developer/setup.md) - Setting up a development environment
+* [Code Standards](developer/standards.md) - Coding standards and practices
+* [Testing Guide](developer/testing.md) - Guidelines for testing
+* [Contributing Guide](developer/contributing.md) - How to contribute to the project
 
-## System Setup Guide
+## 6. Performance and Monitoring
 
-### Prerequisites
+* [Performance Metrics](performance/metrics.md) - Key performance indicators
+* [Monitoring Setup](performance/monitoring.md) - Setting up system monitoring
+* [Scaling Guide](performance/scaling.md) - Guidelines for scaling the system
 
-- Docker and Docker Compose
-- Node.js 18+ and npm/yarn
-- Git
-- (Optional) Kubernetes for production deployment
+## 7. Compliance and Security
 
-### Quick Start with Docker Compose
+* [Security Protocols](compliance/security.md) - Security features and best practices
+* [Compliance Guide](compliance/regulatory.md) - Regulatory compliance information
+* [Audit Logging](compliance/audit.md) - Audit logging capabilities
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/dive25.git
-   cd dive25
-   ```
+## 8. Release Information
 
-2. Configure environment variables:
-   ```bash
-   cp .env.example .env
-   # Edit the .env file with your preferred settings
-   ```
+* [Version History](releases/history.md) - History of system versions
+* [Roadmap](releases/roadmap.md) - Future development plans
+* [Change Log](releases/changelog.md) - Detailed changes between versions
 
-3. Set up local SSL certificates and hostnames:
-   ```bash
-   chmod +x ./scripts/setup-local-dev-certs.sh
-   ./scripts/setup-local-dev-certs.sh
-   ```
+## Getting Help
 
-4. Start the system:
-   ```bash
-   docker-compose up -d
-   ```
+If you can't find the information you need in these documents, please contact:
 
-5. Access the system at:
-   - Main application: https://dive25.local
-   - Backend API: https://api.dive25.local
-   - Keycloak Admin: https://keycloak.dive25.local
-   - MongoDB Admin: https://mongo-express.dive25.local
-   - Grafana Dashboard: https://grafana.dive25.local
-   - Kong Admin (Konga): https://konga.dive25.local
-
-### Configuration Options
-
-The system can be configured through the `.env` file with the following sections:
-
-- MongoDB configuration
-- Keycloak settings
-- API parameters
-- Frontend URLs
-- LDAP directory settings
-- Kong API gateway options
-- Monitoring parameters
-- Storage paths
-
-## Documentation Sections
-
-### Technical Documentation
-
-- [API Documentation](technical/api.md) - RESTful API endpoints and usage
-- [Frontend Documentation](technical/frontend.md) - UI components and state management
-- [Authentication Flow](technical/auth-flow.md) - OAuth2/OIDC implementation details
-- [Database Schema](technical/database-schema.md) - MongoDB collections and relationships
-
-### Architecture
-
-- [System Architecture Overview](architecture/overview.md) - Component interactions
-- [Security Architecture](architecture/security.md) - Security controls and mechanisms
-- [Data Flow](architecture/data-flow.md) - Information flow between components
-- [Integration Points](architecture/integration.md) - External system connections
-
-### Deployment
-
-- [Installation Guide](deployment/installation.md) - Initial system setup
-- [Development Environment](deployment/development.md) - Local development setup
-- [Production Deployment](deployment/production.md) - Production environment configuration
-- [Kubernetes Deployment](deployment/kubernetes.md) - Deployment to Kubernetes
-- [Environment Configuration](deployment/environment-config.md) - Environment variables
-- [Scaling Considerations](deployment/scaling.md) - Horizontal and vertical scaling
-
-### Operations
-
-- [Operations Guide](operations/guide.md) - Day-to-day administrative tasks
-- [Backup and Recovery](operations/backup-recovery.md) - Data protection procedures
-- [Monitoring and Alerting](operations/monitoring.md) - System health monitoring
-- [Security Operations](operations/security.md) - Security maintenance
-- [Troubleshooting](operations/troubleshooting.md) - Common issues and solutions
-- [Upgrades and Patching](operations/upgrades.md) - Keeping the system updated
-
-### User Guides
-
-- [User Guide](user/guide.md) - End-user documentation
-- [Administrator Guide](user/admin-guide.md) - System administration
-- [Document Management](user/document-management.md) - Working with documents
-- [User Management](user/user-management.md) - Managing users and permissions
-
-## Testing
-
-- [Unit Testing](development/unit-testing.md) - Component-level tests
-- [Integration Testing](development/integration-testing.md) - System integration tests
-- [End-to-End Testing](development/e2e-testing.md) - User workflow tests
-- [Security Testing](development/security-testing.md) - Vulnerability assessment
-
-## Contributing
-
-- [Contributing Guidelines](development/contributing.md) - How to contribute
-- [Issue Tracking](development/issue-tracking.md) - Reporting bugs and features
-- [Pull Request Process](development/pull-requests.md) - Code review workflow
+* Technical Support: support@dive25system.com
+* Documentation Team: docs@dive25system.com
