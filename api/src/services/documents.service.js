@@ -135,7 +135,7 @@ const createDocument = async (documentData, file, user) => {
         };
 
         // Validate document data
-        const { error, value } = documentValidationSchema.validate(completeDocumentData);
+        const { error } = documentValidationSchema.validate(completeDocumentData);
         if (error) {
             throw new ApiError(`Invalid document data: ${error.message}`, 400);
         }

@@ -2,7 +2,6 @@ const jwt = require('jsonwebtoken');
 const { keycloakJwksClient } = require('../config/keycloak.config');
 const { User } = require('../models/user.model');
 const { createAuditLog } = require('./audit.service');
-const config = require('../config');
 const logger = require('../utils/logger');
 const { ApiError } = require('../utils/error.utils');
 
@@ -26,9 +25,6 @@ const verifyToken = async (token) => {
         if (!decodedToken) {
             throw new ApiError('Invalid token', 401);
         }
-
-        // Get the key ID from the token header
-        const kid = decodedToken.header.kid;
 
         // Get the public key from Keycloak
         const getKey = (header, callback) => {

@@ -273,8 +273,12 @@ router.post('/authenticate', async (req, res, next) => {
             });
         } catch (error) {
             // Make sure to unbind clients
-            try { adminClient.unbind(); } catch (e) { }
-            try { client.unbind(); } catch (e) { }
+            try { adminClient.unbind(); } catch (e) {
+                // Ignore unbind errors during cleanup
+            }
+            try { client.unbind(); } catch (e) {
+                // Ignore unbind errors during cleanup
+            }
             throw error;
         }
     } catch (error) {

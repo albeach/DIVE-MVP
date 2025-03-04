@@ -37,7 +37,7 @@ const evaluateAccessPolicy = async (input) => {
         const allowed = response.data && response.data.result === true;
 
         // Get explanation if available
-        let explanation = "No explanation available";
+        let explanation = 'No explanation available';
         try {
             const explanationResponse = await opaClient.post('dive25/document_access/explanation', opaInput);
             if (explanationResponse.data && explanationResponse.data.result) {
@@ -106,7 +106,7 @@ const checkDocumentAccess = async (user, document) => {
 const getPolicy = async () => {
     try {
         // Get the policy data from OPA
-        const response = await opaClient.get(`/`);
+        const response = await opaClient.get('/');
         return response.data;
     } catch (error) {
         logger.error('Error getting policy:', error);

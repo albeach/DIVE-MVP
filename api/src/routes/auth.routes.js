@@ -1,8 +1,6 @@
 const express = require('express');
 const { verifyUser, logout, mockLogin } = require('../controllers/auth.controller');
 const { authenticate } = require('../middleware/auth.middleware');
-const jwt = require('jsonwebtoken');
-const config = require('../config');
 
 const router = express.Router();
 

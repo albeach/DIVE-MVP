@@ -9,7 +9,7 @@ const {
     download,
     preview
 } = require('../controllers/documents.controller');
-const { authenticate, authorize } = require('../middleware/auth.middleware');
+const { authenticate } = require('../middleware/auth.middleware');
 
 // Configure multer for file uploads
 const upload = multer({

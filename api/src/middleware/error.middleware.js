@@ -9,7 +9,7 @@ const { createAuditLog } = require('../services/audit.service');
  * @param {Object} res - Express response object
  * @param {Function} next - Express next middleware function
  */
-const errorHandler = async (err, req, res, next) => {
+const errorHandler = async (err, req, res, next) => { // eslint-disable-line no-unused-vars
     let statusCode = 500;
     let message = 'Internal Server Error';
     let details = null;
