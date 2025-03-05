@@ -1,7 +1,5 @@
-version: '3.8'
-
 services:
-  # MongoDB for document metadata
+
   mongodb:
     image: mongo:6.0
     container_name: dive25-mongodb
