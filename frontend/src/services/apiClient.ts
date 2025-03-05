@@ -1,147 +1,196 @@
-// frontend/src/services/apiClient.ts - Updated with better file handling
-import axios, { AxiosRequestConfig, AxiosError, InternalAxiosRequestConfig } from 'axios';
-import toast from 'react-hot-toast';
+import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-// Create axios instance with default config
-const apiClient = axios.create({
-    baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1',
+// Define base URL
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '/api';
+
+// Declare global Keycloak type
+declare global {
+    interface Window {
+        __keycloak?: any;
+    }
+}
+
+// Extend AxiosRequestConfig to include retry flag
+interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
+    _retry?: boolean;
+}
+
+// Keep track of refresh status
+let isRefreshing = false;
+let refreshSubscribers: ((token: string) => void)[] = [];
+
+// Function to push a callback to be executed when token is refreshed
+function subscribeTokenRefresh(callback: (token: string) => void) {
+    refreshSubscribers.push(callback);
+}
+
+// Function to notify all subscribers that token is refreshed
+function onTokenRefreshed(token: string) {
+    refreshSubscribers.forEach(callback => callback(token));
+    refreshSubscribers = [];
+}
+
+// Function to handle token refresh error
+function onRefreshError() {
+    refreshSubscribers = [];
+}
+
+// Create the axios instance
+const apiClient: AxiosInstance = axios.create({
+    baseURL: API_BASE_URL,
+    timeout: 20000, // 20 second timeout
     headers: {
         'Content-Type': 'application/json',
-    },
-    timeout: 15000, // 15 seconds
+        'Accept': 'application/json'
+    }
 });
 
 // Create a separate client for file uploads
-const fileClient = axios.create({
-    baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1',
+const fileClient: AxiosInstance = axios.create({
+    baseURL: API_BASE_URL,
+    timeout: 60000, // 60 seconds for file operations
     headers: {
         'Content-Type': 'multipart/form-data',
-    },
-    timeout: 60000, // 60 seconds for file operations
+    }
 });
 
-// Track if a token refresh is in progress
-let isRefreshing = false;
-let failedQueue: Array<{
-    resolve: (value?: unknown) => void;
-    reject: (reason?: any) => void;
-    config: any;
-}> = [];
-
-// Process the failed queue
-const processQueue = (error: any = null) => {
-    failedQueue.forEach(promise => {
-        if (error) {
-            promise.reject(error);
-        } else {
-            promise.resolve();
+// Request interceptor for API client
+apiClient.interceptors.request.use(
+    async (config: InternalAxiosRequestConfig) => {
+        // Skip auth header for public endpoints
+        if (config.url && [
+            '/health',
+            '/api/public',
+            '/api/config/public'
+        ].some(publicPath => config.url?.includes(publicPath))) {
+            return config;
         }
-    });
 
-    failedQueue = [];
-};
+        // Auth paths that need authentication
+        const needsAuth = config.url && [
+            '/api/auth',
+            '/api/user'
+        ].some(authPath => config.url?.includes(authPath));
 
-// Request interceptor to add authorization header for both clients
-const addAuthHeader = (config: InternalAxiosRequestConfig): InternalAxiosRequestConfig => {
-    // Get token from Keycloak if available
-    const keycloakInstance = window.__keycloak;
-    if (keycloakInstance?.token) {
-        config.headers.set('Authorization', `Bearer ${keycloakInstance.token}`);
-    }
-    return config;
-};
+        // Get token from Keycloak if available
+        const keycloakInstance = window.__keycloak;
+        if (keycloakInstance?.token) {
+            config.headers.set('Authorization', `Bearer ${keycloakInstance.token}`);
+        } else if (needsAuth) {
+            // If auth is needed but not available, store the current location for after login
+            sessionStorage.setItem('auth_redirect', window.location.pathname);
+        }
 
-apiClient.interceptors.request.use(addAuthHeader, (error) => Promise.reject(error));
-fileClient.interceptors.request.use(addAuthHeader, (error) => Promise.reject(error));
+        return config;
+    },
+    (error) => Promise.reject(error)
+);
 
-// Response interceptor for error handling (shared logic)
-const handleResponseError = async (error: AxiosError): Promise<any> => {
-    const { response, config } = error;
+// Use the same interceptor for file client
+fileClient.interceptors.request.use(
+    async (config: InternalAxiosRequestConfig) => {
+        // Get token from Keycloak if available
+        const keycloakInstance = window.__keycloak;
+        if (keycloakInstance?.token) {
+            config.headers.set('Authorization', `Bearer ${keycloakInstance.token}`);
+        }
+        return config;
+    },
+    (error) => Promise.reject(error)
+);
 
-    // Handle 401 errors (unauthorized) that occur due to token expiry
-    if (response?.status === 401) {
-        // Handle token refresh
+// Response interceptor for API client
+apiClient.interceptors.response.use(
+    (response: AxiosResponse) => {
+        return response;
+    },
+    async (error: AxiosError) => {
+        const originalRequest = error.config as ExtendedAxiosRequestConfig;
+
+        // Only proceed if:
+        // 1. There is a 401 Unauthorized response
+        // 2. It's not already a retry
+        // 3. We have a Keycloak instance
+        // 4. We're not already refreshing
         const keycloakInstance = window.__keycloak;
 
-        if (keycloakInstance && !isRefreshing) {
-            isRefreshing = true;
+        if (error.response?.status === 401 &&
+            originalRequest &&
+            !originalRequest._retry &&
+            keycloakInstance && !isRefreshing) {
+
+            originalRequest._retry = true;
+
+            // Check if Keycloak instance exists and is properly initialized
+            if (!keycloakInstance.authenticated) {
+                // Not authenticated - we need to log in
+                sessionStorage.setItem('auth_redirect', window.location.pathname);
+
+                // Let the UI handle the redirect to login
+                return Promise.reject(error);
+            }
 
             try {
+                isRefreshing = true;
+
+                // Try to refresh the token
                 const refreshed = await keycloakInstance.updateToken(30);
 
                 if (refreshed) {
-                    // Update config with new token
-                    if (config && config.headers) {
-                        config.headers['Authorization'] = `Bearer ${keycloakInstance.token}`;
-                    }
+                    // Update the request with the new token
+                    originalRequest.headers.set('Authorization', `Bearer ${keycloakInstance.token}`);
 
-                    // Retry the original request
-                    isRefreshing = false;
-                    processQueue();
-                    return axios(config!);
-                } else {
-                    // Token not refreshed but still valid
-                    isRefreshing = false;
-                    processQueue();
-                    return axios(config!);
+                    // Let other requests know the token was refreshed
+                    onTokenRefreshed(keycloakInstance.token);
                 }
-            } catch (refreshError) {
-                // Token refresh failed
-                isRefreshing = false;
-                processQueue(refreshError);
 
-                // Redirect to login
-                toast.error('Session expired. Please log in again.');
+                isRefreshing = false;
+
+                // Retry the request
+                return axios(originalRequest);
+            } catch (refreshError) {
+                isRefreshing = false;
+                onRefreshError();
+
+                // Session expired, redirect to login
                 keycloakInstance.login();
                 return Promise.reject(error);
             }
-        } else if (isRefreshing) {
-            // If a refresh is already in progress, queue this request
-            return new Promise((resolve, reject) => {
-                failedQueue.push({ resolve, reject, config: config! });
-            }).then(() => {
-                // Retry with new token
-                if (config && window.__keycloak?.token) {
-                    config.headers!['Authorization'] = `Bearer ${window.__keycloak.token}`;
-                }
-                return axios(config!);
-            }).catch(err => {
-                return Promise.reject(err);
-            });
-        } else {
-            // No keycloak instance, just reject
-            toast.error('Session expired. Please log in again.');
-            window.location.href = '/';
-            return Promise.reject(error);
         }
-    }
 
-    // Handle different error scenarios
-    if (!response) {
-        // Network error
-        toast.error('Network error. Please check your connection.');
-    } else if (response.status === 403) {
-        // Forbidden
-        toast.error('You do not have permission to perform this action.');
-    } else if (response.status === 404) {
-        // Not found
-        toast.error('The requested resource was not found.');
-    } else if (response.status >= 500) {
-        // Server error
-        toast.error('Server error. Please try again later.');
-    }
+        // For 403 Forbidden errors (permission issues)
+        if (error.response?.status === 403) {
+            console.error('Permission denied', error);
+            // Let UI component handle the forbidden error
+        }
 
-    return Promise.reject(error);
+        // Pass the error to the caller
+        return Promise.reject(error);
+    }
+);
+
+// Use the same response interceptor for file client
+fileClient.interceptors.response.use(
+    (response: AxiosResponse) => response,
+    async (error: AxiosError) => {
+        // Use the same error handling as the API client
+        if (error.response?.status === 401) {
+            const keycloakInstance = window.__keycloak;
+            if (keycloakInstance) {
+                // Try to refresh the token or redirect to login
+                keycloakInstance.updateToken(30).catch(() => {
+                    keycloakInstance.login();
+                });
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
+// Helper function to check if user is authenticated
+export const isAuthenticated = (): boolean => {
+    return window.__keycloak?.authenticated === true;
 };
 
-apiClient.interceptors.response.use(
-    (response) => response,
-    handleResponseError
-);
-
-fileClient.interceptors.response.use(
-    (response) => response,
-    handleResponseError
-);
-
-export { apiClient, fileClient };
+export { fileClient };
+export default apiClient; 

@@ -1,5 +1,5 @@
 // frontend/src/context/auth-context.tsx
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { useRouter } from 'next/router';
 import Keycloak from 'keycloak-js';
 import { User } from '@/types/user';
@@ -16,185 +16,346 @@ interface AuthContextProps {
   logout: () => void;
   refreshToken: () => Promise<boolean>;
   hasRole: (roles: string[]) => boolean;
+  tokenExpiresIn: number | null;
+  isTokenExpiring: boolean;
+  initializeAuth: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
 
 interface AuthProviderProps {
   children: ReactNode;
+  autoInitialize?: boolean;
 }
 
-export function AuthProvider({ children }: AuthProviderProps) {
+// Number of seconds before token expiry to attempt refresh
+const TOKEN_REFRESH_BUFFER = 60; // 1 minute
+
+// Time in milliseconds to check token status
+const TOKEN_CHECK_INTERVAL = 15000; // 15 seconds
+
+// List of paths that should trigger authentication
+const AUTH_PATHS = ['/auth', '/api/auth', '/callback', '/logout'];
+
+// Move and update the global window interface declaration at the top of the file
+declare global {
+  interface Window {
+    __keycloak?: any; // Use 'any' type for consistency
+  }
+}
+
+export function AuthProvider({ children, autoInitialize = false }: AuthProviderProps) {
   const [keycloak, setKeycloak] = useState<Keycloak | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [initError, setInitError] = useState<string | null>(null);
+  const [tokenExpiresIn, setTokenExpiresIn] = useState<number | null>(null);
+  const [isTokenExpiring, setIsTokenExpiring] = useState<boolean>(false);
+  const [initializationComplete, setInitializationComplete] = useState(false);
+  const tokenCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const router = useRouter();
 
-  // Initialize Keycloak
-  useEffect(() => {
-    const initKeycloak = async () => {
-      try {
-        console.time('keycloak-init');
-        
-        // Use our configured Keycloak instance
-        const keycloakInstance = getKeycloak();
-
-        // Configure token refresh behavior
-        keycloakInstance.onTokenExpired = () => {
-          console.log('Token expired, attempting to refresh...');
-          keycloakInstance.updateToken(30).catch(() => {
-            console.warn('Token refresh failed');
-            setIsAuthenticated(false);
-          });
-        };
-
-        try {
-          // Calculate the silent check URI with explicit protocol
-          const protocol = window.location.protocol;
-          const host = window.location.host;
-          const silentCheckUri = `${protocol}//${host}/silent-check-sso.html`;
-          
-          const initOptions = {
-            onLoad: 'check-sso' as const,
-            silentCheckSsoRedirectUri: silentCheckUri,
-            pkceMethod: 'S256' as const,
-            checkLoginIframe: false,
-            enableLogging: true,
-            flow: 'standard' as const,
-            responseMode: 'fragment' as const,
-            checkLoginIframeInterval: 0
-          };
-          
-          const authenticated = await keycloakInstance.init(initOptions);
-          console.timeEnd('keycloak-init');
-
-          setKeycloak(keycloakInstance);
-          setIsAuthenticated(authenticated);
-
-          if (authenticated) {
-            // Extract user information from token
-            const userProfile = {
-              uniqueId: keycloakInstance.tokenParsed?.sub,
-              username: keycloakInstance.tokenParsed?.preferred_username,
-              email: keycloakInstance.tokenParsed?.email,
-              givenName: keycloakInstance.tokenParsed?.given_name,
-              surname: keycloakInstance.tokenParsed?.family_name,
-              organization: keycloakInstance.tokenParsed?.organization,
-              countryOfAffiliation: keycloakInstance.tokenParsed?.countryOfAffiliation,
-              clearance: keycloakInstance.tokenParsed?.clearance,
-              caveats: Array.isArray(keycloakInstance.tokenParsed?.caveats) 
-                ? keycloakInstance.tokenParsed?.caveats 
-                : keycloakInstance.tokenParsed?.caveats ? [keycloakInstance.tokenParsed?.caveats] : [],
-              coi: Array.isArray(keycloakInstance.tokenParsed?.coi) 
-                ? keycloakInstance.tokenParsed?.coi 
-                : keycloakInstance.tokenParsed?.coi ? [keycloakInstance.tokenParsed?.coi] : [],
-              roles: keycloakInstance.tokenParsed?.realm_access?.roles || [],
-              lastLogin: new Date().toISOString(),
-            };
-            
-            setUser(userProfile as User);
-            
-            // Expose keycloak instance for API client
-            window.__keycloak = keycloakInstance;
-          }
-        } catch (error) {
-          console.error('Keycloak initialization failed:', error);
-          setInitError('Authentication service initialization failed');
-          
-          // Try direct login if silent check fails
-          if (router.pathname !== '/' && router.pathname !== '/login') {
-            login();
-          }
-        }
-
-        setIsLoading(false);
-      } catch (error) {
-        console.error('Keycloak setup failed:', error);
-        setInitError('Authentication service initialization failed');
-        toast.error('Authentication service initialization failed');
-        setIsLoading(false);
+  // Calculate time until token expires and update state
+  const updateTokenExpiry = (keycloakInstance: Keycloak) => {
+    if (keycloakInstance && keycloakInstance.tokenParsed?.exp) {
+      const currentTime = Math.floor(Date.now() / 1000);
+      const expiryTime = keycloakInstance.tokenParsed.exp;
+      const timeRemaining = expiryTime - currentTime;
+      
+      setTokenExpiresIn(timeRemaining);
+      setIsTokenExpiring(timeRemaining < TOKEN_REFRESH_BUFFER);
+      
+      // Log expiry status (but not too frequently)
+      if (timeRemaining < 300 || timeRemaining % 60 === 0) {
+        console.log(`Token expires in ${timeRemaining} seconds`);
       }
-    };
-
-    initKeycloak();
-
-    // Cleanup function
-    return () => {
-      if (window.__keycloak) {
-        window.__keycloak = undefined;
-      }
-    };
-  }, []);
-
-  // Login function
-  const login = () => {
-    if (keycloak) {
-      try {
-        const redirectUrl = window.location.origin + (router.pathname !== '/login' ? router.pathname : '/');
-        
-        keycloak.login({
-          redirectUri: redirectUrl
+      
+      // Proactively refresh token if it's close to expiring
+      if (timeRemaining < TOKEN_REFRESH_BUFFER && timeRemaining > 0) {
+        console.log('Token nearing expiry, refreshing...');
+        keycloakInstance.updateToken(TOKEN_REFRESH_BUFFER).catch(() => {
+          console.warn('Failed to refresh token proactively');
         });
-      } catch (error) {
-        console.error('Login error:', error);
-        toast.error('Login failed. Please try again.');
       }
     } else {
-      console.error('Cannot login: Keycloak not initialized');
-      toast.error('Authentication service not available');
+      setTokenExpiresIn(null);
+      setIsTokenExpiring(false);
+    }
+  };
+
+  // Start periodic token check
+  const startTokenExpiryCheck = (keycloakInstance: Keycloak) => {
+    // Clear any existing interval
+    if (tokenCheckIntervalRef.current) {
+      clearInterval(tokenCheckIntervalRef.current);
+    }
+    
+    // Set initial expiry time
+    updateTokenExpiry(keycloakInstance);
+    
+    // Start interval to check token expiry
+    tokenCheckIntervalRef.current = setInterval(() => {
+      if (keycloakInstance && keycloakInstance.authenticated) {
+        updateTokenExpiry(keycloakInstance);
+      }
+    }, TOKEN_CHECK_INTERVAL);
+  };
+
+  // Listen for API token expiration headers
+  useEffect(() => {
+    if (!isAuthenticated || !keycloak) return;
+    
+    // Create a response interceptor for fetch
+    const originalFetch = window.fetch;
+    window.fetch = async function(input, init) {
+      const response = await originalFetch(input, init);
       
-      // Use our configured Keycloak instance for fallback login
+      // Check for token expiration headers from our API
+      if (response.headers.has('X-Token-Expiring')) {
+        const expiresIn = response.headers.get('X-Token-Expires-In');
+        console.log(`API reports token expiring in ${expiresIn} seconds`);
+        
+        // Refresh the token if needed
+        if (keycloak && parseInt(expiresIn || '0', 10) < TOKEN_REFRESH_BUFFER) {
+          try {
+            await keycloak.updateToken(TOKEN_REFRESH_BUFFER);
+            console.log('Token refreshed due to API expiry notification');
+          } catch (error) {
+            console.error('Token refresh failed after API notification:', error);
+          }
+        }
+      }
+      
+      return response;
+    };
+    
+    // Cleanup on unmount
+    return () => {
+      window.fetch = originalFetch;
+    };
+  }, [isAuthenticated, keycloak]);
+
+  // Initialize Keycloak
+  const initKeycloak = async (): Promise<boolean> => {
+    if (isLoading || initializationComplete) return isAuthenticated;
+    
+    setIsLoading(true);
+    
+    try {
+      console.time('keycloak-init');
+      
+      // Use our configured Keycloak instance
       const keycloakInstance = getKeycloak();
+
+      // Configure token refresh behavior
+      keycloakInstance.onTokenExpired = () => {
+        console.log('Token expired, attempting to refresh...');
+        keycloakInstance.updateToken(30).catch(() => {
+          console.warn('Token refresh failed');
+          setIsAuthenticated(false);
+        });
+      };
+
+      // Calculate the silent check URI with explicit protocol
+      const origin = window.location.origin;
+      const silentCheckUri = `${origin}/silent-check-sso.html`;
       
-      keycloakInstance.init({
-        onLoad: 'login-required',
-        redirectUri: window.location.origin + (router.pathname !== '/login' ? router.pathname : '/')
-      });
+      console.log('Using silent check URI:', silentCheckUri);
+      
+      // Check if this is a protected route that requires stricter authentication
+      const isProtectedRoute = window.location.pathname.startsWith('/auth') || 
+                               window.location.pathname.startsWith('/api/auth') ||
+                               window.location.pathname === '/profile';
+      
+      // Configure initialization options
+      const initOptions = {
+        onLoad: 'check-sso' as const,
+        silentCheckSsoRedirectUri: silentCheckUri,
+        pkceMethod: 'S256' as const,
+        // Disable iframe checks completely on public routes to prevent CSP issues
+        checkLoginIframe: isProtectedRoute, 
+        enableLogging: true,
+        flow: 'standard' as const,
+        responseMode: 'fragment' as const,
+        checkLoginIframeInterval: 5,
+        promiseType: 'native' as const,
+        token: sessionStorage.getItem('kc_token') || undefined,
+        refreshToken: sessionStorage.getItem('kc_refreshToken') || undefined
+      };
+      
+      // Avoid multiple initialization attempts
+      if (window.__keycloak) {
+        console.warn('Keycloak instance already exists, using cached instance');
+        setKeycloak(window.__keycloak);
+        const authenticated = window.__keycloak.authenticated || false;
+        setIsAuthenticated(authenticated);
+        setIsLoading(false);
+        setInitializationComplete(true);
+        return authenticated;
+      }
+      
+      // Initialize Keycloak
+      const authenticated = await keycloakInstance.init(initOptions);
+      console.timeEnd('keycloak-init');
+
+      // Store globally
+      window.__keycloak = keycloakInstance;
+      
+      setKeycloak(keycloakInstance);
+      setIsAuthenticated(authenticated);
+
+      if (authenticated) {
+        // Store tokens in sessionStorage for resilience against page refreshes
+        sessionStorage.setItem('kc_token', keycloakInstance.token || '');
+        sessionStorage.setItem('kc_refreshToken', keycloakInstance.refreshToken || '');
+        
+        // Start monitoring token expiry
+        startTokenExpiryCheck(keycloakInstance);
+        
+        // Extract user information from token
+        const userProfile = {
+          uniqueId: keycloakInstance.tokenParsed?.sub,
+          username: keycloakInstance.tokenParsed?.preferred_username,
+          email: keycloakInstance.tokenParsed?.email,
+          givenName: keycloakInstance.tokenParsed?.given_name,
+          surname: keycloakInstance.tokenParsed?.family_name,
+          organization: keycloakInstance.tokenParsed?.organization,
+          countryOfAffiliation: keycloakInstance.tokenParsed?.countryOfAffiliation,
+          clearance: keycloakInstance.tokenParsed?.clearance,
+          caveats: Array.isArray(keycloakInstance.tokenParsed?.caveats) 
+            ? keycloakInstance.tokenParsed?.caveats 
+            : keycloakInstance.tokenParsed?.caveats ? [keycloakInstance.tokenParsed?.caveats] : [],
+          coi: Array.isArray(keycloakInstance.tokenParsed?.coi) 
+            ? keycloakInstance.tokenParsed?.coi 
+            : keycloakInstance.tokenParsed?.coi ? [keycloakInstance.tokenParsed?.coi] : [],
+          roles: keycloakInstance.tokenParsed?.realm_access?.roles || [],
+          lastLogin: new Date().toISOString(),
+        };
+        
+        setUser(userProfile as User);
+        
+        // Expose keycloak instance for API client
+        window.__keycloak = keycloakInstance;
+      }
+      
+      setInitializationComplete(true);
+      return authenticated;
+    } catch (error) {
+      console.error('Failed to initialize Keycloak', error);
+      setInitError(error instanceof Error ? error.message : 'Unknown error');
+      setIsAuthenticated(false);
+      setInitializationComplete(true);
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Check if current path should trigger authentication
+  const shouldAuthenticate = (path: string): boolean => {
+    return AUTH_PATHS.some(authPath => path.startsWith(authPath));
+  };
+
+  // Auto-initialize if configured to do so
+  useEffect(() => {
+    // Skip initialization on the server
+    if (typeof window === 'undefined') return;
+    
+    // Auto-initialize if explicitly requested OR the path requires auth
+    if (autoInitialize || shouldAuthenticate(window.location.pathname)) {
+      initKeycloak();
+    }
+  }, [autoInitialize]);
+
+  // Login function - will initialize Keycloak if needed
+  const login = async () => {
+    try {
+      // Make sure Keycloak is initialized first
+      if (!initializationComplete) {
+        await initKeycloak();
+      }
+      
+      if (keycloak) {
+        keycloak.login();
+      } else {
+        console.error("Keycloak not initialized");
+        throw new Error("Authentication service not available");
+      }
+    } catch (error) {
+      console.error('Login failed', error);
+      toast.error('Login failed. Please try again.');
     }
   };
 
   // Logout function
   const logout = () => {
-    if (keycloak) {
+    if (keycloak && keycloak.authenticated) {
       try {
-        keycloak.logout({
-          redirectUri: window.location.origin
-        });
+        // Clear tokens from storage
+        sessionStorage.removeItem('kc_token');
+        sessionStorage.removeItem('kc_refreshToken');
+        
+        // Clear interval
+        if (tokenCheckIntervalRef.current) {
+          clearInterval(tokenCheckIntervalRef.current);
+          tokenCheckIntervalRef.current = null;
+        }
+        
+        // Clear state
+        setUser(null);
+        setIsAuthenticated(false);
+        
+        // Redirect to Keycloak logout
+        keycloak.logout();
       } catch (error) {
-        console.error('Logout error:', error);
+        console.error('Logout error', error);
         toast.error('Logout failed. Please try again.');
-        window.location.href = window.location.origin;
       }
+    } else {
+      // Not authenticated, just redirect to home
+      router.push('/');
     }
   };
-
-  // Token refresh function
+  
+  // Refresh token function
   const refreshToken = async (): Promise<boolean> => {
-    if (keycloak) {
-      try {
-        const refreshed = await keycloak.updateToken(30);
-        return refreshed;
-      } catch (error) {
-        console.error('Failed to refresh token:', error);
-        toast.error('Your session has expired. Please log in again.');
-        login();
-        return false;
-      }
+    if (!keycloak) {
+      console.warn('Token refresh failed: Keycloak not initialized');
+      return false;
     }
-    return false;
+    
+    try {
+      const refreshed = await keycloak.updateToken(TOKEN_REFRESH_BUFFER);
+      if (refreshed) {
+        console.log('Token refreshed successfully');
+        
+        // Update stored tokens
+        sessionStorage.setItem('kc_token', keycloak.token || '');
+        sessionStorage.setItem('kc_refreshToken', keycloak.refreshToken || '');
+        
+        // Update expiry information
+        updateTokenExpiry(keycloak);
+      } else {
+        console.log('Token still valid, not refreshed');
+      }
+      return true;
+    } catch (error) {
+      console.error('Token refresh failed', error);
+      setIsAuthenticated(false);
+      return false;
+    }
   };
 
   // Check if user has any of the specified roles
   const hasRole = (roles: string[]): boolean => {
-    if (!user?.roles || user.roles.length === 0) {
-      return false;
-    }
-    return roles.some(role => user.roles?.includes(role) || false);
+    if (!keycloak || !roles.length) return false;
+    
+    return roles.some(role => keycloak.hasRealmRole(role));
   };
 
-  const value = {
+  // Provide auth context
+  const authContextValue: AuthContextProps = {
     isAuthenticated,
     isLoading,
     user,
@@ -202,44 +363,29 @@ export function AuthProvider({ children }: AuthProviderProps) {
     login,
     logout,
     refreshToken,
-    hasRole
+    hasRole,
+    tokenExpiresIn,
+    isTokenExpiring,
+    initializeAuth: initKeycloak,
   };
 
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Spinner size="lg" />
-      </div>
-    );
-  }
-
   if (initError) {
-    // Show an error message but still render the app in unauthenticated mode
-    return (
-      <AuthContext.Provider value={value}>
-        {children}
-      </AuthContext.Provider>
-    );
+    console.error('Auth initialization error:', initError);
+    toast.error(`Authentication error: ${initError}`);
   }
 
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={authContextValue}>
       {children}
     </AuthContext.Provider>
   );
 }
 
+// Hook to use auth context
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-}
-
-// Type definition for the global window object
-declare global {
-  interface Window {
-    __keycloak?: Keycloak;
-  }
 }

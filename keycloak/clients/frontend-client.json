@@ -1,20 +1,20 @@
 {
     "clientId": "dive25-frontend",
-    "rootUrl": "https://dive25.com",
-    "adminUrl": "https://dive25.com",
+    "rootUrl": "${PUBLIC_FRONTEND_URL}",
+    "adminUrl": "${PUBLIC_FRONTEND_URL}",
     "surrogateAuthRequired": false,
     "enabled": true,
     "alwaysDisplayInConsole": false,
     "clientAuthenticatorType": "client-secret",
     "redirectUris": [
-        "https://dive25.com/*",
-        "https://dive25.local/*",
-        "http://localhost:3000/*"
+        "${PUBLIC_FRONTEND_URL}/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*"
     ],
     "webOrigins": [
-        "https://dive25.com",
-        "https://dive25.local",
-        "http://localhost:3000"
+        "${PUBLIC_FRONTEND_URL}",
+        "http://localhost:3000",
+        "http://localhost:3001"
     ],
     "notBefore": 0,
     "bearerOnly": false,

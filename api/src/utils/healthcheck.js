@@ -8,6 +8,11 @@ const logger = require('./logger');
  * @returns {Promise<Object>} Health status
  */
 const checkMongoDB = async () => {
+    // If MongoDB is skipped, return a warning status
+    if (process.env.SKIP_MONGODB === 'true') {
+        return { status: 'warning', message: 'MongoDB connection skipped' };
+    }
+
     try {
         const connection = getConnection();
         if (!connection || !connection.readyState) {
@@ -36,6 +41,11 @@ const checkMongoDB = async () => {
  * @returns {Promise<Object>} Health status
  */
 const checkOPA = async () => {
+    // If OPA checks should be skipped
+    if (process.env.SKIP_OPA === 'true') {
+        return { status: 'warning', message: 'OPA connection skipped' };
+    }
+
     try {
         // Simple query to test OPA connection
         logger.debug('Attempting OPA health check');
@@ -104,13 +114,27 @@ const checkHealth = async () => {
     const opa = await checkOPA();
     const storage = await checkStorage();
 
-    const isHealthy =
-        mongodb.status === 'up' &&
-        opa.status === 'up' &&
-        storage.status === 'up';
+    // Check if any service is down
+    const hasDownServices =
+        mongodb.status === 'down' ||
+        opa.status === 'down' ||
+        storage.status === 'down';
+
+    // Check if any service is in warning state
+    const hasWarningServices =
+        mongodb.status === 'warning' ||
+        opa.status === 'warning' ||
+        storage.status === 'warning';
+
+    let status = 'ok';
+    if (hasDownServices) {
+        status = 'degraded';
+    } else if (hasWarningServices) {
+        status = 'warning';
+    }
 
     return {
-        status: isHealthy ? 'ok' : 'degraded',
+        status: status,
         timestamp: new Date().toISOString(),
         checks: {
             mongodb,

@@ -5,6 +5,7 @@ const compression = require('compression');
 const { createHttpTerminator } = require('http-terminator');
 const { errorHandler } = require('./middleware/error.middleware');
 const { loggingMiddleware } = require('./middleware/logging.middleware');
+const { tokenExpirationCheck } = require('./middleware/token-refresh.middleware');
 const routes = require('./routes');
 const config = require('./config');
 const logger = require('./utils/logger');
@@ -15,8 +16,8 @@ const swagger = require('./swagger');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
-const userRoutes = require('./routes/user.routes');
-const documentRoutes = require('./routes/document.routes');
+const userRoutes = require('./routes/users.routes');
+const documentRoutes = require('./routes/documents.routes');
 const healthRoutes = require('./routes/health.routes');
 const ldapRoutes = require('./routes/ldap.routes');
 
@@ -77,6 +78,9 @@ app.use(loggingMiddleware);
 // Setup Prometheus metrics endpoint
 setupPrometheusMetrics(app);
 
+// Add token expiration check middleware (must be before routes)
+app.use(tokenExpirationCheck);
+
 // Apply API routes
 app.use('/api/v1', routes);
 
@@ -123,8 +127,19 @@ app.get('/health/ready', async (req, res) => {
 // Start the server
 const server = app.listen(config.port, async () => {
     try {
-        // Connect to MongoDB
-        await connectToMongoDB();
+        // Connect to MongoDB if not in test mode
+        if (process.env.SKIP_MONGODB !== 'true') {
+            try {
+                await connectToMongoDB();
+                logger.info('MongoDB connected successfully');
+            } catch (mongoError) {
+                logger.error('MongoDB connection failed:', mongoError);
+                logger.warn('Running without MongoDB connection. Some features may not work.');
+            }
+        } else {
+            logger.info('Skipping MongoDB connection as SKIP_MONGODB=true');
+        }
+
         logger.info(`Server running on port ${config.port}`);
     } catch (error) {
         logger.error('Failed to start server:', error);

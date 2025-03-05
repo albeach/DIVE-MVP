@@ -2,61 +2,74 @@ _format_version: "3.0"
 _transform: true
 
 services:
-  # Frontend Service
-  - name: frontend-service
-    url: http://frontend:3000
+  # Wildcard Service for *.dive25.local
+  - name: wildcard-service
+    url: ${INTERNAL_FRONTEND_URL:-http://frontend:3000}
     routes:
-      - name: frontend-route
+      - name: wildcard-route
         hosts:
-          - dive25.local
-          - frontend.dive25.local
+          - "*.${BASE_DOMAIN:-dive25.local}"
         protocols:
           - http
           - https
+        priority: 5  # Lower priority so specific routes take precedence
+
+  # Frontend Service
+  - name: frontend-service
+    url: ${INTERNAL_FRONTEND_URL:-http://frontend:3000}
+    routes:
+      - name: frontend-route
+        hosts:
+          - ${BASE_DOMAIN:-dive25.local}
+          - frontend.${BASE_DOMAIN:-dive25.local}
+        protocols:
+          - http
+          - https
+        priority: 10  # Higher priority than wildcard
     plugins:
       - name: oidc-auth
         config:
-          client_id: dive25-frontend
-          client_secret: change-me-in-production
-          discovery: https://keycloak.dive25.local/auth/realms/dive25/.well-known/openid-configuration
-          introspection_endpoint: https://keycloak.dive25.local/auth/realms/dive25/protocol/openid-connect/token/introspect
+          client_id: ${KEYCLOAK_CLIENT_ID_FRONTEND:-dive25-frontend}
+          client_secret: ${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
+          discovery: ${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local}/auth/realms/${KEYCLOAK_REALM:-dive25}/.well-known/openid-configuration
+          introspection_endpoint: ${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local}/auth/realms/${KEYCLOAK_REALM:-dive25}/protocol/openid-connect/token/introspect
           bearer_only: false
-          realm: dive25
+          realm: ${KEYCLOAK_REALM:-dive25}
           redirect_uri_path: /callback
           logout_path: /logout
           redirect_after_logout_uri: /
           ssl_verify: false
-          session_secret: change_me_in_production
+          session_secret: ${SESSION_SECRET:-change_me_in_production}
   
   # API Service
   - name: api-service
-    url: http://api:3000
+    url: ${INTERNAL_API_URL:-http://api:3000}
     routes:
       - name: api-route
         hosts:
-          - api.dive25.local
+          - api.${BASE_DOMAIN:-dive25.local}
         protocols:
           - http
           - https
     plugins:
       - name: oidc-auth
         config:
-          client_id: dive25-api
-          client_secret: change-me-in-production
-          discovery: https://keycloak.dive25.local/auth/realms/dive25/.well-known/openid-configuration
-          introspection_endpoint: https://keycloak.dive25.local/auth/realms/dive25/protocol/openid-connect/token/introspect
+          client_id: ${KEYCLOAK_CLIENT_ID_API:-dive25-api}
+          client_secret: ${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
+          discovery: ${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local}/auth/realms/${KEYCLOAK_REALM:-dive25}/.well-known/openid-configuration
+          introspection_endpoint: ${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local}/auth/realms/${KEYCLOAK_REALM:-dive25}/protocol/openid-connect/token/introspect
           bearer_only: true
-          realm: dive25
+          realm: ${KEYCLOAK_REALM:-dive25}
           ssl_verify: false
   
-  # Keycloak Service
+  # Keycloak Service (with plugins)
   - name: keycloak-service
-    url: http://keycloak:8080
+    url: ${INTERNAL_KEYCLOAK_URL:-http://keycloak:8080}
     routes:
       - name: keycloak-route
         hosts:
-          - keycloak.dive25.local
-          - keycloak.dive25.com
+          - keycloak.${BASE_DOMAIN:-dive25.local}
+          - keycloak.${PROD_BASE_DOMAIN:-dive25.com}
         paths:
           - /auth
         protocols:
@@ -65,27 +78,21 @@ services:
         strip_path: false
       - name: keycloak-resources-route
         hosts:
-          - keycloak.dive25.local
-          - keycloak.dive25.com
+          - keycloak.${BASE_DOMAIN:-dive25.local}
+          - keycloak.${PROD_BASE_DOMAIN:-dive25.com}
         paths:
           - /resources
           - /auth/resources
         protocols:
           - http
           - https
-        strip_path: false
     plugins:
-      - name: header-modifier
+      - name: response-transformer
         config:
           remove:
-            response:
-              headers:
-                - Content-Security-Policy
-                - X-Frame-Options
-          replace:
-            response:
-              headers:
-                Content-Security-Policy: "frame-ancestors 'self' https://dive25.local https://frontend.dive25.local https://*.dive25.local"
+            headers:
+              - Content-Security-Policy
+              - X-Frame-Options
       - name: redirect
         config:
           status_code: 301
@@ -108,7 +115,7 @@ services:
     routes:
       - name: mongo-express-route
         hosts:
-          - mongo-express.dive25.local
+          - mongo-express.${BASE_DOMAIN:-dive25.local}
         protocols:
           - http
           - https
@@ -119,7 +126,7 @@ services:
     routes:
       - name: grafana-route
         hosts:
-          - grafana.dive25.local
+          - grafana.${BASE_DOMAIN:-dive25.local}
         protocols:
           - http
           - https
@@ -130,7 +137,7 @@ services:
     routes:
       - name: prometheus-route
         hosts:
-          - prometheus.dive25.local
+          - prometheus.${BASE_DOMAIN:-dive25.local}
         protocols:
           - http
           - https
@@ -141,7 +148,7 @@ services:
     routes:
       - name: phpldapadmin-route
         hosts:
-          - phpldapadmin.dive25.local
+          - phpldapadmin.${BASE_DOMAIN:-dive25.local}
         protocols:
           - http
           - https
@@ -152,7 +159,7 @@ services:
     routes:
       - name: kong-admin-route
         hosts:
-          - kong.dive25.local
+          - kong.${BASE_DOMAIN:-dive25.local}
         protocols:
           - http
           - https
@@ -163,12 +170,12 @@ services:
     routes:
       - name: konga-route
         hosts:
-          - konga.dive25.local
+          - konga.${BASE_DOMAIN:-dive25.local}
         protocols:
           - http
           - https
 
-# Redirects from HTTP to HTTPS
+# Redirects from HTTP to HTTPS and other global plugins
 plugins:
   - name: redirect
     config:
@@ -177,3 +184,14 @@ plugins:
     enabled: true
     protocols:
       - http
+  # Global CSP policy that applies to all services
+  - name: response-transformer
+    config:
+      remove:
+        headers:
+          - Content-Security-Policy
+          - X-Frame-Options
+      add:
+        headers:
+          Content-Security-Policy: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://keycloak.${BASE_DOMAIN:-dive25.local} https://*.${BASE_DOMAIN:-dive25.local} http://localhost:* http://*.dive25-network; frame-src 'self' https://keycloak.${BASE_DOMAIN:-dive25.local} https://*.${BASE_DOMAIN:-dive25.local} http://localhost:* http://*.dive25-network; object-src 'none'; base-uri 'self'; form-action 'self' https://keycloak.${BASE_DOMAIN:-dive25.local} https://*.${BASE_DOMAIN:-dive25.local} http://localhost:*; frame-ancestors 'self' https://${BASE_DOMAIN:-dive25.local} https://frontend.${BASE_DOMAIN:-dive25.local} https://*.${BASE_DOMAIN:-dive25.local} http://localhost:* http://*.dive25-network; block-all-mixed-content;"
+    enabled: true

@@ -179,5 +179,37 @@
             }
         ]
     },
-    "clients": []
+    "clients": [
+        {
+            "clientId": "dive25-frontend",
+            "enabled": true,
+            "redirectUris": [
+                "${PUBLIC_FRONTEND_URL}/*",
+                "http://localhost:3000/*",
+                "http://localhost:3001/*",
+                "https://dive25.local/callback"
+            ],
+            "webOrigins": [
+                "${PUBLIC_FRONTEND_URL}",
+                "http://localhost:3000",
+                "http://localhost:3001"
+            ],
+            "publicClient": true,
+            "protocol": "openid-connect",
+            "standardFlowEnabled": true,
+            "directAccessGrantsEnabled": true,
+            "fullScopeAllowed": true
+        },
+        {
+            "clientId": "dive25-api",
+            "enabled": true,
+            "bearerOnly": true,
+            "publicClient": false,
+            "protocol": "openid-connect",
+            "standardFlowEnabled": false,
+            "serviceAccountsEnabled": true,
+            "directAccessGrantsEnabled": false,
+            "fullScopeAllowed": true
+        }
+    ]
 }

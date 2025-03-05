@@ -1,17 +1,17 @@
 {
     "clientId": "dive25-api",
-    "rootUrl": "https://api.dive25.com",
-    "adminUrl": "https://api.dive25.com",
+    "rootUrl": "${PUBLIC_API_URL}",
+    "adminUrl": "${PUBLIC_API_URL}",
     "surrogateAuthRequired": false,
     "enabled": true,
     "alwaysDisplayInConsole": false,
     "clientAuthenticatorType": "client-secret",
     "secret": "change-me-in-production",
     "redirectUris": [
-        "https://api.dive25.com/*"
+        "${PUBLIC_API_URL}/*"
     ],
     "webOrigins": [
-        "https://api.dive25.com"
+        "${PUBLIC_API_URL}"
     ],
     "notBefore": 0,
     "bearerOnly": true,

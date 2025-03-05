@@ -8,7 +8,9 @@
         "test:e2e:ui": "playwright test --ui",
         "test:e2e:debug": "playwright test --debug",
         "test:uat": "playwright test --grep @uat",
-        "report": "playwright show-report"
+        "report": "playwright show-report",
+        "cypress:open": "cypress open",
+        "cypress:run": "cypress run"
     },
     "keywords": [
         "dive25",
@@ -20,6 +22,8 @@
     "license": "ISC",
     "devDependencies": {
         "@playwright/test": "^1.36.0",
-        "@types/node": "^20.3.2"
+        "@types/node": "^20.3.2",
+        "cypress": "^12.13.0",
+        "dotenv": "^16.0.3"
     }
 }

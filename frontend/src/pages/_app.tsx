@@ -39,18 +39,40 @@ function App({ Component, pageProps }: AppProps) {
     '/500',
   ].includes(router.pathname);
 
+  // Determine if this route requires auth initialization
+  // Use highly specific paths to minimize Keycloak initialization
+  const requiresAuth = router.pathname.startsWith('/auth/') || 
+                     router.pathname.startsWith('/api/auth/') ||
+                     router.pathname === '/profile' ||
+                     router.pathname === '/callback' ||
+                     router.pathname === '/logout' ||
+                     router.pathname.startsWith('/documents/') ||
+                     router.pathname.startsWith('/admin/');
+                     
+  // Completely skip auth for home page to prevent any iframe checks
+  const skipAuthCompletely = router.pathname === '/';
+
   if (!isClient) {
     return null;
   }
 
   return (
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <Layout isPublicRoute={isPublicRoute}>
+      {skipAuthCompletely ? (
+        // No auth provider for home page to prevent any Keycloak initialization
+        <Layout isPublicRoute={true}>
           <Component {...pageProps} />
+          <Toaster position="top-right" />
         </Layout>
-        <Toaster position="top-right" />
-      </AuthProvider>
+      ) : (
+        // Normal auth provider for other pages
+        <AuthProvider autoInitialize={requiresAuth}>
+          <Layout isPublicRoute={isPublicRoute}>
+            <Component {...pageProps} />
+          </Layout>
+          <Toaster position="top-right" />
+        </AuthProvider>
+      )}
       {process.env.NODE_ENV === 'development' && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   );

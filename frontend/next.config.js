@@ -15,23 +15,6 @@ const nextConfig = {
                 source: '/(.*)',
                 headers: [
                     {
-                        key: 'Content-Security-Policy',
-                        value: `
-              default-src 'self';
-              script-src 'self' 'unsafe-eval' 'unsafe-inline';
-              style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-              img-src 'self' data: blob:;
-              font-src 'self' https://fonts.gstatic.com;
-              connect-src 'self' https://keycloak.dive25.local https://*.dive25.local http://localhost:8080 http://localhost:3001 http://localhost:3000;
-              frame-src 'self' https://keycloak.dive25.local https://*.dive25.local http://localhost:8080 http://localhost:3001;
-              object-src 'none';
-              base-uri 'self';
-              form-action 'self';
-              frame-ancestors 'self' https://keycloak.dive25.local https://*.dive25.local http://localhost:8080 http://localhost:3001;
-              block-all-mixed-content;
-            `.replace(/\s{2,}/g, ' ').trim(),
-                    },
-                    {
                         key: 'X-Frame-Options',
                         value: 'SAMEORIGIN',
                     },

@@ -5,8 +5,18 @@ import Image from 'next/image';
 import Head from 'next/head';
 
 export default function LoginPage() {
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, isAuthenticated, isLoading, initializeAuth } = useAuth();
   const router = useRouter();
+  
+  // Initialize auth when component loads
+  useEffect(() => {
+    // Check if we're already authenticated
+    initializeAuth().then(authenticated => {
+      if (authenticated) {
+        router.push('/');
+      }
+    });
+  }, [initializeAuth, router]);
   
   // Redirect if already authenticated
   useEffect(() => {
@@ -20,7 +30,7 @@ export default function LoginPage() {
     login();
   };
   
-  if (isLoading || isAuthenticated) {
+  if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">
       <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-dive25-primary"></div>
     </div>;

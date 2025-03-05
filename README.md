@@ -26,6 +26,7 @@ Comprehensive documentation is available in the `docs` directory:
 - [System Overview](docs/architecture/overview.md) - Understanding the DIVE25 system architecture
 - [Installation Guide](docs/deployment/installation.md) - Setting up the system from scratch
 - [User Guide](docs/user/guide.md) - Using the DIVE25 system
+- [URL Management](URL-MANAGEMENT.md) - How domains and URLs are centrally managed
 
 ### Technical Documentation
 
@@ -53,6 +54,11 @@ See the [Documentation Index](docs/index.md) for a complete list of available do
    ```bash
    cp .env.example .env
    # Edit the .env file with your preferred settings
+   ```
+
+3. Generate service-specific environment files:
+   ```bash
+   ./scripts/generate-env-files.sh
    ```
 
 ## Local Development with SSL and Custom Domain
@@ -97,6 +103,24 @@ docker-compose up -d
 
 All connections will use HTTPS with valid certificates created by mkcert, so you won't see any browser warnings. 
 The SSL termination is handled by Kong, which serves as both the API gateway and the reverse proxy for all services.
+
+## Environment Configuration
+
+DIVE25 uses a centralized approach to environment configuration, with all settings defined in the root `.env` file. This includes:
+
+- URLs and domains for all environments (development, staging, production)
+- Authentication credentials and secrets
+- Service-specific settings
+
+When updating the `.env` file, you should regenerate the service-specific environment files:
+
+```bash
+./scripts/generate-env-files.sh
+```
+
+To switch between environments (e.g., from development to staging), update the `ENVIRONMENT` variable in the `.env` file and regenerate the service-specific files.
+
+For more details on URL and domain management, see [URL Management](URL-MANAGEMENT.md).
 
 ## Next Steps
 
