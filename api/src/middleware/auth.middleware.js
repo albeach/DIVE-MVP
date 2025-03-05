@@ -3,8 +3,10 @@ const { ApiError } = require('../utils/error.utils');
 const logger = require('../utils/logger');
 const NodeCache = require('node-cache');
 
-// Create a cache for user data with 5-minute TTL
-const userCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+// Create a cache for user data with 5-minute TTL and more frequent checks
+const userCache = new NodeCache({ stdTTL: 300, checkperiod: 30 });
+// Create a separate blacklist cache for revoked tokens
+const tokenBlacklist = new NodeCache({ stdTTL: 3600, checkperiod: 60 });
 
 /**
  * Extract token from request headers
@@ -34,11 +36,17 @@ const extractToken = (req) => {
  * @param {Function} next - Express next middleware function
  */
 const authenticate = async (req, res, next) => {
+    const startTime = Date.now();
     try {
         // Get token from authorization header
         const token = extractToken(req);
         if (!token) {
             throw new ApiError('No authorization token provided', 401, 'MISSING_TOKEN');
+        }
+
+        // Check if token is blacklisted (revoked)
+        if (tokenBlacklist.get(token)) {
+            throw new ApiError('Token has been revoked', 401, 'REVOKED_TOKEN');
         }
 
         // Check if user data is in cache
@@ -48,6 +56,17 @@ const authenticate = async (req, res, next) => {
         if (cachedUser) {
             req.user = cachedUser;
             req.token = token;
+
+            // Add token expiry information to headers
+            if (cachedUser.exp) {
+                const expiresIn = cachedUser.exp - Math.floor(Date.now() / 1000);
+                res.setHeader('X-Token-Expires-In', expiresIn.toString());
+                if (expiresIn < 300) { // 5 minutes
+                    res.setHeader('X-Token-Expiring', 'true');
+                }
+            }
+
+            logger.debug(`Auth from cache for ${cachedUser.username} - ${Date.now() - startTime}ms`);
             return next();
         }
 
@@ -66,6 +85,11 @@ const authenticate = async (req, res, next) => {
             throw new ApiError('User account is disabled', 403, 'ACCOUNT_DISABLED');
         }
 
+        // Store token expiration in user object
+        if (tokenPayload.exp) {
+            user.exp = tokenPayload.exp;
+        }
+
         // Cache user data
         userCache.set(cacheKey, user);
 
@@ -73,6 +97,16 @@ const authenticate = async (req, res, next) => {
         req.user = user;
         req.token = token;
 
+        // Add token expiry information to headers
+        if (tokenPayload.exp) {
+            const expiresIn = tokenPayload.exp - Math.floor(Date.now() / 1000);
+            res.setHeader('X-Token-Expires-In', expiresIn.toString());
+            if (expiresIn < 300) { // 5 minutes
+                res.setHeader('X-Token-Expiring', 'true');
+            }
+        }
+
+        logger.debug(`Auth completed for ${user.username} - ${Date.now() - startTime}ms`);
         next();
     } catch (error) {
         if (error instanceof ApiError) {
@@ -86,7 +120,10 @@ const authenticate = async (req, res, next) => {
                 error: {
                     message: error.message,
                     stack: error.stack
-                }
+                },
+                path: req.path,
+                method: req.method,
+                processingTime: Date.now() - startTime
             });
             next(new ApiError('Authentication failed', 500, 'AUTH_ERROR'));
         }
@@ -122,7 +159,8 @@ const authorize = (roles) => {
                 error: error.message,
                 user: req.user ? req.user.username : 'unknown',
                 requiredRoles: roles,
-                userRoles: req.user ? req.user.roles : []
+                userRoles: req.user ? req.user.roles : [],
+                path: req.path
             });
             next(error);
         }
@@ -139,8 +177,22 @@ const clearUserCache = (token) => {
     }
 };
 
+/**
+ * Blacklist a token (e.g. on logout)
+ * @param {string} token - Token to blacklist
+ * @param {number} ttl - Time to live in seconds
+ */
+const blacklistToken = (token, ttl = 3600) => {
+    if (token) {
+        tokenBlacklist.set(token, true, ttl);
+        // Also clear from user cache
+        clearUserCache(token);
+    }
+};
+
 module.exports = {
     authenticate,
     authorize,
-    clearUserCache
+    clearUserCache,
+    blacklistToken
 };
