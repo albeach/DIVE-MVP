@@ -141,6 +141,45 @@ The DEV environment is designed for local development and testing using Docker C
    - phpLDAPadmin: http://localhost:8085 or https://phpldapadmin.dive25.local
    - Kong Admin: http://localhost:8001 or https://kong.dive25.local
 
+### Staging Environment with Docker Compose
+
+For a lightweight staging environment that can be run locally or on a single server using Docker Compose:
+
+1. **Configure the staging environment**:
+   ```bash
+   # Make sure you're in the project root directory
+   cd dive25
+   ```
+
+2. **Start the staging environment**:
+   ```bash
+   # Make the script executable
+   chmod +x start-staging.sh
+   
+   # Start the staging environment
+   ./start-staging.sh
+   ```
+
+3. **Access services**:
+   - Frontend: http://localhost:8083
+   - API: http://localhost:3003
+   - Keycloak: http://localhost:8082/auth
+   - Kong Admin: http://localhost:8001
+   - Konga UI: http://localhost:1337
+   - Prometheus: http://localhost:9090
+   - Grafana: http://localhost:3100
+   - Elasticsearch: http://localhost:9202
+   - Minio Console: http://localhost:9005
+
+4. **Stop the staging environment**:
+   ```bash
+   # Make the script executable
+   chmod +x stop-staging.sh
+   
+   # Stop the staging environment
+   ./stop-staging.sh
+   ```
+
 ### TEST Environment Deployment
 
 The TEST environment is deployed on Kubernetes and used for integration and system testing.
