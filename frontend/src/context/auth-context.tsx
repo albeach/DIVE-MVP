@@ -1,5 +1,5 @@
 // frontend/src/context/auth-context.tsx
-import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef, useCallback } from 'react';
 import { useRouter } from 'next/router';
 import Keycloak from 'keycloak-js';
 import { User } from '@/types/user';
@@ -19,6 +19,14 @@ interface AuthContextProps {
   tokenExpiresIn: number | null;
   isTokenExpiring: boolean;
   initializeAuth: () => Promise<boolean>;
+  getUserSecurityAttributes: () => UserSecurityAttributes;
+}
+
+export interface UserSecurityAttributes {
+  clearance: string;
+  caveats: string[];
+  coi: string[];
+  countryOfAffiliation: string;
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
@@ -192,6 +200,12 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
         setIsAuthenticated(authenticated);
         setIsLoading(false);
         setInitializationComplete(true);
+        
+        if (authenticated) {
+          updateUserFromToken(window.__keycloak);
+          startTokenExpiryCheck(window.__keycloak);
+        }
+        
         return authenticated;
       }
       
@@ -214,29 +228,7 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
         startTokenExpiryCheck(keycloakInstance);
         
         // Extract user information from token
-        const userProfile = {
-          uniqueId: keycloakInstance.tokenParsed?.sub,
-          username: keycloakInstance.tokenParsed?.preferred_username,
-          email: keycloakInstance.tokenParsed?.email,
-          givenName: keycloakInstance.tokenParsed?.given_name,
-          surname: keycloakInstance.tokenParsed?.family_name,
-          organization: keycloakInstance.tokenParsed?.organization,
-          countryOfAffiliation: keycloakInstance.tokenParsed?.countryOfAffiliation,
-          clearance: keycloakInstance.tokenParsed?.clearance,
-          caveats: Array.isArray(keycloakInstance.tokenParsed?.caveats) 
-            ? keycloakInstance.tokenParsed?.caveats 
-            : keycloakInstance.tokenParsed?.caveats ? [keycloakInstance.tokenParsed?.caveats] : [],
-          coi: Array.isArray(keycloakInstance.tokenParsed?.coi) 
-            ? keycloakInstance.tokenParsed?.coi 
-            : keycloakInstance.tokenParsed?.coi ? [keycloakInstance.tokenParsed?.coi] : [],
-          roles: keycloakInstance.tokenParsed?.realm_access?.roles || [],
-          lastLogin: new Date().toISOString(),
-        };
-        
-        setUser(userProfile as User);
-        
-        // Expose keycloak instance for API client
-        window.__keycloak = keycloakInstance;
+        updateUserFromToken(keycloakInstance);
       }
       
       setInitializationComplete(true);
@@ -250,6 +242,35 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     } finally {
       setIsLoading(false);
     }
+  };
+  
+  // Helper function to extract user from token
+  const updateUserFromToken = (keycloakInstance: Keycloak) => {
+    if (!keycloakInstance || !keycloakInstance.tokenParsed) return;
+    
+    const userProfile = {
+      uniqueId: keycloakInstance.tokenParsed?.sub,
+      username: keycloakInstance.tokenParsed?.preferred_username,
+      email: keycloakInstance.tokenParsed?.email,
+      givenName: keycloakInstance.tokenParsed?.given_name,
+      surname: keycloakInstance.tokenParsed?.family_name,
+      organization: keycloakInstance.tokenParsed?.organization,
+      countryOfAffiliation: keycloakInstance.tokenParsed?.countryOfAffiliation,
+      clearance: keycloakInstance.tokenParsed?.clearance,
+      caveats: Array.isArray(keycloakInstance.tokenParsed?.caveats) 
+        ? keycloakInstance.tokenParsed?.caveats 
+        : keycloakInstance.tokenParsed?.caveats ? [keycloakInstance.tokenParsed?.caveats] : [],
+      coi: Array.isArray(keycloakInstance.tokenParsed?.coi) 
+        ? keycloakInstance.tokenParsed?.coi 
+        : keycloakInstance.tokenParsed?.coi ? [keycloakInstance.tokenParsed?.coi] : [],
+      roles: keycloakInstance.tokenParsed?.realm_access?.roles || [],
+      lastLogin: new Date().toISOString(),
+    };
+    
+    setUser(userProfile as User);
+    
+    // Expose keycloak instance for API client
+    window.__keycloak = keycloakInstance;
   };
 
   // Check if current path should trigger authentication
@@ -353,6 +374,16 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     
     return roles.some(role => keycloak.hasRealmRole(role));
   };
+  
+  // Get user security attributes
+  const getUserSecurityAttributes = useCallback((): UserSecurityAttributes => {
+    return {
+      clearance: user?.clearance || '',
+      caveats: user?.caveats || [],
+      coi: user?.coi || [],
+      countryOfAffiliation: user?.countryOfAffiliation || ''
+    };
+  }, [user]);
 
   // Provide auth context
   const authContextValue: AuthContextProps = {
@@ -367,11 +398,21 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     tokenExpiresIn,
     isTokenExpiring,
     initializeAuth: initKeycloak,
+    getUserSecurityAttributes
   };
 
   if (initError) {
     console.error('Auth initialization error:', initError);
     toast.error(`Authentication error: ${initError}`);
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Spinner size="lg" />
+        <p className="ml-2 text-gray-600">Initializing authentication...</p>
+      </div>
+    );
   }
 
   return (

@@ -30,6 +30,7 @@ export interface PaginationInfo {
     page: number;
     limit: number;
     totalPages: number;
+    totalItems?: number;
 }
 
 export interface DocumentResponse {
