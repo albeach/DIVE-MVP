@@ -1,61 +1,39 @@
-# Stage 1: Development dependencies
-FROM node:18-alpine AS deps
+# Build stage
+FROM node:18-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
+# Copy package files and install dependencies
 COPY package.json package-lock.json ./
-
-# Install dependencies with dev dependencies for staging
 RUN npm ci
 
-# Stage 2: Staging image
+# Copy the rest of the application code
+COPY . .
+
+# Copy the environment file
+COPY .env.staging .env.production
+
+# Build the application
+RUN npm run build
+
+# Production stage
 FROM node:18-alpine AS runner
 
-# Set environment to staging
-ENV NODE_ENV=staging
-
-# Create app directory
 WORKDIR /app
 
-# Install curl for healthcheck
-RUN apk add --no-cache curl
+# Set environment variables
+ENV NODE_ENV=production
 
-# Create a non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs && \
-    chown -R nextjs:nodejs /app
+# Copy necessary files from the build stage
+COPY --from=builder /app/next.config.js ./
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/.env.production ./.env.production
 
-# Copy all files
-COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
-COPY --chown=nextjs:nodejs . .
-
-# Ensure locales directory exists with both English and French translations
-RUN mkdir -p /app/public/locales/en && \
-    echo '{"app":{"name":"DIVE25","description":"Document Intelligence and Verification Engine"},"navigation":{"home":"Home","dashboard":"Dashboard","documents":"Documents","settings":"Settings","logout":"Logout"},"actions":{"save":"Save","cancel":"Cancel","delete":"Delete","edit":"Edit","create":"Create","upload":"Upload","download":"Download","search":"Search"},"messages":{"welcome":"Welcome to DIVE25","loading":"Loading...","error":"An error occurred","success":"Operation successful"}}' > /app/public/locales/en/common.json && \
-    mkdir -p /app/public/locales/fr && \
-    echo '{"app":{"name":"DIVE25","description":"Moteur d'\''Intelligence et de Vérification Documentaire"},"navigation":{"home":"Accueil","dashboard":"Tableau de bord","documents":"Documents","settings":"Paramètres","logout":"Déconnexion"},"actions":{"save":"Enregistrer","cancel":"Annuler","delete":"Supprimer","edit":"Modifier","create":"Créer","upload":"Télécharger","download":"Télécharger","search":"Rechercher"},"messages":{"welcome":"Bienvenue sur DIVE25","loading":"Chargement...","error":"Une erreur est survenue","success":"Opération réussie"}}' > /app/public/locales/fr/common.json
-
-# Note: Components have been modified to handle missing auth context
-# This includes Layout, Navbar, LoginButton, and the Home page (index.tsx)
-# This allows the home page to render without the AuthProvider wrapper
-
-# Skip TypeScript checks during build for staging environment
-ENV NEXT_TELEMETRY_DISABLED=1
-
-# Set proper permissions
-USER nextjs
-
-# Expose port
+# Expose the port the app will run on
 EXPOSE 8080
 
-# Set hostname for container
-ENV HOSTNAME=0.0.0.0
-ENV PORT=8080
-
-# Health check
-HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:8080/ || exit 1
-
-# Start the application in development mode for better debugging
-CMD ["npm", "run", "dev", "--", "-p", "8080"] 
+# Start the application
+CMD ["npm", "start"] 

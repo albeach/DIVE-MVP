@@ -242,34 +242,45 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       
       logger.debug('Using silent check URI:', silentCheckUri);
       
-      // Check if this is a protected route that requires stricter authentication
-      const isProtectedRoute = window.location.pathname.startsWith('/auth') || 
-                               window.location.pathname.startsWith('/api/auth') ||
-                               window.location.pathname === '/profile';
-      
       // Get stored tokens (if any)
       const storedToken = sessionStorage.getItem(SESSION_STORAGE_TOKEN_KEY);
       const storedRefreshToken = sessionStorage.getItem(SESSION_STORAGE_REFRESH_TOKEN_KEY);
       
-      // Configure initialization options
+      // Configure initialization options - use a more direct approach for Keycloak 21
       const initOptions = {
         onLoad: 'check-sso' as const,
         silentCheckSsoRedirectUri: silentCheckUri,
         pkceMethod: 'S256' as const,
-        // Disable iframe checks completely on public routes to prevent CSP issues
-        checkLoginIframe: isProtectedRoute, 
+        checkLoginIframe: false, // Always disable iframe checks
+        checkLoginIframeInterval: 0, // Disable completely
         enableLogging: true,
         flow: 'standard' as const,
         responseMode: 'fragment' as const,
-        checkLoginIframeInterval: 5,
         promiseType: 'native' as const,
         token: storedToken || undefined,
-        refreshToken: storedRefreshToken || undefined
+        refreshToken: storedRefreshToken || undefined,
+        timeSkew: 10, // Add a time skew allowance
+        adapter: 'default' as const, // Use default adapter, force-clear any session issues
+        redirectUri: window.location.origin, // Simplify the redirect URI
+        silentLogin: false, // Don't attempt silent login on init
+        useNonce: true // Better security
       };
       
-      // Initialize Keycloak
-      const authenticated = await keycloakInstance.init(initOptions);
-      logger.debug(`Keycloak initialized, authenticated: ${authenticated}`);
+      // Set a timeout for initialization to handle potential iframe issues
+      const initPromise = keycloakInstance.init(initOptions);
+      
+      // Create a timeout promise
+      const timeoutPromise = new Promise<boolean>((resolve) => {
+        setTimeout(() => {
+          logger.warn('Keycloak initialization timed out, continuing with unauthenticated state');
+          resolve(false);
+        }, 10000); // 10 second timeout
+      });
+      
+      // Race the init promise against the timeout
+      const authenticated = await Promise.race([initPromise, timeoutPromise]);
+      
+      logger.debug(`Keycloak initialization completed, authenticated: ${authenticated}`);
 
       // Store globally
       window.__keycloak = keycloakInstance;
@@ -323,7 +334,27 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     try {
       // Make sure Keycloak is initialized first
       if (!initializationComplete) {
-        await initKeycloak();
+        const success = await initKeycloak();
+        if (!success) {
+          // If initialization failed, try a direct login instead
+          logger.warn("Keycloak initialization failed, attempting direct login");
+          
+          // Get a fresh instance
+          const keycloakInstance = getKeycloak();
+          
+          // Store the current path to redirect back after login
+          const currentPath = window.location.pathname + window.location.search;
+          if (currentPath !== '/' && !currentPath.includes('/login') && !currentPath.includes('/auth/') && !currentPath.includes('/callback')) {
+            sessionStorage.setItem('auth_redirect', currentPath);
+          }
+          
+          // Use a direct login approach
+          keycloakInstance.login({
+            redirectUri: window.location.origin,
+            prompt: 'login'
+          });
+          return;
+        }
       }
       
       if (keycloak) {
@@ -333,14 +364,18 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
           sessionStorage.setItem('auth_redirect', currentPath);
         }
         
-        keycloak.login();
+        // Use explicit login options
+        keycloak.login({
+          redirectUri: window.location.origin,
+          prompt: 'login'
+        });
       } else {
         logger.error("Keycloak not initialized for login");
         throw new Error("Authentication service not available");
       }
     } catch (error) {
-      logger.error('Login failed', error);
-      toast.error('Login failed. Please try again.');
+      logger.error("Login failed", error);
+      throw error;
     }
   };
 

@@ -91,7 +91,7 @@ services:
   # Keycloak for Authentication
   keycloak:
     image: quay.io/keycloak/keycloak:21.1.1
-    command: start-dev
+    command: start-dev --spi-login-protocol-openid-connect-legacy-logout-redirect-uri=true --web-content-security-policy-frame-ancestors="http://localhost:8083 http://localhost:8082"
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
@@ -101,17 +101,39 @@ services:
       KEYCLOAK_ADMIN_PASSWORD: admin_password
       KC_HOSTNAME_STRICT: "false"
       KC_HTTP_RELATIVE_PATH: /auth
+      # CORS settings
+      KC_SPI_CONNECTIONS_HTTP_CLIENT_DEFAULT_DISABLE_TRUST_MANAGER: "true"
+      KC_PROXY: edge
+      KC_HOSTNAME_STRICT_HTTPS: "false"
+      KC_HOSTNAME_STRICT_BACKCHANNEL: "false"
+      # Additional settings for Keycloak 21
+      KC_FEATURES: token-exchange,admin-fine-grained-authz
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      # Content Security Policy settings
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI: "true"
+      KC_HOSTNAME_URL: "http://localhost:8082"
+      KC_HOSTNAME_ADMIN_URL: "http://localhost:8082"
+      # Allow framing from our frontend
+      KC_SPI_EVENTS_LISTENER: "jboss-logging"
+      KC_HTTP_SERVER_HEADER: "Keycloak/21.1.1"
+      KC_PROXY_ADDRESS_FORWARDING: "true"
+      # Set frame-ancestors to allow our frontend domain
+      KC_SPI_X509CERT_LOOKUP_PROVIDER: "none"
+      KC_SPI_TRUSTSTORE_FILE_FILE: "/opt/keycloak/conf/keycloak.truststore"
+      KC_SPI_TRUSTSTORE_FILE_PASSWORD: "password"
+      KC_SPI_TRUSTSTORE_FILE_HOSTNAME_VERIFICATION_POLICY: "WILDCARD"
     ports:
       - "8082:8080"
     depends_on:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -s http://localhost:8080/auth/ || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      test: ["CMD", "curl", "-f", "http://localhost:8080/auth/"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 120s
 
   # Kong Database
   kong-database:
@@ -300,7 +322,7 @@ services:
       NODE_ENV: staging
       PORT: 8080
       API_URL: http://api:3000
-      NEXT_PUBLIC_KEYCLOAK_URL: "http://localhost:8082"
+      NEXT_PUBLIC_KEYCLOAK_URL: "http://localhost:8082/auth"
       NEXT_PUBLIC_KEYCLOAK_REALM: "dive25"
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: "dive25-frontend"
     ports:

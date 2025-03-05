@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 
 <head>
@@ -9,81 +9,7 @@
 <body>
     <script>
         // This page is used by Keycloak adapter to silently check for authentication
-
-        // Performance measurement
-        var startTime = performance.now();
-
-        try {
-            console.log('[Silent SSO] Running at:', window.location.href);
-
-            // Extract parent origin from URL parameters if available
-            var parentOrigin = '*';
-            try {
-                var urlParams = new URLSearchParams(window.location.search);
-                var originParam = urlParams.get('parent_origin');
-                if (originParam) {
-                    parentOrigin = decodeURIComponent(originParam);
-                }
-            } catch (e) {
-                console.error('[Silent SSO] Error extracting origin from params:', e);
-            }
-
-            // Try posting with multiple strategies
-            function postToParent(attempt) {
-                attempt = attempt || 1;
-                console.log('[Silent SSO] Posting attempt:', attempt);
-
-                // First try with detected origin
-                try {
-                    window.parent.postMessage(window.location.href, parentOrigin);
-                    console.log('[Silent SSO] Posted to:', parentOrigin);
-                } catch (e) {
-                    console.error('[Silent SSO] Error posting to detected origin:', e);
-                }
-
-                // Then try with wildcard as fallback
-                try {
-                    window.parent.postMessage(window.location.href, '*');
-                    console.log('[Silent SSO] Posted with wildcard origin');
-                } catch (e) {
-                    console.error('[Silent SSO] Error posting with wildcard:', e);
-                }
-
-                // Also handle popup flow
-                if (window.opener) {
-                    try {
-                        window.opener.postMessage(window.location.href, '*');
-                        console.log('[Silent SSO] Posted to opener window');
-                    } catch (e) {
-                        console.error('[Silent SSO] Error posting to opener:', e);
-                    }
-                }
-            }
-
-            // Try posting immediately
-            postToParent(1);
-
-            // Also try again after a short delay (helps with timing issues)
-            setTimeout(function () { postToParent(2); }, 50);
-
-            // And another attempt with longer delay
-            setTimeout(function () { postToParent(3); }, 250);
-
-        } catch (error) {
-            console.error('[Silent SSO] Error:', error);
-
-            // Last resort - try to post with minimal checks
-            try {
-                if (window.parent) {
-                    window.parent.postMessage(window.location.href, '*');
-                }
-                if (window.opener) {
-                    window.opener.postMessage(window.location.href, '*');
-                }
-            } catch (e) {
-                // Nothing more we can do
-            }
-        }
+        parent.postMessage(location.href, location.origin);
     </script>
 </body>
 

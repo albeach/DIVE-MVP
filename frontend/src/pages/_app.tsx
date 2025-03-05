@@ -29,6 +29,15 @@ function App({ Component, pageProps }: AppProps) {
   const [isClient, setIsClient] = useState(false);
   useEffect(() => {
     setIsClient(true);
+    
+    // Log environment variables in development for debugging
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Keycloak Config:', {
+        NEXT_PUBLIC_KEYCLOAK_URL: process.env.NEXT_PUBLIC_KEYCLOAK_URL,
+        NEXT_PUBLIC_KEYCLOAK_REALM: process.env.NEXT_PUBLIC_KEYCLOAK_REALM,
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
+      });
+    }
   }, []);
 
   // Basic public routes that don't require authentication
@@ -41,40 +50,19 @@ function App({ Component, pageProps }: AppProps) {
     '/500',
   ].includes(router.pathname);
 
-  // Determine if this route requires auth initialization
-  // Use highly specific paths to minimize Keycloak initialization
-  const requiresAuth = router.pathname.startsWith('/auth/') || 
-                     router.pathname.startsWith('/api/auth/') ||
-                     router.pathname === '/profile' ||
-                     router.pathname === '/callback' ||
-                     router.pathname === '/logout' ||
-                     router.pathname.startsWith('/documents/') ||
-                     router.pathname.startsWith('/admin/');
-                     
-  // Completely skip auth for home page to prevent any iframe checks
-  const skipAuthCompletely = router.pathname === '/';
-
   if (!isClient) {
     return null;
   }
 
   return (
     <QueryClientProvider client={queryClient}>
-      {skipAuthCompletely ? (
-        // No auth provider for home page to prevent any Keycloak initialization
-        <Layout isPublicRoute={true}>
+      {/* Always use AuthProvider for all routes */}
+      <AuthProvider autoInitialize={true}>
+        <Layout isPublicRoute={isPublicRoute}>
           <Component {...pageProps} />
-          <Toaster position="top-right" />
         </Layout>
-      ) : (
-        // Normal auth provider for other pages
-        <AuthProvider autoInitialize={requiresAuth}>
-          <Layout isPublicRoute={isPublicRoute}>
-            <Component {...pageProps} />
-          </Layout>
-          <Toaster position="top-right" />
-        </AuthProvider>
-      )}
+        <Toaster position="top-right" />
+      </AuthProvider>
       {process.env.NODE_ENV === 'development' && <ReactQueryDevtools initialIsOpen={false} />}
     </QueryClientProvider>
   );
