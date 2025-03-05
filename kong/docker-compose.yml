@@ -21,7 +21,9 @@ services:
       - dive25-network
 
   kong-migrations:
-    image: kong:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     command: kong migrations bootstrap
     depends_on:
       - kong-database
@@ -30,12 +32,20 @@ services:
       KONG_PG_HOST: kong-database
       KONG_PG_USER: kong
       KONG_PG_PASSWORD: kong_password
+      # Add environment variables for configuration template
+      BASE_DOMAIN: dive25.local
+      INTERNAL_FRONTEND_URL: http://dive25-frontend:3000
+      INTERNAL_API_URL: http://dive25-backend:8000
+      INTERNAL_KEYCLOAK_URL: http://dive25-keycloak:8080
+      PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local
     networks:
       - dive25-network
     restart: on-failure
 
   kong:
-    image: kong:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: dive25-kong
     depends_on:
       - kong-database
@@ -51,6 +61,16 @@ services:
       KONG_ADMIN_ERROR_LOG: /dev/stderr
       KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
       KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
+      # Add environment variables for configuration template
+      BASE_DOMAIN: dive25.local
+      INTERNAL_FRONTEND_URL: http://dive25-frontend:3000
+      INTERNAL_API_URL: http://dive25-backend:8000
+      INTERNAL_KEYCLOAK_URL: http://dive25-keycloak:8080
+      PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local
+      KEYCLOAK_REALM: dive25
+      KEYCLOAK_CLIENT_ID: dive25-frontend
+      KEYCLOAK_CLIENT_ID_API: dive25-api
+      SESSION_SECRET: your_session_secret
     ports:
       - "8000:8000"
       - "8443:8443"

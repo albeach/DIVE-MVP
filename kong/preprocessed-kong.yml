@@ -1,0 +1,139 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  # Wildcard Service for *.dive25.local
+  - name: wildcard-service
+    url: http://frontend:3000
+    routes:
+      - name: wildcard-route
+        hosts:
+          - abc.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+  # Frontend Service
+  - name: frontend-service
+    url: http://frontend:3000
+    routes:
+      - name: frontend-route
+        hosts:
+          - dive25.local
+          - frontend.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+  # API Service
+  - name: api-service
+    url: http://api:8000
+    routes:
+      - name: api-route
+        hosts:
+          - api.dive25.local
+        paths: 
+          - /
+        strip_path: false
+
+  # Keycloak Service (with plugins)
+  - name: keycloak-service
+    url: http://keycloak:8080
+    routes:
+      - name: keycloak-route
+        hosts:
+          - keycloak.dive25.local
+          - keycloak.dive25.com
+        paths:
+          - /
+        strip_path: false
+      - name: keycloak-route-auth
+        hosts:
+          - keycloak.dive25.local
+          - keycloak.dive25.com
+        paths:
+          - /auth
+        strip_path: true
+    plugins:
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "Access-Control-Allow-Origin: *"
+              - "Access-Control-Allow-Methods: GET, POST, OPTIONS"
+              - "Access-Control-Allow-Headers: Content-Type"
+
+  # MongoDB Express Service
+  - name: mongo-express-service
+    url: http://mongo-express:8081
+    routes:
+      - name: mongo-express-route
+        hosts:
+          - mongo-express.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+  # Grafana Service
+  - name: grafana-service
+    url: http://grafana:3000
+    routes:
+      - name: grafana-route
+        hosts:
+          - grafana.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+  # Prometheus Service
+  - name: prometheus-service
+    url: http://prometheus:9090
+    routes:
+      - name: prometheus-route
+        hosts:
+          - prometheus.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+  # phpLDAPadmin Service
+  - name: phpldapadmin-service
+    url: http://phpldapadmin:80
+    routes:
+      - name: phpldapadmin-route
+        hosts:
+          - phpldapadmin.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+  # Kong Admin Service (exposed via subdomain)
+  - name: kong-admin-service
+    url: http://localhost:8001
+    routes:
+      - name: kong-admin-route
+        hosts:
+          - kong.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+  # Konga Service
+  - name: konga-service
+    url: http://konga:1337
+    routes:
+      - name: konga-route
+        hosts:
+          - konga.dive25.local
+        paths:
+          - /
+        strip_path: false
+
+# Global plugins that apply to all services
+plugins:
+  - name: response-transformer
+    config:
+      add:
+        headers: 
+          - "Content-Security-Policy: frame-ancestors 'self'"
+          - "X-Frame-Options: SAMEORIGIN" 

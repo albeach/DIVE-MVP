@@ -1,0 +1,47 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  # Frontend Service
+  - name: frontend-service
+    url: http://dive25-frontend:3000
+    host: dive25-frontend
+    path: /
+    routes:
+      - name: frontend-route
+        hosts:
+          - dive25.local
+          - frontend.dive25.local
+        protocols:
+          - http
+          - https
+  
+  # API Service
+  - name: api-service
+    url: http://dive25-backend:8000
+    host: dive25-backend
+    path: /
+    routes:
+      - name: api-route
+        hosts:
+          - api.dive25.local
+        protocols:
+          - http
+          - https
+  
+  # Keycloak Service
+  - name: keycloak-service
+    url: http://keycloak:8080
+    host: keycloak
+    port: 8080
+    protocol: http
+    routes:
+      - name: keycloak-route
+        hosts:
+          - keycloak.dive25.local
+        paths:
+          - /auth
+        protocols:
+          - http
+          - https
+        strip_path: false 

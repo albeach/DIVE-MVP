@@ -93,13 +93,8 @@ services:
             headers:
               - Content-Security-Policy
               - X-Frame-Options
-      - name: redirect
-        config:
-          status_code: 301
-          location: https://%(host)s%(request_uri)s
-          keep_incoming_path: true
-        protocols:
-          - http
+      # Removed the redirect plugin and replaced with a comment
+      # HTTP to HTTPS redirection should be handled at the load balancer level
       - name: ip-restriction
         config:
           allow:
@@ -175,15 +170,11 @@ services:
           - http
           - https
 
-# Redirects from HTTP to HTTPS and other global plugins
+# Global plugins
 plugins:
-  - name: redirect
-    config:
-      status_code: 301
-      https_port: 8443
-    enabled: true
-    protocols:
-      - http
+  # Removed the redirect plugin and replaced with a comment
+  # HTTP to HTTPS redirection should be handled at the load balancer level
+  
   # Global CSP policy that applies to all services
   - name: response-transformer
     config:
