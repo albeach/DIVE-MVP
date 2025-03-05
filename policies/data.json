@@ -1,0 +1,32 @@
+{
+    "roles": {
+        "admin": {
+            "permissions": [
+                "read",
+                "write",
+                "delete",
+                "admin"
+            ]
+        },
+        "editor": {
+            "permissions": [
+                "read",
+                "write"
+            ]
+        },
+        "viewer": {
+            "permissions": [
+                "read"
+            ]
+        }
+    },
+    "environments": {
+        "staging": {
+            "features": {
+                "advanced_search": true,
+                "bulk_operations": true,
+                "experimental": true
+            }
+        }
+    }
+}

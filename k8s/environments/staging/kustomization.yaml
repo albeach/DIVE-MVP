@@ -1,0 +1,29 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+bases:
+  - ../../base
+
+namePrefix: staging-
+
+patchesStrategicMerge:
+  - patches/replicas.yaml
+  - patches/resources.yaml
+  - patches/security.yaml
+
+configMapGenerator:
+  - name: dive25-config
+    behavior: merge
+    literals:
+      - ENVIRONMENT=staging
+      - DOMAIN=staging.dive25.com
+      - LOG_LEVEL=debug
+      - CORS_ALLOWED_ORIGINS=https://staging.dive25.com
+
+secretGenerator:
+  - name: dive25-secrets
+    behavior: merge
+    files:
+      - mongodb-uri=secrets/mongodb-uri
+      - keycloak-client-secret=secrets/keycloak-client-secret
+      - jwt-secret=secrets/jwt-secret 

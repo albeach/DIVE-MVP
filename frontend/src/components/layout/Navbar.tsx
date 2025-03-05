@@ -4,10 +4,21 @@ import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/context/auth-context';
 import LoginButton from '@/components/auth/LoginButton';
+import { User } from '@/types/user';
 
 const Navbar: React.FC = () => {
-  const { isAuthenticated, user } = useAuth();
   const router = useRouter();
+  let isAuthenticated = false;
+  let user: User | null = null;
+  
+  // Try to use auth context, but fall back to unauthenticated state if not available
+  try {
+    const auth = useAuth();
+    isAuthenticated = auth.isAuthenticated;
+    user = auth.user;
+  } catch (error) {
+    console.warn('Auth context not available in Navbar, using fallback state');
+  }
 
   // Navigation items - adjust based on auth status
   const navItems = [
@@ -53,10 +64,10 @@ const Navbar: React.FC = () => {
           </div>
           
           <div className="flex items-center">
-            {isAuthenticated && (
+            {isAuthenticated && user && (
               <div className="hidden md:flex items-center mr-4">
                 <span className="text-sm text-gray-600 mr-2">
-                  Welcome, {user?.givenName || user?.username || 'User'}
+                  Welcome, {user.givenName || user.username || 'User'}
                 </span>
               </div>
             )}

@@ -143,6 +143,14 @@ fi
 if $DEPLOY; then
     echo "Deploying to Kubernetes..."
     
+    # Test if kubectl can connect to a cluster
+    if ! kubectl cluster-info &>/dev/null; then
+        echo "Warning: Cannot connect to Kubernetes cluster."
+        echo "For local development, you can use Docker Compose instead:"
+        echo "  docker-compose -f docker-compose.$ENVIRONMENT.yml up -d"
+        exit 1
+    fi
+    
     # Ensure namespace exists
     kubectl create namespace $NAMESPACE --dry-run=client -o yaml | kubectl apply -f -
     

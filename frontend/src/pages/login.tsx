@@ -1,22 +1,15 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/router';
 import { useAuth } from '@/context/auth-context';
-import Image from 'next/image';
 import Head from 'next/head';
+import { useTranslation } from 'next-i18next';
+import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
+import { GetStaticProps } from 'next';
 
 export default function LoginPage() {
-  const { login, isAuthenticated, isLoading, initializeAuth } = useAuth();
+  const { login, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  
-  // Initialize auth when component loads
-  useEffect(() => {
-    // Check if we're already authenticated
-    initializeAuth().then(authenticated => {
-      if (authenticated) {
-        router.push('/');
-      }
-    });
-  }, [initializeAuth, router]);
+  const { t } = useTranslation('common');
   
   // Redirect if already authenticated
   useEffect(() => {
@@ -32,30 +25,24 @@ export default function LoginPage() {
   
   if (isLoading) {
     return <div className="flex items-center justify-center min-h-screen">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-dive25-primary"></div>
+      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-600"></div>
     </div>;
   }
   
   return (
     <>
       <Head>
-        <title>Login - DIVE25 Secure Document System</title>
+        <title>{t('app.name')} - Login</title>
       </Head>
       
       <div className="flex items-center justify-center min-h-screen bg-gray-100">
-        <div className="auth-container max-w-md w-full">
-          <div className="auth-logo">
-            <Image 
-              src="/assets/dive25-logo.svg" 
-              alt="DIVE25 Logo"
-              width={150}
-              height={60}
-              priority
-            />
+        <div className="max-w-md w-full p-8 bg-white rounded-lg shadow-md">
+          <div className="text-center mb-6">
+            <div className="text-3xl font-bold text-blue-800">{t('app.name')}</div>
           </div>
           
-          <h1 className="auth-title">
-            DIVE25 Secure Document System
+          <h1 className="text-2xl font-bold text-center mb-4">
+            {t('app.name')} Secure Document System
           </h1>
           
           <p className="text-center text-gray-600 mb-6">
@@ -65,7 +52,7 @@ export default function LoginPage() {
           <div className="flex flex-col items-center">
             <button 
               onClick={handleLogin}
-              className="auth-button w-full flex justify-center"
+              className="w-full py-2 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-md"
             >
               Sign in with Keycloak
             </button>
@@ -78,4 +65,12 @@ export default function LoginPage() {
       </div>
     </>
   );
-} 
+}
+
+export const getStaticProps: GetStaticProps = async ({ locale }) => {
+  return {
+    props: {
+      ...(await serverSideTranslations(locale || 'en', ['common'])),
+    },
+  };
+}; 

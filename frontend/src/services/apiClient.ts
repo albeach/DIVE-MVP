@@ -49,21 +49,16 @@ export interface ApiError {
     retryable?: boolean;
 }
 
-// Keep track of refresh status
+// Variables for token refresh management
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
-let refreshSubscribers: ((token: string) => void)[] = [];
+const refreshSubscribers: ((token: string) => void)[] = [];
 
-// Function to push a callback to be executed when token is refreshed
-function subscribeTokenRefresh(callback: (token: string) => void) {
-    refreshSubscribers.push(callback);
-}
-
-// Function to notify all subscribers that token is refreshed
-function onTokenRefreshed(token: string) {
+// Notify all subscribers that token has been refreshed
+const onTokenRefreshed = (token: string) => {
     refreshSubscribers.forEach(callback => callback(token));
-    refreshSubscribers = [];
-}
+    refreshSubscribers.length = 0; // Clear the array
+};
 
 // Function to handle token refresh error
 function onRefreshError() {
@@ -238,15 +233,13 @@ const refreshAuthToken = async (): Promise<boolean> => {
                 onTokenRefreshed(keycloakInstance.token);
             }
 
-            return true;
+            return true; // Always return a boolean value
         })
         .catch((error: any) => {
             logger.error('Token refresh failed', error);
             isRefreshing = false;
-            onRefreshError();
 
-            // Handle session expiry by redirecting to login
-            if (keycloakInstance.authenticated) {
+            if (keycloakInstance?.authenticated) {
                 // Store current path for redirect after login
                 sessionStorage.setItem('auth_redirect', window.location.pathname + window.location.search);
 

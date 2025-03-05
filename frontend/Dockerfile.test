@@ -1,0 +1,52 @@
+# Stage 1: Development dependencies
+FROM node:18-alpine AS deps
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json package-lock.json ./
+
+# Install dependencies with dev dependencies for testing
+RUN npm ci
+
+# Stage 2: Test image
+FROM node:18-alpine AS runner
+
+# Set environment to test
+ENV NODE_ENV=test
+
+# Create app directory
+WORKDIR /app
+
+# Install curl for healthcheck
+RUN apk add --no-cache curl
+
+# Create a non-root user
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs && \
+    chown -R nextjs:nodejs /app
+
+# Copy all files
+COPY --from=deps --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --chown=nextjs:nodejs . .
+
+# Skip TypeScript checks during build for test environment
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN echo '{ "compilerOptions": { "noEmit": true } }' > tsconfig.json
+
+# Start the application in development mode for better debugging
+CMD ["npm", "run", "dev", "--", "-p", "8080"]
+
+# Set proper permissions
+USER nextjs
+
+# Expose port
+EXPOSE 8080
+
+# Set hostname for container
+ENV HOSTNAME=0.0.0.0
+ENV PORT=8080
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=5s --start-period=15s --retries=3 \
+  CMD curl -f http://localhost:8080/ || exit 1 

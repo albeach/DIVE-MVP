@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '@/context/auth-context';
+import { User } from '@/types/user';
 
 interface LoginButtonProps {
   className?: string;
@@ -14,7 +15,22 @@ const LoginButton: React.FC<LoginButtonProps> = ({
   size = 'md',
   label = 'Sign In'
 }) => {
-  const { isAuthenticated, login, logout, user } = useAuth();
+  // Default to unauthenticated state
+  let isAuthenticated = false;
+  let user: User | null = null;
+  let login = () => console.warn('Auth context not available, login function not accessible');
+  let logout = () => console.warn('Auth context not available, logout function not accessible');
+  
+  // Try to use auth context, but fall back to unauthenticated state if not available
+  try {
+    const auth = useAuth();
+    isAuthenticated = auth.isAuthenticated;
+    user = auth.user;
+    login = auth.login;
+    logout = auth.logout;
+  } catch (error) {
+    console.warn('Auth context not available in LoginButton, using fallback state');
+  }
 
   // Button styling classes based on variant and size
   const variantClasses = {
@@ -52,7 +68,7 @@ const LoginButton: React.FC<LoginButtonProps> = ({
       className={buttonClasses}
       aria-label={isAuthenticated ? 'Sign Out' : 'Sign In'}
     >
-      {isAuthenticated ? `Sign Out ${user?.givenName ? `(${user.givenName})` : ''}` : label}
+      {isAuthenticated && user ? `Sign Out ${user.givenName ? `(${user.givenName})` : ''}` : label}
     </button>
   );
 };

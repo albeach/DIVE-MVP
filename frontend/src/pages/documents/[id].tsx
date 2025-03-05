@@ -16,7 +16,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { ArrowLeftIcon, ArrowDownTrayIcon, PencilIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { useAuth } from '@/context/auth-context';
 import toast from 'react-hot-toast';
-import { apiClient } from '@/services/apiClient';
+import apiClient, { fileClient } from '@/services/apiClient';
 
 function DocumentDetail() {
   const { t } = useTranslation(['common', 'documents']);

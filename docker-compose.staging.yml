@@ -4,11 +4,11 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin_password
-      MONGO_INITDB_DATABASE: dive25_test
+      MONGO_INITDB_DATABASE: dive25_staging
     ports:
-      - "27018:27017"
+      - "27019:27017"
     volumes:
-      - mongodb_test_data:/data/db
+      - mongodb_staging_data:/data/db
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
@@ -23,11 +23,11 @@ services:
       LDAP_DOMAIN: "dive25.local"
       LDAP_ADMIN_PASSWORD: "admin_password"
     ports:
-      - "1389:389"
-      - "1636:636"
+      - "2389:389"
+      - "2636:636"
     volumes:
-      - ldap_test_data:/var/lib/ldap
-      - ldap_test_config:/etc/ldap/slapd.d
+      - ldap_staging_data:/var/lib/ldap
+      - ldap_staging_config:/etc/ldap/slapd.d
     healthcheck:
       test: ["CMD", "ldapsearch", "-x", "-h", "localhost", "-b", "dc=dive25,dc=local", "-D", "cn=admin,dc=dive25,dc=local", "-w", "admin_password"]
       interval: 10s
@@ -42,9 +42,9 @@ services:
       - "xpack.security.enabled=false"
       - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
     ports:
-      - "9201:9200"
+      - "9202:9200"
     volumes:
-      - elasticsearch_test_data:/usr/share/elasticsearch/data
+      - elasticsearch_staging_data:/usr/share/elasticsearch/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9200"]
       interval: 10s
@@ -59,12 +59,26 @@ services:
       MINIO_ROOT_PASSWORD: minio_password
     command: server /data --console-address ":9001"
     ports:
-      - "9002:9000"
-      - "9003:9001"
+      - "9004:9000"
+      - "9005:9001"
     volumes:
-      - minio_test_data:/data
+      - minio_staging_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  opa:
+    image: openpolicyagent/opa:1.2.0-envoy-static
+    ports:
+      - "8181:8181"
+    command: "run --server --addr :8181 --log-level debug --set=decision_logs.console=true /policies/authz.rego /policies/data.json"
+    volumes:
+      - ./policies:/policies
+    healthcheck:
+      test: ["CMD", "/opa", "version"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -73,11 +87,11 @@ services:
   api:
     build:
       context: ./api
-      dockerfile: Dockerfile.test
+      dockerfile: Dockerfile.staging
     environment:
-      NODE_ENV: test
+      NODE_ENV: staging
       PORT: 3000
-      MONGODB_URI: mongodb://admin:admin_password@mongodb:27017/dive25_test?authSource=admin
+      MONGODB_URI: mongodb://admin:admin_password@mongodb:27017/dive25_staging?authSource=admin
       LDAP_URL: ldap://ldap:389
       LDAP_BIND_DN: cn=admin,dc=dive25,dc=local
       LDAP_BIND_CREDENTIALS: admin_password
@@ -87,10 +101,11 @@ services:
       MINIO_PORT: 9000
       MINIO_ACCESS_KEY: minio_admin
       MINIO_SECRET_KEY: minio_password
-      MINIO_BUCKET: dive25-test-bucket
-      JWT_SECRET: test_jwt_secret_key
+      MINIO_BUCKET: dive25-staging-bucket
+      JWT_SECRET: staging_jwt_secret_key
+      OPA_URL: http://opa:8181
     ports:
-      - "3002:3000"
+      - "3003:3000"
     depends_on:
       mongodb:
         condition: service_healthy
@@ -99,6 +114,8 @@ services:
       elasticsearch:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      opa:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
@@ -110,13 +127,16 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: Dockerfile.test
+      dockerfile: Dockerfile.staging
     environment:
-      NODE_ENV: test
+      NODE_ENV: staging
       PORT: 8080
       API_URL: http://api:3000
+      NEXT_PUBLIC_KEYCLOAK_URL: "http://localhost:8080"
+      NEXT_PUBLIC_KEYCLOAK_REALM: "dive25"
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: "dive25-frontend"
     ports:
-      - "8082:8080"
+      - "8083:8080"
     depends_on:
       api:
         condition: service_healthy
@@ -128,8 +148,8 @@ services:
       start_period: 30s
 
 volumes:
-  mongodb_test_data:
-  ldap_test_data:
-  ldap_test_config:
-  elasticsearch_test_data:
-  minio_test_data: 
+  mongodb_staging_data:
+  ldap_staging_data:
+  ldap_staging_config:
+  elasticsearch_staging_data:
+  minio_staging_data: 

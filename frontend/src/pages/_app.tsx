@@ -11,6 +11,8 @@ import { appWithTranslation } from 'next-i18next';
 import { AuthProvider } from '@/context/auth-context';
 import { Layout } from '@/components/layout/Layout';
 import { useEffect, useState } from 'react';
+// Import i18n initialization
+import '@/utils/i18n';
 
 function App({ Component, pageProps }: AppProps) {
   const router = useRouter();

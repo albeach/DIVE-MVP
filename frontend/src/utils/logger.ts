@@ -91,7 +91,7 @@ export function createLogger(context: string) {
         debug: (message: string, ...args: any[]) => debug(message, context, ...args),
         info: (message: string, ...args: any[]) => info(message, context, ...args),
         warn: (message: string, ...args: any[]) => warn(message, context, ...args),
-        error: (message: string, error?: any, ...args: any[]) => error(message, context, error, ...args)
+        error: (message: string, errorObj?: any, ...args: any[]) => error(message, context, errorObj, ...args)
     };
 }
 

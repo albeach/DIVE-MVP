@@ -1,0 +1,29 @@
+{
+    "app": {
+        "name": "DIVE25",
+        "description": "Document Intelligence and Verification Engine"
+    },
+    "navigation": {
+        "home": "Home",
+        "dashboard": "Dashboard",
+        "documents": "Documents",
+        "settings": "Settings",
+        "logout": "Logout"
+    },
+    "actions": {
+        "save": "Save",
+        "cancel": "Cancel",
+        "delete": "Delete",
+        "edit": "Edit",
+        "create": "Create",
+        "upload": "Upload",
+        "download": "Download",
+        "search": "Search"
+    },
+    "messages": {
+        "welcome": "Welcome to DIVE25",
+        "loading": "Loading...",
+        "error": "An error occurred",
+        "success": "Operation successful"
+    }
+}

@@ -53,7 +53,7 @@ const AUTH_PATHS = ['/auth', '/api/auth', '/callback', '/logout', '/profile', '/
 // Move and update the global window interface declaration at the top of the file
 declare global {
   interface Window {
-    __keycloak?: Keycloak;
+    __keycloak?: any;
   }
 }
 
@@ -212,8 +212,6 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     logger.debug('Initializing Keycloak...');
     
     try {
-      logger.time('keycloak-init');
-      
       // Use our configured Keycloak instance
       const keycloakInstance = getKeycloak();
 
@@ -271,7 +269,6 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       
       // Initialize Keycloak
       const authenticated = await keycloakInstance.init(initOptions);
-      logger.timeEnd('keycloak-init');
       logger.debug(`Keycloak initialized, authenticated: ${authenticated}`);
 
       // Store globally

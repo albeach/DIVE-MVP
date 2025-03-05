@@ -10,7 +10,21 @@ interface LayoutProps {
 }
 
 export function Layout({ children, isPublicRoute = false }: LayoutProps) {
-  const { isAuthenticated, isLoading } = useAuth();
+  // Default to unauthenticated state
+  let isAuthenticated = false;
+  let isLoading = false;
+  
+  // Only use auth context if not a public route
+  try {
+    if (!isPublicRoute) {
+      const auth = useAuth();
+      isAuthenticated = auth.isAuthenticated;
+      isLoading = auth.isLoading;
+    }
+  } catch (error) {
+    // If auth context is not available, treat as public route
+    console.warn('Auth context not available, treating as public route');
+  }
   
   // If the route requires authentication and user isn't authenticated
   if (!isPublicRoute && !isLoading && !isAuthenticated) {
