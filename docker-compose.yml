@@ -214,12 +214,6 @@ services:
       - "8181:8181"
     networks:
       - dive25-network
-    healthcheck:
-      test: ["CMD", "/opa", "health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 5s
 
   # Kong PostgreSQL Database
   kong-database:

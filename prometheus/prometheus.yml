@@ -40,3 +40,8 @@ scrape_configs:
     static_configs:
       - targets: ['keycloak:8080']
     metrics_path: '/metrics'
+    
+  - job_name: 'opa'
+    static_configs:
+      - targets: ['dive25-opa:8181']
+    metrics_path: '/metrics'
