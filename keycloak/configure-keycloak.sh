@@ -89,7 +89,9 @@ FRONTEND_CLIENT=$(cat <<EOF
     "redirectUris": [
         "${PUBLIC_FRONTEND_URL}/*",
         "http://localhost:3000/*",
-        "http://localhost:3001/*"
+        "http://localhost:3001/*",
+        "https://kong:8443/callback",           # Required for Kong-generated redirect URI
+        "https://${FRONTEND_DOMAIN}.${BASE_DOMAIN}:8443/callback"  # For accessing via 8443 port
     ],
     "webOrigins": [
         "${PUBLIC_FRONTEND_URL}",

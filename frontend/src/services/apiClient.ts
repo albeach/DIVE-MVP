@@ -52,7 +52,7 @@ export interface ApiError {
 // Variables for token refresh management
 let isRefreshing = false;
 let refreshPromise: Promise<boolean> | null = null;
-const refreshSubscribers: ((token: string) => void)[] = [];
+let refreshSubscribers: ((token: string) => void)[] = [];
 
 // Notify all subscribers that token has been refreshed
 const onTokenRefreshed = (token: string) => {
@@ -252,7 +252,7 @@ const refreshAuthToken = async (): Promise<boolean> => {
             return false;
         });
 
-    return refreshPromise;
+    return refreshPromise || Promise.resolve(false);
 };
 
 // Request interceptor for API client
@@ -330,7 +330,9 @@ apiClient.interceptors.response.use(
             logger.debug(`Request to ${response.config.url} completed in ${requestDuration}ms`);
 
             // Add timing header to response
-            response.headers.set('X-Response-Time', requestDuration.toString());
+            if (response.headers && typeof response.headers.set === 'function') {
+                response.headers.set('X-Response-Time', requestDuration.toString());
+            }
         }
 
         return response;
@@ -435,7 +437,9 @@ fileClient.interceptors.response.use(
             logger.debug(`File request to ${response.config.url} completed in ${requestDuration}ms`);
 
             // Add timing header to response
-            response.headers.set('X-Response-Time', requestDuration.toString());
+            if (response.headers && typeof response.headers.set === 'function') {
+                response.headers.set('X-Response-Time', requestDuration.toString());
+            }
         }
 
         return response;

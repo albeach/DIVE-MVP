@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Kong OIDC Configuration Script
+# This script configures Kong with OIDC authentication for Keycloak
+# Using standardized URL variables
+
 KONG_ADMIN_URL=${KONG_ADMIN_URL:-http://localhost:8001}
 
 echo "Configuring Kong with OIDC authentication for Keycloak..."
@@ -15,19 +19,28 @@ elif [ -f "/app/.env" ]; then
   source /app/.env
 fi
 
-# Set defaults for required variables if not set
+# Use standardized variables with fallbacks
+# Internal URLs (service-to-service communication)
 KEYCLOAK_URL=${INTERNAL_KEYCLOAK_URL:-http://keycloak:8080}
+KEYCLOAK_AUTH_URL=${INTERNAL_KEYCLOAK_AUTH_URL:-http://keycloak:8080/auth}
+
+# External URLs (browser-to-service communication)
 PUBLIC_KEYCLOAK_URL=${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local}
-PUBLIC_FRONTEND_URL=${PUBLIC_FRONTEND_URL:-https://dive25.local}
+PUBLIC_KEYCLOAK_AUTH_URL=${PUBLIC_KEYCLOAK_AUTH_URL:-https://keycloak.dive25.local/auth}
+PUBLIC_FRONTEND_URL=${PUBLIC_FRONTEND_URL:-https://frontend.dive25.local}
 PUBLIC_API_URL=${PUBLIC_API_URL:-https://api.dive25.local}
+
+# Authentication configuration
 KEYCLOAK_REALM=${KEYCLOAK_REALM:-dive25}
 KEYCLOAK_CLIENT_ID_FRONTEND=${KEYCLOAK_CLIENT_ID_FRONTEND:-dive25-frontend}
 KEYCLOAK_CLIENT_ID_API=${KEYCLOAK_CLIENT_ID_API:-dive25-api}
 KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
 
 echo "Using configuration:"
-echo "KEYCLOAK_URL: $KEYCLOAK_URL"
+echo "INTERNAL_KEYCLOAK_URL: $KEYCLOAK_URL"
+echo "INTERNAL_KEYCLOAK_AUTH_URL: $KEYCLOAK_AUTH_URL"
 echo "PUBLIC_KEYCLOAK_URL: $PUBLIC_KEYCLOAK_URL"
+echo "PUBLIC_KEYCLOAK_AUTH_URL: $PUBLIC_KEYCLOAK_AUTH_URL"
 echo "PUBLIC_FRONTEND_URL: $PUBLIC_FRONTEND_URL"
 echo "PUBLIC_API_URL: $PUBLIC_API_URL"
 echo "KEYCLOAK_REALM: $KEYCLOAK_REALM"
@@ -85,7 +98,8 @@ fi
 
 echo "Verifying Keycloak connectivity..."
 # Test connection to Keycloak OpenID configuration endpoint
-KEYCLOAK_OPENID_URL="${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
+# Use the internal URL for service-to-service communication
+KEYCLOAK_OPENID_URL="${KEYCLOAK_AUTH_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
 if curl -k -s -f "$KEYCLOAK_OPENID_URL" > /dev/null; then
   echo "✅ Successfully connected to Keycloak OpenID configuration endpoint"
 else
@@ -98,181 +112,204 @@ else
   echo "  3. Check Keycloak logs: docker logs dive25-keycloak"
   echo "  4. Ensure the realm $KEYCLOAK_REALM exists in Keycloak"
   echo "  5. Check network connectivity between Kong and Keycloak"
-  
-  # Try to get detailed error information
-  echo "Attempting to get more details..."
-  CURL_RESPONSE=$(curl -k -s -v "$KEYCLOAK_OPENID_URL" 2>&1)
-  echo "Curl response:"
-  echo "$CURL_RESPONSE"
-  
-  # Continue with configuration, though it might not work
-  echo "Will continue with configuration despite connectivity issues..."
-fi
-
-# PHASE 1: Apply minimal OIDC plugin configuration globally, with safe defaults
-echo "📋 PHASE 1: Applying minimal global OIDC configuration..."
-
-GLOBAL_OIDC_EXISTS=$(curl -s $KONG_ADMIN_URL/plugins | grep -o '"name":"oidc-auth"' | wc -l)
-
-if [ "$GLOBAL_OIDC_EXISTS" -eq 0 ]; then
-  echo "Creating global OIDC plugin with minimal configuration..."
-  curl -s -X POST $KONG_ADMIN_URL/plugins \
-    -d "name=oidc-auth" \
-    -d "config.client_id=${KEYCLOAK_CLIENT_ID_FRONTEND}" \
-    -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-    -d "config.discovery=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-    -d "config.bearer_only=yes" \
-    -d "config.ssl_verify=no" \
-    -d "config.session_opts_ssl_verify=no" \
-    -d "config.introspection_endpoint_auth_method=client_secret_post" \
-    -d "config.realm=kong" \
-    -d "config.timeout=10000"
-  
-  if [ $? -eq 0 ]; then
-    echo "✅ Successfully created global OIDC plugin"
+  # Try fallback without /auth path
+  KEYCLOAK_OPENID_URL_ALT="${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
+  echo "Trying alternate URL: $KEYCLOAK_OPENID_URL_ALT"
+  if curl -k -s -f "$KEYCLOAK_OPENID_URL_ALT" > /dev/null; then
+    echo "✅ Successfully connected to alternate Keycloak OpenID configuration endpoint"
+    KEYCLOAK_OPENID_URL=$KEYCLOAK_OPENID_URL_ALT
+    KEYCLOAK_AUTH_URL=$KEYCLOAK_URL
+    echo "Using alternate Keycloak auth URL: $KEYCLOAK_AUTH_URL"
   else
-    echo "❌ Failed to create global OIDC plugin"
-  fi
-else
-  echo "Global OIDC plugin already exists, skipping PHASE 1"
-fi
-
-# PHASE 2: Verify existing service configurations
-echo "📋 PHASE 2: Verifying and updating service-specific configurations..."
-
-# Check for frontend service
-FRONTEND_SERVICE_EXISTS=$(curl -s $KONG_ADMIN_URL/services | grep -o '"name":"frontend-service"' | wc -l)
-if [ "$FRONTEND_SERVICE_EXISTS" -eq 0 ]; then
-  echo "⚠️ Warning: Frontend service not found. OIDC configuration will be incomplete."
-  echo "You may need to create the service first."
-else
-  echo "✅ Frontend service exists"
-  
-  # Check or create the authentication-specific route for the frontend service
-  echo "Setting up authentication routes..."
-  AUTH_ROUTE_ID=$(curl -s $KONG_ADMIN_URL/services/frontend-service/routes | grep -o '"name":"frontend-auth-route"' | wc -l)
-
-  if [ "$AUTH_ROUTE_ID" -eq 0 ]; then
-    echo "Creating new frontend auth route"
-    curl -s -X POST $KONG_ADMIN_URL/services/frontend-service/routes \
-      -d "name=frontend-auth-route" \
-      -d "paths[]=/auth" \
-      -d "paths[]=/auth/" \
-      -d "paths[]=/api/auth" \
-      -d "paths[]=/api/auth/" \
-      -d "paths[]=/callback" \
-      -d "paths[]=/logout" \
-      -d "strip_path=false" \
-      -d "preserve_host=true" \
-      -d "hosts[]=dive25.local" \
-      -d "hosts[]=frontend.dive25.local"
-    
-    if [ $? -eq 0 ]; then
-      echo "✅ Successfully created frontend auth route"
-    else
-      echo "❌ Failed to create frontend auth route"
-    fi
-  else
-    echo "✅ Frontend auth route already exists"
-  fi
-
-  # Update frontend auth route OIDC configuration
-  echo "Updating frontend auth route OIDC configuration..."
-  FRONTEND_AUTH_PLUGIN_ID=$(curl -s $KONG_ADMIN_URL/routes/frontend-auth-route/plugins | grep -o '"name":"oidc-auth"' | wc -l)
-
-  if [ "$FRONTEND_AUTH_PLUGIN_ID" -eq 0 ]; then
-    echo "Creating frontend auth route OIDC plugin"
-    curl -s -X POST $KONG_ADMIN_URL/routes/frontend-auth-route/plugins \
-      -d "name=oidc-auth" \
-      -d "config.client_id=${KEYCLOAK_CLIENT_ID_FRONTEND}" \
-      -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-      -d "config.discovery=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-      -d "config.introspection_endpoint=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
-      -d "config.bearer_only=false" \
-      -d "config.realm=${KEYCLOAK_REALM}" \
-      -d "config.redirect_uri_path=/callback" \
-      -d "config.logout_path=/logout" \
-      -d "config.redirect_after_logout_uri=/" \
-      -d "config.ssl_verify=false" \
-      -d "config.session_opts_ssl_verify=false" \
-      -d "config.timeout=10000"
-  else
-    echo "Frontend auth route OIDC plugin already exists, updating..."
-    AUTH_PLUGIN_ID=$(curl -s $KONG_ADMIN_URL/routes/frontend-auth-route/plugins | grep -o '"id":"[^"]*"' | grep -o '[^"]*$' | head -1)
-    
-    if [ -n "$AUTH_PLUGIN_ID" ]; then
-      curl -s -X PATCH $KONG_ADMIN_URL/plugins/$AUTH_PLUGIN_ID \
-        -d "config.client_id=${KEYCLOAK_CLIENT_ID_FRONTEND}" \
-        -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-        -d "config.discovery=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-        -d "config.introspection_endpoint=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
-        -d "config.bearer_only=false" \
-        -d "config.realm=${KEYCLOAK_REALM}" \
-        -d "config.redirect_uri_path=/callback" \
-        -d "config.logout_path=/logout" \
-        -d "config.redirect_after_logout_uri=/" \
-        -d "config.ssl_verify=false" \
-        -d "config.session_opts_ssl_verify=false" \
-        -d "config.timeout=10000"
-    fi
+    echo "❌ Error: Could not connect to alternate Keycloak OpenID configuration endpoint"
   fi
 fi
 
-# Check for API service
-API_SERVICE_EXISTS=$(curl -s $KONG_ADMIN_URL/services | grep -o '"name":"api-service"' | wc -l)
-if [ "$API_SERVICE_EXISTS" -eq 0 ]; then
-  echo "⚠️ Warning: API service not found. OIDC configuration will be incomplete."
-  echo "You may need to create the service first."
+# Get the discovery document to verify the configuration
+echo "Fetching OpenID Configuration..."
+OPENID_CONFIG=$(curl -k -s $KEYCLOAK_OPENID_URL)
+if [ -z "$OPENID_CONFIG" ]; then
+  echo "❌ Error: Could not fetch OpenID Configuration"
+  exit 1
 else
-  echo "✅ API service exists"
+  echo "✅ Successfully fetched OpenID Configuration"
+  # Verify that the issuer matches the expected Keycloak URL
+  ISSUER=$(echo $OPENID_CONFIG | jq -r '.issuer')
+  echo "Keycloak Issuer: $ISSUER"
   
-  # Update API service OIDC configuration
-  echo "Updating API service OIDC configuration..."
-  API_PLUGIN_ID=$(curl -s $KONG_ADMIN_URL/services/api-service/plugins | grep -o '"id":"[^"]*"' | grep -o '[^"]*$' | head -1)
+  # Extract token endpoints for debugging
+  TOKEN_ENDPOINT=$(echo $OPENID_CONFIG | jq -r '.token_endpoint')
+  AUTH_ENDPOINT=$(echo $OPENID_CONFIG | jq -r '.authorization_endpoint')
+  echo "Token Endpoint: $TOKEN_ENDPOINT"
+  echo "Auth Endpoint: $AUTH_ENDPOINT"
+  
+  # Save these for the Kong configuration
+  DISCOVERY_URL=$KEYCLOAK_OPENID_URL
+  
+  # Create a public-facing discovery URL for token validation
+  # NOTE: We're not using this for discovery as Kong can't resolve it from inside the container
+  # Instead we keep using the internal URL but disable SSL verification
+  PUBLIC_KEYCLOAK_OPENID_URL="${PUBLIC_KEYCLOAK_AUTH_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration"
+  echo "Public Keycloak OpenID URL: $PUBLIC_KEYCLOAK_OPENID_URL (not used for discovery)"
+  
+  # IMPORTANT: We keep using internal URL for discovery to ensure Kong can access it
+  # DISCOVERY_URL="$PUBLIC_KEYCLOAK_OPENID_URL"
+fi
 
-  if [ -n "$API_PLUGIN_ID" ]; then
-    echo "Updating existing API OIDC plugin: $API_PLUGIN_ID"
-    curl -s -X PATCH $KONG_ADMIN_URL/plugins/$API_PLUGIN_ID \
-      -d "config.client_id=${KEYCLOAK_CLIENT_ID_API}" \
-      -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-      -d "config.discovery=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-      -d "config.introspection_endpoint=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
-      -d "config.bearer_only=true" \
-      -d "config.realm=${KEYCLOAK_REALM}" \
-      -d "config.ssl_verify=false" \
-      -d "config.session_opts_ssl_verify=false" \
-      -d "config.timeout=10000"
+# Create or update frontend service in Kong
+echo "Configuring Kong frontend service..."
+FRONTEND_SERVICE_NAME="frontend-service"
+
+# Check if the service already exists
+SERVICE_ID=$(curl -s $KONG_ADMIN_URL/services/$FRONTEND_SERVICE_NAME | jq -r '.id')
+if [ "$SERVICE_ID" != "null" ]; then
+  echo "Updating existing frontend service: $FRONTEND_SERVICE_NAME"
+  curl -s -X PATCH $KONG_ADMIN_URL/services/$FRONTEND_SERVICE_NAME \
+    -d "name=$FRONTEND_SERVICE_NAME" \
+    -d "url=${INTERNAL_FRONTEND_URL}" || echo "Failed to update frontend service"
+else
+  echo "Creating new frontend service: $FRONTEND_SERVICE_NAME"
+  curl -s -X POST $KONG_ADMIN_URL/services \
+    -d "name=$FRONTEND_SERVICE_NAME" \
+    -d "url=${INTERNAL_FRONTEND_URL}" || echo "Failed to create frontend service"
+fi
+
+# Create or update frontend route in Kong
+FRONTEND_ROUTE_NAME="frontend-route"
+HOST="${FRONTEND_DOMAIN}.${BASE_DOMAIN}"
+
+# Check if the route already exists
+ROUTE_ID=$(curl -s $KONG_ADMIN_URL/services/$FRONTEND_SERVICE_NAME/routes/$FRONTEND_ROUTE_NAME | jq -r '.id')
+if [ "$ROUTE_ID" != "null" ]; then
+  echo "Updating existing frontend route: $FRONTEND_ROUTE_NAME"
+  curl -s -X PATCH $KONG_ADMIN_URL/services/$FRONTEND_SERVICE_NAME/routes/$FRONTEND_ROUTE_NAME \
+    -d "name=$FRONTEND_ROUTE_NAME" \
+    -d "hosts[]=$HOST" \
+    -d "preserve_host=true" \
+    -d "protocols[]=http" \
+    -d "protocols[]=https" || echo "Failed to update frontend route"
+else
+  echo "Creating new frontend route: $FRONTEND_ROUTE_NAME"
+  curl -s -X POST $KONG_ADMIN_URL/services/$FRONTEND_SERVICE_NAME/routes \
+    -d "name=$FRONTEND_ROUTE_NAME" \
+    -d "hosts[]=$HOST" \
+    -d "preserve_host=true" \
+    -d "protocols[]=http" \
+    -d "protocols[]=https" || echo "Failed to create frontend route"
+fi
+
+# Create or update API service in Kong
+echo "Configuring Kong API service..."
+API_SERVICE_NAME="api-service"
+
+# Check if the service already exists
+SERVICE_ID=$(curl -s $KONG_ADMIN_URL/services/$API_SERVICE_NAME | jq -r '.id')
+if [ "$SERVICE_ID" != "null" ]; then
+  echo "Updating existing API service: $API_SERVICE_NAME"
+  curl -s -X PATCH $KONG_ADMIN_URL/services/$API_SERVICE_NAME \
+    -d "name=$API_SERVICE_NAME" \
+    -d "url=${INTERNAL_API_URL}" || echo "Failed to update API service"
+else
+  echo "Creating new API service: $API_SERVICE_NAME"
+  curl -s -X POST $KONG_ADMIN_URL/services \
+    -d "name=$API_SERVICE_NAME" \
+    -d "url=${INTERNAL_API_URL}" || echo "Failed to create API service"
+fi
+
+# Create or update API route in Kong
+API_ROUTE_NAME="api-route"
+API_HOST="${API_DOMAIN}.${BASE_DOMAIN}"
+
+# Check if the route already exists
+ROUTE_ID=$(curl -s $KONG_ADMIN_URL/services/$API_SERVICE_NAME/routes/$API_ROUTE_NAME | jq -r '.id')
+if [ "$ROUTE_ID" != "null" ]; then
+  echo "Updating existing API route: $API_ROUTE_NAME"
+  curl -s -X PATCH $KONG_ADMIN_URL/services/$API_SERVICE_NAME/routes/$API_ROUTE_NAME \
+    -d "name=$API_ROUTE_NAME" \
+    -d "hosts[]=$API_HOST" \
+    -d "preserve_host=true" \
+    -d "protocols[]=http" \
+    -d "protocols[]=https" || echo "Failed to update API route"
+else
+  echo "Creating new API route: $API_ROUTE_NAME"
+  curl -s -X POST $KONG_ADMIN_URL/services/$API_SERVICE_NAME/routes \
+    -d "name=$API_ROUTE_NAME" \
+    -d "hosts[]=$API_HOST" \
+    -d "preserve_host=true" \
+    -d "protocols[]=http" \
+    -d "protocols[]=https" || echo "Failed to create API route"
+fi
+
+# Now configure the OIDC plugin for the frontend
+echo "Configuring OIDC plugin for frontend service..."
+# Check if the OIDC plugin already exists for this service
+PLUGIN_ID=$(curl -s $KONG_ADMIN_URL/services/$FRONTEND_SERVICE_NAME/plugins | jq -r '.data[] | select(.name == "oidc-auth") | .id')
+
+# Prepare callback URLs - use the PUBLIC domain for the browser to access
+if [ "$USE_HTTPS" = "true" ]; then
+  # For HTTPS, only add port if it's not the standard 443
+  if [ "$KONG_PROXY_PORT" = "443" ]; then
+    CALLBACK_URL="https://${FRONTEND_DOMAIN}.${BASE_DOMAIN}/callback"
   else
-    echo "Creating new API OIDC plugin"
-    curl -s -X POST $KONG_ADMIN_URL/services/api-service/plugins \
-      -d "name=oidc-auth" \
-      -d "config.client_id=${KEYCLOAK_CLIENT_ID_API}" \
-      -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-      -d "config.discovery=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-      -d "config.introspection_endpoint=${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
-      -d "config.bearer_only=true" \
-      -d "config.realm=${KEYCLOAK_REALM}" \
-      -d "config.ssl_verify=false" \
-      -d "config.session_opts_ssl_verify=false" \
-      -d "config.timeout=10000"
+    CALLBACK_URL="https://${FRONTEND_DOMAIN}.${BASE_DOMAIN}:${KONG_PROXY_PORT}/callback"
+  fi
+else
+  # For HTTP, only add port if it's not the standard 80
+  if [ "$KONG_PROXY_PORT" = "80" ]; then
+    CALLBACK_URL="http://${FRONTEND_DOMAIN}.${BASE_DOMAIN}/callback"
+  else
+    CALLBACK_URL="http://${FRONTEND_DOMAIN}.${BASE_DOMAIN}:${KONG_PROXY_PORT}/callback"
   fi
 fi
 
-echo "🔍 Final verification..."
+# IMPORTANT: Ensure the redirect_uri exactly matches what's registered in Keycloak
+# This is critical for proper OIDC token exchange
+echo "Using callback URL: $CALLBACK_URL"
 
-# Verify plugin configurations
-echo "Checking OIDC plugin instances..."
-PLUGIN_COUNT=$(curl -s $KONG_ADMIN_URL/plugins | grep -o '"name":"oidc-auth"' | wc -l)
-echo "Found $PLUGIN_COUNT OIDC plugin instances"
+# Prepare plugin configuration
+PLUGIN_CONFIG=$(cat <<EOF
+{
+  "name": "oidc-auth",
+  "config": {
+    "client_id": "${KEYCLOAK_CLIENT_ID_FRONTEND}",
+    "client_secret": "${KEYCLOAK_CLIENT_SECRET}",
+    "discovery": "${DISCOVERY_URL}",
+    "introspection_endpoint": "${TOKEN_ENDPOINT}",
+    "bearer_only": "no",
+    "realm": "${KEYCLOAK_REALM}",
+    "redirect_uri_path": "/callback",
+    "logout_path": "/logout",
+    "redirect_after_logout_uri": "${PUBLIC_FRONTEND_URL}",
+    "scope": "openid email profile",
+    "response_type": "code",
+    "ssl_verify": "no",
+    "token_endpoint_auth_method": "client_secret_post",
+    "filters": null,
+    "logout_query_arg": "logout",
+    "redirect_uri": "${CALLBACK_URL}",
+    "introspection_endpoint_auth_method": "client_secret_post",
+    "timeout": 10000,
+    "session_secret": "${SESSION_SECRET:-change-me-in-production}",
+    "cookie_domain": null,
+    "cookie_secure": true,
+    "cookie_samesite": "Lax",
+    "pass_userinfo": true,
+    "recovery_page_path": null
+  }
+}
+EOF
+)
 
-# Check if we have a plugin at the global level
-GLOBAL_OIDC=$(curl -s $KONG_ADMIN_URL/plugins | grep -o '"name":"oidc-auth"' | wc -l)
-if [ "$GLOBAL_OIDC" -gt 0 ]; then
-  echo "✅ Global OIDC plugin is configured"
+if [ -n "$PLUGIN_ID" ]; then
+  echo "Updating existing OIDC plugin for frontend service..."
+  curl -s -X PATCH $KONG_ADMIN_URL/plugins/$PLUGIN_ID \
+    -H "Content-Type: application/json" \
+    -d "$PLUGIN_CONFIG" || echo "Failed to update OIDC plugin"
 else
-  echo "⚠️ No global OIDC plugin found"
+  echo "Creating new OIDC plugin for frontend service..."
+  curl -s -X POST $KONG_ADMIN_URL/services/$FRONTEND_SERVICE_NAME/plugins \
+    -H "Content-Type: application/json" \
+    -d "$PLUGIN_CONFIG" || echo "Failed to create OIDC plugin"
 fi
 
-echo "✨ Kong OIDC configuration setup complete"
-echo "Note: For Kong 3.x, session management uses the plugin's internal implementation" 
-echo "To test the setup, try accessing your frontend application and API endpoints" 
+echo "OIDC Authentication configuration complete!" 

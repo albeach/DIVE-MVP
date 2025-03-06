@@ -1,24 +1,36 @@
 /**
  * Keycloak authentication configuration
  * 
- * This file follows a "hardcoded defaults with environment override" approach:
- * - Default values are hardcoded for clarity and reliability
- * - Environment variables can override these values when needed
- * - This provides the best balance of flexibility and simplicity
+ * This file integrates with our standardized URL management approach:
+ * - Environment variables are used for all URLs
+ * - Consistent naming conventions for auth paths
+ * - Clear fallbacks for development
  */
 import Keycloak from 'keycloak-js';
+import { createLogger } from '../utils/logger';
 
-// Hardcoded default values
-const DEFAULT_KEYCLOAK_URL = 'https://keycloak.dive25.local/auth';
+// Create a logger instance for authentication
+const logger = createLogger('auth');
+
+// Hardcoded default values as fallbacks for local development only
+// These should match the defaults in our .env.development file
+const DEFAULT_KEYCLOAK_URL = 'http://localhost:8080/auth';
 const DEFAULT_REALM = 'dive25';
 const DEFAULT_CLIENT_ID = 'dive25-frontend';
 
-// Initialize Keycloak instance
+// Initialize Keycloak instance with proper URL handling
 const keycloakInit = () => {
-    // Get Keycloak URL from environment or use default
+    // Get Keycloak URL from environment with fallback to default
+    // The environment should provide the complete URL including /auth path
     const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL || DEFAULT_KEYCLOAK_URL;
     const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || DEFAULT_REALM;
     const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || DEFAULT_CLIENT_ID;
+
+    logger.info('Initializing Keycloak with:', {
+        url: keycloakUrl,
+        realm: realm,
+        clientId: clientId
+    });
 
     // Create keycloak instance
     const keycloak = new Keycloak({
@@ -28,7 +40,7 @@ const keycloakInit = () => {
     });
 
     // Log the configuration for debugging
-    console.log('Keycloak configuration:', {
+    logger.debug('Keycloak configuration:', {
         url: keycloak.authServerUrl,
         realm: keycloak.realm,
         clientId: keycloak.clientId
@@ -44,6 +56,7 @@ const keycloakInit = () => {
             kc_theme: 'dive25'
         };
 
+        logger.debug('Keycloak login with options:', loginOptions);
         return originalLogin.call(this, loginOptions);
     };
 

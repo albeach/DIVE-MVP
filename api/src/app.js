@@ -3,6 +3,9 @@ const helmet = require('helmet');
 const cors = require('cors');
 const compression = require('compression');
 const { createHttpTerminator } = require('http-terminator');
+const fs = require('fs');
+const http = require('http');
+const https = require('https');
 const { errorHandler } = require('./middleware/error.middleware');
 const { loggingMiddleware } = require('./middleware/logging.middleware');
 const { tokenExpirationCheck } = require('./middleware/token-refresh.middleware');
@@ -125,7 +128,40 @@ app.get('/health/ready', async (req, res) => {
 });
 
 // Start the server
-const server = app.listen(config.port, async () => {
+let server;
+
+// Check if HTTPS is enabled
+const useHttps = process.env.USE_HTTPS === 'true';
+if (useHttps) {
+    try {
+        // Read SSL certificate files
+        const sslCertPath = process.env.SSL_CERT_PATH || '/app/certs/tls.crt';
+        const sslKeyPath = process.env.SSL_KEY_PATH || '/app/certs/tls.key';
+
+        if (!fs.existsSync(sslCertPath) || !fs.existsSync(sslKeyPath)) {
+            logger.error(`SSL certificate files not found at ${sslCertPath} or ${sslKeyPath}`);
+            logger.warn('Falling back to HTTP server');
+            server = http.createServer(app);
+        } else {
+            const options = {
+                cert: fs.readFileSync(sslCertPath),
+                key: fs.readFileSync(sslKeyPath)
+            };
+
+            logger.info('Starting HTTPS server with SSL certificates');
+            server = https.createServer(options, app);
+        }
+    } catch (error) {
+        logger.error('Error setting up HTTPS server:', error);
+        logger.warn('Falling back to HTTP server');
+        server = http.createServer(app);
+    }
+} else {
+    logger.info('Starting HTTP server (HTTPS not enabled)');
+    server = http.createServer(app);
+}
+
+server.listen(config.port, async () => {
     try {
         // Connect to MongoDB if not in test mode
         if (process.env.SKIP_MONGODB !== 'true') {
@@ -140,7 +176,7 @@ const server = app.listen(config.port, async () => {
             logger.info('Skipping MongoDB connection as SKIP_MONGODB=true');
         }
 
-        logger.info(`Server running on port ${config.port}`);
+        logger.info(`Server running on port ${config.port} (${useHttps ? 'HTTPS' : 'HTTP'})`);
     } catch (error) {
         logger.error('Failed to start server:', error);
         process.exit(1);

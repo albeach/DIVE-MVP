@@ -63,6 +63,7 @@ RUN addgroup --system --gid 1001 nodejs && \
 COPY --from=builder /app/next.config.js ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
+COPY --from=builder /app/server.js ./server.js
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
@@ -75,5 +76,5 @@ EXPOSE 3000
 # Set hostname for container
 ENV HOSTNAME=0.0.0.0
 
-# Start the application
-CMD ["node", "server.js"]
+# Start the application with our custom server
+CMD ["node", "/app/server.js"]
