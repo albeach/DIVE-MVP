@@ -1,0 +1,27 @@
+{
+    "clientId": "dive25-api",
+    "rootUrl": "https://api.dive25.local",
+    "adminUrl": "https://api.dive25.local",
+    "surrogateAuthRequired": false,
+    "enabled": true,
+    "alwaysDisplayInConsole": false,
+    "clientAuthenticatorType": "client-secret",
+    "secret": "change-me-in-production",
+    "redirectUris": [
+        "https://api.dive25.local/*"
+    ],
+    "webOrigins": [
+        "https://api.dive25.local"
+    ],
+    "notBefore": 0,
+    "bearerOnly": true,
+    "consentRequired": false,
+    "standardFlowEnabled": false,
+    "implicitFlowEnabled": false,
+    "directAccessGrantsEnabled": false,
+    "serviceAccountsEnabled": true,
+    "publicClient": false,
+    "frontchannelLogout": false,
+    "protocol": "openid-connect",
+    "fullScopeAllowed": true
+}

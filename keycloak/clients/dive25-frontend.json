@@ -1,0 +1,32 @@
+{
+    "clientId": "dive25-frontend",
+    "rootUrl": "https://frontend.dive25.local",
+    "adminUrl": "https://frontend.dive25.local",
+    "surrogateAuthRequired": false,
+    "enabled": true,
+    "alwaysDisplayInConsole": false,
+    "clientAuthenticatorType": "client-secret",
+    "redirectUris": [
+        "https://frontend.dive25.local/*",
+        "http://localhost:3000/*",
+        "http://localhost:3001/*",
+        "https://kong:8443/callback"
+    ],
+    "webOrigins": [
+        "https://frontend.dive25.local",
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "+"
+    ],
+    "notBefore": 0,
+    "bearerOnly": false,
+    "consentRequired": false,
+    "standardFlowEnabled": true,
+    "implicitFlowEnabled": false,
+    "directAccessGrantsEnabled": true,
+    "serviceAccountsEnabled": false,
+    "publicClient": true,
+    "frontchannelLogout": false,
+    "protocol": "openid-connect",
+    "fullScopeAllowed": true
+}

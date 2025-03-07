@@ -1,0 +1,1 @@
+{"clientId":"dive25-frontend","name":"DIVE25 Frontend","enabled":true,"publicClient":true,"redirectUris":["https://frontend.dive25.local:4430/*","http://localhost:3000/*","http://localhost:3001/*"],"webOrigins":["https://frontend.dive25.local:4430","http://localhost:3000","http://localhost:3001","+"],"standardFlowEnabled":true,"directAccessGrantsEnabled":true}
