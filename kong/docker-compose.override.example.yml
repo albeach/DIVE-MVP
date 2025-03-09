@@ -1,0 +1,18 @@
+version: '3'
+
+services:
+  kong:
+    volumes:
+      - ./kong/kong-configure-unified.sh:/usr/local/bin/kong-configure-unified.sh
+      - ./kong/kong.yml:/etc/kong/kong.yml
+      
+  kong-config:
+    volumes:
+      - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh
+    environment:
+      - KONG_ADMIN_URL=http://kong:8001
+      - BASE_DOMAIN=${BASE_DOMAIN:-dive25.local}
+      - KONG_CONTAINER=kong
+      - FRONTEND_CONTAINER=frontend
+      - API_CONTAINER=api
+      - KEYCLOAK_CONTAINER=keycloak 

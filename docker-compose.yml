@@ -13,7 +13,7 @@ services:
       - ./mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
       - ./mongodb/mongod.conf:/etc/mongod.conf:ro
     networks:
-      - dive25-network
+      - dive25-backend
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 30s
@@ -40,7 +40,8 @@ services:
     depends_on:
       - mongodb
     networks:
-      - dive25-network
+      - dive25-admin
+      - dive25-backend  # Needs access to MongoDB
 
   # PostgreSQL for Keycloak
   postgres:
@@ -54,7 +55,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
-      - dive25-network
+      - dive25-backend
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U keycloak"]
       interval: 10s
@@ -87,7 +88,6 @@ services:
       KC_HTTPS_PORT: 8443
       # Use consistent domain/URL configuration
       KC_HOSTNAME: "${KEYCLOAK_DOMAIN}.${BASE_DOMAIN}"
-      KC_HOSTNAME_ADMIN: "${KEYCLOAK_DOMAIN}.${BASE_DOMAIN}"
       KC_HOSTNAME_STRICT: "false"
       KC_HOSTNAME_STRICT_HTTPS: "${USE_HTTPS}"
       KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_SUPPRESS_LOGOUT_CONFIRMATION_SCREEN: "true"
@@ -95,22 +95,27 @@ services:
       KC_HTTP_CORS: "true"
       KC_HTTP_CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS}"
       KC_HTTP_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
-      KC_HOSTNAME_PORT: "${KEYCLOAK_PORT}"
-      KC_HOSTNAME_PORT_HTTPS: "${KEYCLOAK_PORT}"
       KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_OVERRIDE_WELL_KNOWN: "true"
       KC_SPI_HOSTNAME_DEFAULT_FRONTEND_URL: "${PUBLIC_KEYCLOAK_URL}"
       KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI: "true"
-      KC_HTTP_RELATIVE_PATH: "/auth"
+      # Force port 8443 for all Keycloak URLs
+      KC_HOSTNAME_PORT: "8443"
+      KC_HOSTNAME_PORT_HTTPS: "8443"
+      # Additional settings to ensure consistent port usage
+      KC_SPI_HOSTNAME_DEFAULT_HOSTNAME: "${KEYCLOAK_DOMAIN}.${BASE_DOMAIN}"
+      KC_SPI_HOSTNAME_DEFAULT_HOSTNAME_PORT: "8443"
+      KC_SPI_HOSTNAME_DEFAULT_ADMIN_URL: "${PUBLIC_KEYCLOAK_URL}"
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./certs:/opt/keycloak/certs:ro
-    ports:
-      - "${KEYCLOAK_PORT}:8443"
+    # No direct external port for Keycloak - Kong will handle all external traffic
+    # ports:
+    #   - "0.0.0.0:4432:8443"  # Commented out to prevent direct access
     depends_on:
       postgres:
         condition: service_healthy
     networks:
-      - dive25-network
+      - dive25-backend
     healthcheck:
       test: ["CMD", "/opt/keycloak/bin/kc.sh", "show-config"]
       interval: 10s
@@ -144,7 +149,7 @@ services:
       - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
     entrypoint: ["/bin/sh", "/configure-keycloak.sh"]
     networks:
-      - dive25-network
+      - dive25-backend
 
   # Keycloak CSP Configuration
   keycloak-csp:
@@ -161,7 +166,7 @@ services:
       - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
     entrypoint: ["/bin/sh", "/configure-csp.sh"]
     networks:
-      - dive25-network
+      - dive25-backend
 
   # OpenLDAP Directory Service
   openldap:
@@ -189,7 +194,7 @@ services:
       - "389:389"
       - "636:636"
     networks:
-      - dive25-network
+      - dive25-backend
     healthcheck:
       test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:389", "-D", "${LDAP_BIND_DN}", "-w", "${LDAP_ADMIN_PASSWORD}", "-b", "${LDAP_SEARCH_BASE}"]
       interval: 30s
@@ -210,7 +215,8 @@ services:
     depends_on:
       - openldap
     networks:
-      - dive25-network
+      - dive25-admin
+      - dive25-backend  # Needs access to OpenLDAP
 
   # OPA Policy Agent
   opa:
@@ -225,7 +231,7 @@ services:
     ports:
       - "8181:8181"
     networks:
-      - dive25-network
+      - dive25-backend
 
   # Kong PostgreSQL Database
   kong-database:
@@ -244,7 +250,7 @@ services:
       retries: 3
     restart: unless-stopped
     networks:
-      - dive25-network
+      - dive25-backend
 
   # Kong Migrations
   kong-migrations:
@@ -266,7 +272,7 @@ services:
       INTERNAL_KEYCLOAK_URL: ${INTERNAL_KEYCLOAK_URL}
       PUBLIC_KEYCLOAK_URL: ${PUBLIC_KEYCLOAK_URL}
     networks:
-      - dive25-network
+      - dive25-backend
     restart: on-failure
 
   # Kong API Gateway
@@ -314,6 +320,10 @@ services:
       KONG_LOG_LEVEL: debug
     volumes:
       - ./certs:/etc/kong/certs:ro
+      - ./kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+      - ./kong/certs:/usr/local/kong/certs:ro
+      - ./kong/plugins:/usr/local/kong/plugins:ro
+      - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
     ports:
       - "${KONG_PROXY_PORT}:${INTERNAL_KONG_PROXY_PORT}"
       - "8443:8443"
@@ -326,7 +336,8 @@ services:
       retries: 10
     restart: unless-stopped
     networks:
-      - dive25-network
+      - dive25-public
+      - dive25-backend
 
   # Optional: Kong Admin UI
   konga:
@@ -346,7 +357,8 @@ services:
       - kong-database
       - kong
     networks:
-      - dive25-network
+      - dive25-admin
+      - dive25-backend  # Needs access to kong-database
     restart: unless-stopped
 
   # Kong Configuration
@@ -388,8 +400,10 @@ services:
       - ./kong/configure-ldap.sh:/app/configure-ldap.sh:ro
       - ./kong/kong.ldap.yml:/app/kong.ldap.yml:ro
       - ./kong/configure-oidc.sh:/app/configure-oidc.sh:ro
+      - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
     networks:
-      - dive25-network
+      - dive25-backend
+      - dive25-admin  # Needs access to admin interfaces
 
   # Prometheus Monitoring
   prometheus:
@@ -408,7 +422,8 @@ services:
     ports:
       - "${PROMETHEUS_PORT:-9090}:9090"
     networks:
-      - dive25-network
+      - dive25-admin
+      - dive25-backend  # Needs access to monitoring targets
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
       interval: 30s
@@ -439,7 +454,8 @@ services:
     depends_on:
       - prometheus
     networks:
-      - dive25-network
+      - dive25-admin
+      - dive25-backend  # Needs access to Prometheus
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
@@ -459,7 +475,8 @@ services:
     depends_on:
       - mongodb
     networks:
-      - dive25-network
+      - dive25-backend  # Access to MongoDB
+      - dive25-admin    # Access for Prometheus to scrape metrics
 
   # Node Exporter for Host Metrics
   node-exporter:
@@ -478,7 +495,7 @@ services:
     ports:
       - "9100:9100"
     networks:
-      - dive25-network
+      - dive25-admin  # Only needs to be accessible by Prometheus
 
   # Backend API
   api:
@@ -527,7 +544,7 @@ services:
       - opa
       - openldap
     networks:
-      - dive25-network
+      - dive25-backend
     healthcheck:
       test: ["CMD", "wget", "--no-check-certificate", "-O", "-", "https://localhost:${INTERNAL_API_PORT}/health"]
       interval: 30s
@@ -563,7 +580,7 @@ services:
       - "${FRONTEND_PORT}:${INTERNAL_FRONTEND_PORT}"
     restart: unless-stopped
     networks:
-      - dive25-network
+      - dive25-public
     depends_on:
       - api
       - keycloak
@@ -575,7 +592,14 @@ services:
       start_period: 40s
 
 networks:
-  dive25-network:
+  # Public-facing network for edge services
+  dive25-public:
+    driver: bridge
+  # Backend network for internal services
+  dive25-backend:
+    driver: bridge
+  # Admin network for management services
+  dive25-admin:
     driver: bridge
 
 volumes:

@@ -32,6 +32,11 @@ Comprehensive documentation is available in the `docs` directory:
 
 - [API Documentation](docs/technical/api.md) - RESTful API endpoints and usage
 
+### Troubleshooting
+
+- [Infinite Redirection Fix](docs/troubleshooting/infinite-redirection-fix.md) - Resolving Keycloak/Kong redirection loops
+- [Common Issues](docs/troubleshooting/common-issues.md) - Solutions to frequently encountered problems
+
 ### For More Documentation
 
 See the [Documentation Index](docs/index.md) for a complete list of available documentation.
@@ -140,6 +145,22 @@ The DEV environment is designed for local development and testing using Docker C
    - Prometheus: http://localhost:9090 or https://prometheus.dive25.local
    - phpLDAPadmin: http://localhost:8085 or https://phpldapadmin.dive25.local
    - Kong Admin: http://localhost:8001 or https://kong.dive25.local
+   
+   **Access services via port 8443**:
+   - Frontend: https://dive25.local:8443 or https://frontend.dive25.local:8443
+   - API: https://api.dive25.local:8443
+   - Keycloak: https://keycloak.dive25.local:8443
+   
+   To configure port 8443 access:
+   ```bash
+   # Make the script executable
+   chmod +x ./kong/kong-configure.sh
+   
+   # Run the configuration script
+   ./kong/kong-configure.sh
+   ```
+   
+   See [Kong README](kong/README.md) for more details on port 8443 configuration and troubleshooting.
 
 ### Staging Environment with Docker Compose
 
@@ -317,6 +338,96 @@ The system includes several scripts to help with deployment:
 - `scripts/smoke-test.sh`: Runs basic smoke tests
 - `scripts/setup-local-dev-certs.sh`: Sets up SSL certificates for local development
 - `scripts/seal-secrets.sh`: Seals secrets for Kubernetes deployment
+
+## Authentication Configuration
+
+The authentication flow is handled by Keycloak and secured by Kong's OIDC plugin. The authentication configuration is set up automatically during deployment with the following consolidated scripts:
+
+- `kong/kong-configure-unified.sh`: Unified script for all Kong configuration (routes, DNS, SSL, OIDC)
+- `keycloak/configure-keycloak-unified.sh`: Unified script for Keycloak realm, CSP, and issuer configuration
+- `keycloak/Dockerfile`: Includes necessary fixes for redirects and port handling
+- `keycloak/themes/dive25/login/resources/js/login-config.js`: Fixes all Keycloak redirect issues
+
+### Consolidated Approach
+
+We've adopted a consolidated approach to authentication fixes, integrating all necessary patches directly into the main configuration files rather than applying them as separate scripts. This approach:
+
+1. **Simplifies Deployment**: All fixes are automatically applied during initial setup
+2. **Improves Maintainability**: Changes are centralized in a few key files
+3. **Ensures Consistency**: All environments get the same fixes
+
+During deployment, the `setup-and-test.sh` script will offer to remove redundant patch scripts using the `scripts/cleanup-patches.sh` utility. This cleans up legacy fix scripts that are no longer needed.
+
+### Built-in Fixes
+
+The following fixes have been incorporated into the main configuration scripts:
+
+#### Kong Configuration
+
+The Kong unified configuration script (`kong-configure-unified.sh`) includes:
+
+1. **Complete Gateway Configuration**:
+   - Sets up all services (frontend, API, Keycloak)
+   - Creates routes with proper port 8443 mappings
+   - Configures SSL certificates for secure communication
+   - Resets DNS resolution to ensure proper service discovery
+   - Provides status reporting and health checks
+
+2. **OIDC Authentication Configuration**:
+   - Configures route-specific authentication to prevent infinite redirection loops
+   - Uses consistent session secret across all OIDC plugin instances
+   - Sets proper cookie attributes (`SameSite=None`, secure, HttpOnly)
+   - Ensures cookies use the correct domain
+   - Configures session storage and session lifetime
+
+This unified script replaces multiple separate scripts:
+   - `configure-oidc.sh` (OIDC plugin configuration)
+   - `fix-kong-config.sh` (Kong configuration fixes)
+   - `reset-kong-dns.sh` (DNS resolution fixes)
+   - `kong-configure.sh` (port 8443 and route configuration)
+   - Other fragmented Kong configuration scripts
+
+#### Keycloak Configuration
+
+The Keycloak configuration has been consolidated into two main components:
+
+1. **Server-Side Configuration** (`configure-keycloak-unified.sh`):
+   - Sets up the Keycloak realm with proper configuration
+   - Configures Content Security Policy settings for proper iframe embedding
+   - Updates issuer URLs to use port 8443 consistently
+   - Configures client redirect URIs for frontend and API services
+   - Ensures proper token validation across all components
+   - Updates environment files (`.env` and `docker-compose.yml`) to use port 8443
+   - Generates browser script fixes for frontend runtime configuration
+
+   This unified script replaces multiple separate scripts:
+   - `configure-keycloak.sh` (realm configuration)
+   - `configure-issuer.sh` (issuer URL)
+   - `configure-csp.sh` (content security policy)
+   - `update-keycloak-port.sh` (port mapping)
+   - `update-keycloak-url.sh` (URL configuration)
+
+2. **Client-Side Fixes** (`login-config.js`):
+   - Intercepts the OpenID Configuration responses
+   - Rewrites URLs to use port 8443 instead of 4432 or 8080
+   - Ensures external URLs use HTTPS protocol
+   - Intercepts login form submissions
+   - Rewrites any redirects to frontend ports (3000-3002) to use port 8443
+
+### Troubleshooting
+
+If you encounter authentication issues, try the following:
+
+1. Clear your browser cookies and cache
+2. Check the Kong logs: `docker logs dive25-kong`
+3. Check the Keycloak logs: `docker logs dive25-keycloak`
+4. Verify that your hosts file has the correct entries:
+   ```
+   127.0.0.1 dive25.local frontend.dive25.local api.dive25.local keycloak.dive25.local
+   ```
+5. Ensure that you're accepting any SSL certificate warnings in your browser
+
+For more detailed information, see the [Authentication Troubleshooting Guide](./docs/troubleshooting/infinite-redirection-fix.md).
 
 ## Next Steps
 

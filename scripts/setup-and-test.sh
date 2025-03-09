@@ -973,49 +973,41 @@ if docker ps -a | grep -q dive25-keycloak-config; then
     
     echo "Using Keycloak admin credentials and realm from environment variables"
     
-    # First, try to run the original configure-keycloak.sh using a new container
-    echo "Running Keycloak configuration script in a clean container..."
-    docker run --rm \
-      --network dive-mvp_dive25-network \
-      -v $(pwd)/keycloak/configure-keycloak.sh:/configure-keycloak.sh:ro \
-      -v $(pwd)/keycloak/realm-export.json:/realm-export.json:ro \
-      -v $(pwd)/keycloak/identity-providers:/identity-providers:ro \
-      -v $(pwd)/keycloak/test-users:/test-users:ro \
-      -v $(pwd)/keycloak/clients:/clients:ro \
-      -e KEYCLOAK_URL=${KEYCLOAK_INTERNAL_URL} \
-      -e KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN} \
-      -e KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD} \
-      -e PUBLIC_KEYCLOAK_URL=$(grep -E "^PUBLIC_KEYCLOAK_URL=" .env | cut -d= -f2) \
-      -e PUBLIC_FRONTEND_URL=$(grep -E "^PUBLIC_FRONTEND_URL=" .env | cut -d= -f2) \
-      -e PUBLIC_API_URL=$(grep -E "^PUBLIC_API_URL=" .env | cut -d= -f2) \
-      -e KEYCLOAK_REALM=${KEYCLOAK_REALM} \
-      -e KEYCLOAK_CLIENT_ID_FRONTEND=$(grep -E "^KEYCLOAK_CLIENT_ID_FRONTEND=" .env | cut -d= -f2) \
-      -e KEYCLOAK_CLIENT_ID_API=$(grep -E "^KEYCLOAK_CLIENT_ID_API=" .env | cut -d= -f2) \
-      -e KEYCLOAK_CLIENT_SECRET=$(grep -E "^KEYCLOAK_CLIENT_SECRET=" .env | cut -d= -f2) \
-      curlimages/curl:latest \
-      /bin/sh -c "chmod +x /configure-keycloak.sh && /configure-keycloak.sh"
+    # If that fails, try to use the unified Keycloak configuration script
+    echo "Attempting to use unified Keycloak configuration script..."
+    if [ -f "./keycloak/configure-keycloak-unified.sh" ]; then
+      chmod +x ./keycloak/configure-keycloak-unified.sh
       
-    # Check if that fixed the issue
-    echo "Checking if the realm was created successfully..."
-    if [ $? -eq 0 ]; then
-      echo "✅ Keycloak configuration through container completed successfully"
+      # Set environment variables for the script
+      export INTERNAL_KEYCLOAK_URL="$KEYCLOAK_URL"
+      export PUBLIC_KEYCLOAK_URL="${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local:8443}"
+      export KEYCLOAK_REALM="$KEYCLOAK_REALM"
+      export KEYCLOAK_ADMIN="$KEYCLOAK_ADMIN"
+      export KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD"
+      export PUBLIC_FRONTEND_URL="$PUBLIC_FRONTEND_URL"
+      export PUBLIC_API_URL="$PUBLIC_API_URL"
+      export KEYCLOAK_CLIENT_ID_FRONTEND="$KEYCLOAK_CLIENT_ID_FRONTEND"
+      export KEYCLOAK_CLIENT_ID_API="$KEYCLOAK_CLIENT_ID_API"
+      export KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET"
+      
+      ./keycloak/configure-keycloak-unified.sh
+      
+      if [ $? -eq 0 ]; then
+        echo "✅ Keycloak realm configured successfully using unified configuration script"
+      else
+        echo "⚠️ Failed to configure Keycloak realm using unified configuration script"
+        echo "Please check the logs and try to fix the issue manually."
+      fi
     else
-      echo "⚠️ Keycloak configuration through container failed"
+      echo "⚠️ configure-keycloak-unified.sh script not found"
       
-      # If that fails, try to use the fix-keycloak-config.sh script
-      echo "Attempting to use fix-keycloak-config.sh script..."
+      # Fall back to the old fix script if necessary
       if [ -f "./keycloak/fix-keycloak-config.sh" ]; then
+        echo "Falling back to legacy fix-keycloak-config.sh script..."
         chmod +x ./keycloak/fix-keycloak-config.sh
         ./keycloak/fix-keycloak-config.sh
-        
-        if [ $? -eq 0 ]; then
-          echo "✅ Keycloak realm fixed successfully using fix-keycloak-config.sh"
-        else
-          echo "⚠️ Failed to fix Keycloak realm using fix-keycloak-config.sh"
-          echo "Please check the logs and try to fix the issue manually."
-        fi
       else
-        echo "⚠️ fix-keycloak-config.sh script not found"
+        echo "⚠️ No Keycloak configuration scripts found"
       fi
     fi
   fi
@@ -1185,59 +1177,151 @@ if docker ps -a | grep -q dive25-kong-config; then
     echo "Using Kong Admin URL: $KONG_ADMIN_URL"
     echo "Using Keycloak realm: $KEYCLOAK_REALM"
     
-    # Check if we have a fix-kong-config.sh script
-    if [ -f "./kong/fix-kong-config.sh" ]; then
-      echo "Using existing fix-kong-config.sh script..."
-      chmod +x ./kong/fix-kong-config.sh
+    # Use the unified Kong configuration script 
+    if [ -f "./kong/kong-configure-unified.sh" ]; then
+      echo "Using unified Kong configuration script for complete Kong setup..."
+      chmod +x ./kong/kong-configure-unified.sh
       
       # Set environment variables for the script
       export KONG_ADMIN_URL="$KONG_ADMIN_URL"
-      export KEYCLOAK_URL="$INTERNAL_KEYCLOAK_URL"
+      export BASE_DOMAIN="$BASE_DOMAIN"
+      export KONG_CONTAINER="dive25-kong"
+      export FRONTEND_CONTAINER="dive25-frontend"
+      export API_CONTAINER="dive25-api"
+      export KEYCLOAK_CONTAINER="dive25-keycloak"
+      export INTERNAL_FRONTEND_URL="${INTERNAL_FRONTEND_URL:-http://frontend:3000}"
+      export INTERNAL_API_URL="${INTERNAL_API_URL:-http://api:8000}"
+      export INTERNAL_KEYCLOAK_URL="$KEYCLOAK_URL"
       export PUBLIC_KEYCLOAK_URL="$PUBLIC_KEYCLOAK_URL"
-      export KEYCLOAK_REALM="$KEYCLOAK_REALM"
-      export KEYCLOAK_CLIENT_ID="$KEYCLOAK_CLIENT_ID"
-      export KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET"
       export PUBLIC_FRONTEND_URL="$PUBLIC_FRONTEND_URL"
+      export PUBLIC_API_URL="$PUBLIC_API_URL"
+      export KEYCLOAK_REALM="$KEYCLOAK_REALM"
+      export KEYCLOAK_CLIENT_ID_FRONTEND="$KEYCLOAK_CLIENT_ID"
+      export KEYCLOAK_CLIENT_ID_API="$KEYCLOAK_CLIENT_ID_API"
+      export KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET"
       
-      # Run the script
-      ./kong/fix-kong-config.sh
+      # Run the unified script with all configuration steps
+      ./kong/kong-configure-unified.sh all
       
       if [ $? -eq 0 ]; then
-        echo "✅ Kong configuration fixed successfully using fix-kong-config.sh"
+        echo "✅ Kong configuration completed successfully using unified configuration script"
       else
-        echo "⚠️ Failed to fix Kong configuration using fix-kong-config.sh"
-        echo "Attempting direct configuration..."
+        echo "⚠️ Failed to configure Kong using unified configuration script"
+        echo "Falling back to legacy scripts..."
+        
+        # Try to use the legacy scripts as fallback
+        if [ -f "./kong/configure-oidc.sh" ]; then
+          echo "Using legacy OIDC configuration script..."
+          chmod +x ./kong/configure-oidc.sh
+          
+          # Run the legacy OIDC script
+          ./kong/configure-oidc.sh
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ OIDC configuration completed successfully using legacy script"
+            echo "Attempting port 8443 configuration..."
+            
+            # Try port-8443 configuration with the unified script again
+            ./kong/kong-configure-unified.sh port-8443 || {
+              echo "⚠️ Port 8443 configuration failed. Check Kong logs for details."
+            }
+          else
+            echo "⚠️ Failed to configure Kong using legacy script"
+          fi
+        else
+          echo "⚠️ Legacy OIDC configuration script not found"
+        fi
       fi
     else
-      echo "fix-kong-config.sh not found, attempting direct configuration..."
+      echo "Unified Kong configuration script not found, trying separate scripts..."
+      
+      # Use the comprehensive configure-oidc.sh script 
+      if [ -f "./kong/configure-oidc.sh" ]; then
+        echo "Using configure-oidc.sh script for Kong configuration..."
+        chmod +x ./kong/configure-oidc.sh
+        
+        # Set environment variables for the script
+        export KONG_ADMIN_URL="$KONG_ADMIN_URL"
+        export KEYCLOAK_URL="$INTERNAL_KEYCLOAK_URL"
+        export KEYCLOAK_AUTH_URL="$INTERNAL_KEYCLOAK_AUTH_URL"
+        export PUBLIC_KEYCLOAK_URL="$PUBLIC_KEYCLOAK_URL"
+        export PUBLIC_KEYCLOAK_AUTH_URL="$PUBLIC_KEYCLOAK_AUTH_URL"
+        export KEYCLOAK_REALM="$KEYCLOAK_REALM"
+        export KEYCLOAK_CLIENT_ID_FRONTEND="$KEYCLOAK_CLIENT_ID"
+        export KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET"
+        export PUBLIC_FRONTEND_URL="$PUBLIC_FRONTEND_URL"
+        export PUBLIC_API_URL="$PUBLIC_API_URL"
+        export FRONTEND_DOMAIN="$FRONTEND_DOMAIN"
+        export API_DOMAIN="$API_DOMAIN"
+        export BASE_DOMAIN="$BASE_DOMAIN"
+        
+        # Run the script
+        ./kong/configure-oidc.sh
+        
+        if [ $? -eq 0 ]; then
+          echo "✅ Kong configuration completed successfully using configure-oidc.sh"
+        else
+          echo "⚠️ Failed to configure Kong using configure-oidc.sh"
+          echo "Attempting direct configuration..."
+        fi
+
+        # After OIDC configuration, setup port 8443 using our unified Kong configuration script
+        echo "Setting up port 8443 routes..."
+        
+        # Try to use the unified script for port 8443 configuration
+        if [ -f "./kong/kong-configure-unified.sh" ]; then
+          echo "Using unified script for port 8443 configuration..."
+          chmod +x ./kong/kong-configure-unified.sh
+          
+          # Set environment variables for the script
+          export KONG_ADMIN_URL="$KONG_ADMIN_URL"
+          export BASE_DOMAIN="$BASE_DOMAIN"
+          export KONG_CONTAINER="dive25-kong"
+          export FRONTEND_CONTAINER="dive25-frontend"
+          export API_CONTAINER="dive25-api"
+          export KEYCLOAK_CONTAINER="dive25-keycloak"
+          
+          # Run the script with port-8443 configuration
+          ./kong/kong-configure-unified.sh port-8443 || {
+            echo "⚠️ Port 8443 configuration failed. Check Kong logs for details."
+          }
+        else
+          echo "⚠️ Unified Kong configuration script not found for port 8443 setup"
+          echo "Please create the unified script or run the cleanup-patches.sh to update configuration files"
+        fi
+      else
+        echo "configure-oidc.sh not found, attempting direct configuration..."
+        
+        # As a fallback, try direct configuration of the OIDC plugin
+        echo "Checking for existing OIDC plugin..."
+        PLUGIN_ID=$(curl -s $KONG_ADMIN_URL/plugins?name=oidc-auth | jq -r '.data[0].id' 2>/dev/null || echo "")
+        if [ -n "$PLUGIN_ID" ] && [ "$PLUGIN_ID" != "null" ]; then
+          echo "Removing existing OIDC plugin with ID: $PLUGIN_ID"
+          curl -s -X DELETE $KONG_ADMIN_URL/plugins/$PLUGIN_ID || echo "Failed to delete existing OIDC plugin"
+        fi
+        
+        echo "Creating new OIDC plugin with ${KEYCLOAK_REALM} realm..."
+        curl -s -X POST $KONG_ADMIN_URL/plugins \
+          -d "name=oidc-auth" \
+          -d "config.client_id=${KEYCLOAK_CLIENT_ID}" \
+          -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
+          -d "config.discovery=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
+          -d "config.introspection_endpoint=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
+          -d "config.bearer_only=false" \
+          -d "config.realm=${KEYCLOAK_REALM}" \
+          -d "config.redirect_uri_path=/callback" \
+          -d "config.logout_path=/logout" \
+          -d "config.redirect_after_logout_uri=${PUBLIC_FRONTEND_URL}" \
+          -d "config.scope=openid email profile" \
+          -d "config.response_type=code" \
+          -d "config.ssl_verify=false" \
+          -d "config.token_endpoint_auth_method=client_secret_post" \
+          -d "config.introspection_endpoint_auth_method=client_secret_post" \
+          -d "config.redirect_uri=${PUBLIC_FRONTEND_URL}/callback" || echo "Failed to create OIDC plugin"
+        
+        echo "Kong OIDC plugin configuration updated."
+      fi
     fi
-    
-    # As a fallback, try direct configuration of the OIDC plugin
-    echo "Checking for existing OIDC plugin..."
-    PLUGIN_ID=$(curl -s $KONG_ADMIN_URL/plugins?name=oidc-auth | jq -r '.data[0].id' 2>/dev/null || echo "")
-    if [ -n "$PLUGIN_ID" ] && [ "$PLUGIN_ID" != "null" ]; then
-      echo "Removing existing OIDC plugin with ID: $PLUGIN_ID"
-      curl -s -X DELETE $KONG_ADMIN_URL/plugins/$PLUGIN_ID || echo "Failed to delete existing OIDC plugin"
-    fi
-    
-    echo "Creating new OIDC plugin with ${KEYCLOAK_REALM} realm..."
-    curl -s -X POST $KONG_ADMIN_URL/plugins \
-      -d "name=oidc-auth" \
-      -d "config.client_id=${KEYCLOAK_CLIENT_ID}" \
-      -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-      -d "config.discovery=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-      -d "config.bearer_only=false" \
-      -d "config.realm=${KEYCLOAK_REALM}" \
-      -d "config.redirect_uri_path=/callback" \
-      -d "config.logout_path=/logout" \
-      -d "config.redirect_after_logout_uri=${PUBLIC_FRONTEND_URL}" \
-      -d "config.scope=openid email profile" \
-      -d "config.response_type=code" \
-      -d "config.ssl_verify=false" \
-      -d "config.token_endpoint_auth_method=client_secret_post" \
-      -d "config.introspection_endpoint_auth_method=client_secret_post" || echo "Failed to create OIDC plugin"
-    
-    echo "Kong OIDC plugin configuration updated."
   fi
 else
   echo "⚠️ Kong config container not found, checking OIDC plugin directly..."
@@ -1292,6 +1376,7 @@ else
         -d "config.client_id=${KEYCLOAK_CLIENT_ID}" \
         -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
         -d "config.discovery=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
+        -d "config.introspection_endpoint=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
         -d "config.bearer_only=false" \
         -d "config.realm=${KEYCLOAK_REALM}" \
         -d "config.redirect_uri_path=/callback" \
@@ -1301,7 +1386,8 @@ else
         -d "config.response_type=code" \
         -d "config.ssl_verify=false" \
         -d "config.token_endpoint_auth_method=client_secret_post" \
-        -d "config.introspection_endpoint_auth_method=client_secret_post" || echo "Failed to create OIDC plugin"
+        -d "config.introspection_endpoint_auth_method=client_secret_post" \
+        -d "config.redirect_uri=${PUBLIC_FRONTEND_URL}/callback" || echo "Failed to create OIDC plugin"
       
       echo "Kong OIDC plugin configuration updated."
     fi
@@ -1427,3 +1513,48 @@ docker-compose ps --services | sort
 
 echo
 echo "Setup complete! Your authentication workflow has been refactored and is ready for testing." 
+
+# End of script cleanup and summary
+print_step "Deployment Summary"
+echo "DIVE25 deployment has been completed!"
+
+# Ask user if they want to clean up redundant patch scripts
+print_step "Cleaning up redundant patch scripts"
+echo "The authentication fixes have been consolidated into the main configuration files:"
+echo "- kong/kong-configure-unified.sh (for all Kong configuration)"
+echo "- keycloak/themes/dive25/login/resources/js/login-config.js (Keycloak redirects)"
+echo "- keycloak/configure-keycloak-unified.sh (for Keycloak realm and security)"
+echo "- keycloak/Dockerfile (theme configuration)"
+echo ""
+echo "There are several redundant patch scripts that can be safely removed."
+
+if [ -f "./scripts/cleanup-patches.sh" ]; then
+  read -p "Do you want to remove the redundant patch scripts? (y/n): " CLEANUP_PATCHES
+  if [[ $CLEANUP_PATCHES == "y" || $CLEANUP_PATCHES == "Y" ]]; then
+    echo "Running cleanup-patches.sh script..."
+    chmod +x ./scripts/cleanup-patches.sh
+    
+    # Run the script with auto-confirm
+    echo "y" | ./scripts/cleanup-patches.sh
+    
+    if [ $? -eq 0 ]; then
+      echo "✅ Redundant patch scripts removed successfully"
+    else
+      echo "⚠️ Failed to clean up redundant patch scripts"
+    fi
+  else
+    echo "Skipping cleanup of redundant patch scripts."
+  fi
+else
+  echo "⚠️ cleanup-patches.sh script not found at ./scripts/cleanup-patches.sh"
+fi
+
+echo ""
+echo "✅ Setup and tests completed successfully"
+echo ""
+echo "Access your deployment at:"
+echo "Frontend: https://dive25.local:8443"
+echo "API: https://api.dive25.local:8443"
+echo "Keycloak: https://keycloak.dive25.local:8443"
+echo ""
+echo "Thank you for using DIVE25!"
