@@ -184,13 +184,13 @@
             "clientId": "dive25-frontend",
             "enabled": true,
             "redirectUris": [
-                "${PUBLIC_FRONTEND_URL}/*",
+                "https://frontend.dive25.local:8443/*",
                 "http://localhost:3000/*",
                 "http://localhost:3001/*",
                 "https://dive25.local/callback"
             ],
             "webOrigins": [
-                "${PUBLIC_FRONTEND_URL}",
+                "https://frontend.dive25.local:8443",
                 "http://localhost:3000",
                 "http://localhost:3001"
             ],

@@ -1,0 +1,80 @@
+version: '3.8'
+
+# This file overrides portions of the main docker-compose.yml to handle
+# the keycloak-config container exit behavior correctly.
+
+services:
+  # Modify services that depend on keycloak-config
+  kong-config:
+    # Instead of depending on keycloak-config directly (which exits with code 0),
+    # use the presence of the realm-ready file in the shared volume as an indicator
+    depends_on:
+      kong:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - keycloak_config_data:/tmp/keycloak-config:ro
+    # Add a script override that will check if the realm is ready by looking for the marker file
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Checking for Keycloak realm readiness...' &&
+      for i in {1..60}; do
+        if [ -f /tmp/keycloak-config/realm-ready ]; then
+          echo 'Keycloak realm is ready, proceeding with Kong configuration.' &&
+          /app/kong-configure-unified.sh;
+          exit $$?;
+        fi;
+        echo 'Waiting for Keycloak realm to be ready... ($$i/60)';
+        sleep 5;
+      done;
+      echo 'Timeout waiting for Keycloak realm readiness. Proceeding anyway...';
+      /app/kong-configure-unified.sh"
+    healthcheck:
+      # Alternative healthcheck to not depend on the container status
+      test: ["CMD", "test", "-f", "/tmp/keycloak-config/realm-ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    
+  # Update keycloak-config to make sure it writes the realm-ready file
+  keycloak-config:
+    # This container is designed to exit with code 0 when successful
+    # No restart needed for this init container
+    restart: "no"
+    healthcheck:
+      # Check if the temporary file indicating realm readiness exists
+      test: ["CMD", "test", "-f", "/tmp/keycloak-config/realm-ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+      
+  # Update keycloak-csp to use file-based readiness check instead of container dependency
+  keycloak-csp:
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./keycloak/configure-csp.sh:/configure-csp.sh:ro
+      - keycloak_config_data:/tmp/keycloak-config:ro
+    # Add a script override that will check if the realm is ready before proceeding
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Checking for Keycloak realm readiness...' &&
+      for i in {1..60}; do
+        if [ -f /tmp/keycloak-config/realm-ready ]; then
+          echo 'Keycloak realm is ready, proceeding with CSP configuration.' &&
+          /bin/sh /configure-csp.sh;
+          exit $$?;
+        fi;
+        echo 'Waiting for Keycloak realm to be ready... ($$i/60)';
+        sleep 5;
+      done;
+      echo 'Timeout waiting for Keycloak realm readiness. Proceeding anyway...';
+      /bin/sh /configure-csp.sh"
+
+volumes:
+  keycloak_config_data:
+    external: false 

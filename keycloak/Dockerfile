@@ -12,8 +12,12 @@ RUN /opt/keycloak/bin/kc.sh build
 FROM quay.io/keycloak/keycloak:21.0
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 
+USER root
 # Copy themes
 COPY ./themes/dive25 /opt/keycloak/themes/dive25
+
+# Install curl for healthchecks and scripting
+RUN yum install -y curl hostname || dnf install -y curl hostname || microdnf install -y curl hostname || echo "Failed to install curl"
 
 # Ensure the theme's JavaScript directory exists
 RUN mkdir -p /opt/keycloak/themes/dive25/login/resources/js
@@ -22,8 +26,8 @@ RUN mkdir -p /opt/keycloak/themes/dive25/login/resources/js
 COPY ./themes/dive25/login/resources/js/login-config.js /opt/keycloak/themes/dive25/login/resources/js/
 
 # Copy unified configuration script
-COPY ./configure-keycloak-unified.sh /opt/keycloak/
-RUN chmod +x /opt/keycloak/configure-keycloak-unified.sh
+COPY ./configure-keycloak.sh /opt/keycloak/
+RUN chmod +x /opt/keycloak/configure-keycloak.sh
 
 # Update theme.properties to include our script
 RUN if [ -f /opt/keycloak/themes/dive25/login/theme.properties ]; then \
@@ -38,10 +42,9 @@ else \
     echo "scripts=js/login-config.js" >> /opt/keycloak/themes/dive25/login/theme.properties; \
 fi
 
-# Copy import files for initial setup
-COPY ./realm-export.json /opt/keycloak/data/import/
-# Set environment variable to import realm on startup
-ENV KC_FEATURES=admin-api,impersonation,import-realm
+# Set environment variable to enable APIs but remove import-realm
+ENV KC_FEATURES=admin-api,impersonation
 
+USER keycloak
 ENTRYPOINT ["/opt/keycloak/bin/kc.sh"]
-CMD ["start-dev", "--import-realm"]
+CMD ["start", "--optimized", "--https-certificate-file=/opt/keycloak/certs/tls.crt", "--https-certificate-key-file=/opt/keycloak/certs/tls.key", "--proxy=edge"]

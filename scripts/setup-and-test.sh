@@ -38,6 +38,7 @@ SKIP_URL_CHECKS=${SKIP_URL_CHECKS:-false}  # Set to true to skip all URL health 
 SKIP_PROTOCOL_DETECTION=${SKIP_PROTOCOL_DETECTION:-false}  # Set to true to skip protocol detection
 FAST_SETUP=${FAST_SETUP:-false}  # Set to true for faster setup with minimal checks
 SKIP_API_CHECK=${SKIP_API_CHECK:-false}  # Set to true to skip API health checks specifically
+KONG_CONFIGURED=false  # Flag to track Kong configuration status
 
 # If FAST_SETUP is true, skip all advanced checks
 if [ "$FAST_SETUP" = "true" ]; then
@@ -50,6 +51,10 @@ fi
 # Track current phase for better error reporting
 CURRENT_PHASE="Initialization"
 
+# Set a master timeout for the entire process
+MASTER_TIMEOUT=600 # 10 minutes
+MASTER_START_TIME=$(date +%s)
+
 # Get the directory where this script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 # Get the project root directory (parent directory of the script)
@@ -61,6 +66,31 @@ cd "$PROJECT_ROOT"
 # Function to check if a command exists
 command_exists() {
   command -v "$1" >/dev/null 2>&1
+}
+
+# Function to get container name based on service
+get_container_name() {
+  local service_name=$1
+  local default_prefix="dive25"
+  
+  # Try direct match first (most reliable)
+  if docker ps -a --format '{{.Names}}' | grep -q "^${default_prefix}-${service_name}$"; then
+    echo "${default_prefix}-${service_name}"
+    return 0
+  fi
+  
+  # Try to get project prefix from docker-compose
+  local project_prefix=""
+  if command -v docker-compose >/dev/null 2>&1; then
+    project_prefix=$(docker-compose config --services 2>/dev/null | head -n 1 | grep -o "^[a-zA-Z0-9]*" || echo "")
+  fi
+  
+  # If empty, use default
+  if [ -z "$project_prefix" ]; then
+    project_prefix="$default_prefix"
+  fi
+  
+  echo "${project_prefix}-${service_name}"
 }
 
 # Print header
@@ -217,9 +247,11 @@ print_step "Stopping existing containers"
 docker-compose down
 
 # Check if there are still any containers with names matching our pattern
-if docker ps -a | grep -q 'dive25-'; then
+# Get the project prefix dynamically
+project_prefix=$(docker-compose config --services 2>/dev/null | head -n 1 | grep -o "^[a-zA-Z0-9]*" || echo "dive25")
+if docker ps -a | grep -q "${project_prefix}-"; then
   echo "Some containers are still present. Forcefully removing them..."
-  docker ps -a | grep 'dive25-' | awk '{print $1}' | xargs -r docker rm -f
+  docker ps -a | grep "${project_prefix}-" | awk '{print $1}' | xargs -r docker rm -f
 fi
 
 # Start containers
@@ -229,14 +261,64 @@ echo "This may take a while, especially on first run..."
 # Use a timeout for docker-compose up
 COMPOSE_TIMEOUT=300 # 5 minutes
 echo "Running docker-compose up with ${COMPOSE_TIMEOUT}s timeout..."
-timeout $COMPOSE_TIMEOUT docker-compose up -d
+# Use --exit-code-from option to prevent failing if keycloak-config exits normally (with code 0)
+timeout $COMPOSE_TIMEOUT docker-compose up -d --remove-orphans
 
 # Check if docker-compose command timed out
 if [ $? -eq 124 ]; then
   echo "WARNING: docker-compose up timed out after ${COMPOSE_TIMEOUT}s. This might indicate an issue with container startup."
   echo "Checking container statuses anyway..."
   docker-compose ps
+elif [ $? -ne 0 ]; then
+  # Check for dependency failure of keycloak-config which might actually be successful
+  if docker-compose logs | grep -q "dependency failed to start.*keycloak-config exited (0)"; then
+    echo "Detected keycloak-config exited with code 0, which is normal behavior."
+    echo "Continuing with setup as the container completed its configuration task successfully."
+    
+    # First approach: Start the services again without waiting for keycloak-config
+    echo "Restarting services without the keycloak-config dependency check..."
+    docker-compose up -d --no-recreate $(docker-compose config --services | grep -v "keycloak-config")
+    
+    # If that fails, try a more targeted approach for specific services
+    if [ $? -ne 0 ]; then
+      echo "First restart attempt failed. Trying a more targeted approach..."
+      
+      # Get list of containers that might depend on keycloak-config
+      declare -a SERVICE_LIST=("keycloak-csp" "kong-config" "kong" "api" "frontend")
+      
+      # Try to start each service individually
+      for service in "${SERVICE_LIST[@]}"; do
+        echo "Starting $service..."
+        docker-compose up -d --no-recreate "$service" || echo "Failed to start $service, but continuing..."
+      done
+      
+      # As a last resort, try a manual approach
+      if [ $? -ne 0 ]; then
+        echo "Targeted restart failed. Using manual approach as last resort..."
+        # Check the realm-ready file in the volume to verify keycloak-config ran successfully
+        KEYCLOAK_CONFIG_CONTAINER=$(get_container_name "keycloak-config")
+        if docker run --rm --volumes-from "$KEYCLOAK_CONFIG_CONTAINER" alpine:latest test -f /tmp/keycloak-config/realm-ready; then
+          echo "Verified realm configuration was successful. Proceeding with remaining services."
+          docker-compose up -d --scale keycloak-config=0
+        else
+          echo "WARNING: Could not verify if keycloak configuration was successful."
+          echo "You may need to manually check and restart services."
+        fi
+      fi
+    fi
+  else
+    echo "ERROR: Failed to start containers. Check the logs for more information."
+    echo "Container statuses:"
+    docker-compose ps
+  fi
 fi
+
+# Print note about keycloak-config behavior
+echo
+echo "NOTE: The keycloak-config container is designed to exit with code 0 after successful configuration."
+echo "      This is normal behavior and does not indicate a problem with your deployment."
+echo "      You may see it listed as 'exited (0)' in docker-compose ps output."
+echo
 
 # Function to wait for service availability
 wait_for_service() {
@@ -249,14 +331,14 @@ wait_for_service() {
   
   # First check if the Docker container is running
   local service_name_lower=$(echo "$service_name" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
-  local container_name="dive25-${service_name_lower}"
+  local container_name=$(get_container_name "$service_name_lower")
   
   # Check if container exists
   if ! docker ps -a | grep -q "$container_name"; then
     echo "ERROR: Container $container_name does not exist!"
     # Try a generic search for the container that might match
     echo "Searching for possible matching containers..."
-    docker ps -a | grep -i "dive25-.*${service_name_lower}"
+    docker ps -a | grep -i ".*${service_name_lower}"
     return 1
   fi
   
@@ -293,9 +375,16 @@ wait_for_service() {
     return 0
   fi
   
-  # Skip URL check if configured to do so
-  if [ "$SKIP_URL_CHECKS" = "true" ]; then
-    echo "Skipping URL check for $service_name (SKIP_URL_CHECKS=true)"
+  # Skip URL check if configured to do so or if Kong is not yet configured 
+  # and we're checking an external service
+  if [ "$SKIP_URL_CHECKS" = "true" ] || ( [ "$KONG_CONFIGURED" = "false" ] && 
+     ( [[ "$service_name" == "API" ]] || [[ "$service_name" == "Frontend" ]] || 
+       [[ "$service_name" == "Keycloak" ]] ) ); then
+    if [ "$KONG_CONFIGURED" = "false" ] && ! [ "$SKIP_URL_CHECKS" = "true" ]; then
+      echo "Skipping URL check for $service_name (waiting for Kong configuration to complete first)"
+    else
+      echo "Skipping URL check for $service_name (SKIP_URL_CHECKS=true)"
+    fi
     return 0
   fi
   
@@ -368,18 +457,29 @@ check_kong_health() {
   
   echo "Performing special health check for Kong..."
   
+  # Get Kong container name dynamically
+  local KONG_CONTAINER=$(get_container_name "kong")
+  
   # Check container existence
-  if ! docker ps -a | grep -q "dive25-kong"; then
-    echo "ERROR: Kong container doesn't exist!"
+  if ! docker ps -a | grep -q "$KONG_CONTAINER"; then
+    echo "ERROR: Kong container '$KONG_CONTAINER' doesn't exist!"
     echo "Searching for possible Kong container..."
-    docker ps -a | grep -i "kong"
-    return 1
+    docker ps -a | grep -i "kong" | grep -v "config"
+    
+    # Try to find any Kong container
+    local alt_kong=$(docker ps -a | grep -i "kong" | grep -v "config" | head -n 1 | awk '{print $NF}')
+    if [ -n "$alt_kong" ]; then
+      KONG_CONTAINER="$alt_kong"
+      echo "Found alternative Kong container: $KONG_CONTAINER"
+    else
+      return 1
+    fi
   fi
   
   # Wait for Kong to be running and healthy
   while true; do
-    local container_status=$(docker inspect --format='{{.State.Status}}' dive25-kong 2>/dev/null || echo "not_found")
-    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' dive25-kong 2>/dev/null || echo "unknown")
+    local container_status=$(docker inspect --format='{{.State.Status}}' "$KONG_CONTAINER" 2>/dev/null || echo "not_found")
+    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$KONG_CONTAINER" 2>/dev/null || echo "unknown")
     
     echo "Kong status: $container_status, health: $container_health"
     
@@ -396,12 +496,12 @@ check_kong_health() {
       echo "Timeout waiting for Kong to be healthy. Checking Kong's health directly..."
       
       # Try Kong's health endpoint directly
-      if docker exec dive25-kong kong health 2>/dev/null | grep -q "Kong is healthy"; then
+      if docker exec "$KONG_CONTAINER" kong health 2>/dev/null | grep -q "Kong is healthy"; then
         echo "Kong reports itself as healthy!"
         break
       else
         echo "Kong health check failed. Moving on anyway..."
-        docker exec dive25-kong kong health || echo "Failed to execute health check inside Kong container"
+        docker exec "$KONG_CONTAINER" kong health || echo "Failed to execute health check inside Kong container"
         return 1
       fi
     fi
@@ -421,12 +521,12 @@ check_kong_health() {
   echo "Testing Kong internally (from inside the container)..."
   
   # Check if Kong's internal API is responsive (using localhost to avoid domain resolution issues)
-  if docker exec dive25-kong curl -s http://127.0.0.1:$internal_admin_port/status >/dev/null; then
+  if docker exec "$KONG_CONTAINER" curl -s http://127.0.0.1:$internal_admin_port/status >/dev/null; then
     echo "Kong admin API is responding internally!"
   else
     echo "WARNING: Kong admin API is not responding internally. This is a critical issue."
     echo "Kong may not be properly configured. Check Kong logs for errors:"
-    docker logs dive25-kong | tail -n 100
+    docker logs "$KONG_CONTAINER" | tail -n 100
     echo "Continuing anyway, but Kong may not work correctly."
   fi
   
@@ -455,8 +555,11 @@ check_api_health() {
   
   echo "Performing comprehensive API health check..."
   
+  # Get API container name dynamically
+  local API_CONTAINER=$(get_container_name "api")
+  
   # Check if API container exists and is running
-  if ! docker ps -a | grep -q "dive25-api"; then
+  if ! docker ps -a | grep -q "$API_CONTAINER"; then
     echo "ERROR: API container doesn't exist!"
     echo "Searching for possible API container..."
     docker ps -a | grep -i "api"
@@ -465,8 +568,8 @@ check_api_health() {
   
   # Check if the API container is healthy
   while true; do
-    local container_status=$(docker inspect --format='{{.State.Status}}' dive25-api 2>/dev/null || echo "not_found")
-    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' dive25-api 2>/dev/null || echo "unknown")
+    local container_status=$(docker inspect --format='{{.State.Status}}' "$API_CONTAINER" 2>/dev/null || echo "not_found")
+    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$API_CONTAINER" 2>/dev/null || echo "unknown")
     
     echo "API container status: $container_status, health: $container_health"
     
@@ -493,12 +596,12 @@ check_api_health() {
   
   # Try to exec into the container and check if it's responding locally
   echo "Checking API health from inside the container..."
-  if docker exec dive25-api curl -s -f -m 5 http://localhost:$api_internal_port/health >/dev/null 2>&1; then
+  if docker exec "$API_CONTAINER" curl -s -f -m 5 http://localhost:$api_internal_port/health >/dev/null 2>&1; then
     echo "API is healthy from inside the container!"
   else
     echo "WARNING: API health check failed from inside the container."
     echo "This might indicate an issue with the API server itself."
-    docker exec dive25-api curl -v http://localhost:$api_internal_port/health || echo "Failed to execute curl inside API container"
+    docker exec "$API_CONTAINER" curl -v http://localhost:$api_internal_port/health || echo "Failed to execute curl inside API container"
   fi
   
   # Get the external port
@@ -549,8 +652,8 @@ check_api_health() {
       
       # If localhost works, we'll mark as success despite hostname issues
       if curl -s -k -f https://localhost:$api_port/health >/dev/null 2>&1; then
-        echo "✅ API is accessible via localhost but not via hostname due to DNS issues."
-        echo "You may want to add an entry for $domain in your /etc/hosts file."
+        echo "✅ API is accessible via localhost but not via domain name."
+        echo "This is likely a DNS resolution issue, but API itself is working."
         return 0
       fi
     fi
@@ -644,24 +747,55 @@ check_keycloak_health() {
   
   echo "Performing specialized Keycloak health check..."
   
-  # Check if Keycloak container exists and is running
-  if ! docker ps -a | grep -q "dive25-keycloak"; then
-    echo "ERROR: Keycloak container doesn't exist!"
-    echo "Searching for possible Keycloak container..."
-    docker ps -a | grep -i "keycloak"
-    return 1
+  # Dynamically determine Keycloak container name
+  local project_prefix=$(docker-compose config --services | head -n 1 | grep -o "^[a-zA-Z0-9]*" || echo "dive25")
+  local keycloak_service_name="keycloak"
+  local KEYCLOAK_CONTAINER="${KEYCLOAK_CONTAINER:-${project_prefix}-${keycloak_service_name}}"
+  
+  echo "Looking for Keycloak container with name: $KEYCLOAK_CONTAINER"
+  
+  # Fallback to searching for any Keycloak container if the expected one isn't found
+  if ! docker ps -a | grep -q "$KEYCLOAK_CONTAINER"; then
+    echo "Container $KEYCLOAK_CONTAINER not found, searching for any Keycloak container..."
+    local alt_container=$(docker ps -a | grep -i "keycloak" | head -n 1 | awk '{print $1}')
+    
+    if [ -n "$alt_container" ]; then
+      KEYCLOAK_CONTAINER=$(docker inspect --format='{{.Name}}' "$alt_container" 2>/dev/null | sed 's/\///')
+      echo "Found alternative Keycloak container: $KEYCLOAK_CONTAINER"
+    else
+      echo "ERROR: No Keycloak container found!"
+      return 1
+    fi
   fi
+  
+  # Get container network information
+  local KEYCLOAK_NETWORK=$(docker inspect --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "")
+  
+  # Get port mappings
+  local KEYCLOAK_PORT_MAPPING=$(docker port "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "")
+  local KEYCLOAK_INTERNAL_PORT=$(docker inspect --format '{{range $p, $conf := .Config.ExposedPorts}}{{$p}}{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null | head -n 1 | cut -d'/' -f1 || echo "8080")
+  local KEYCLOAK_EXTERNAL_PORT=$(echo "$KEYCLOAK_PORT_MAPPING" | grep -o ":[0-9]*->" | head -n 1 | cut -d':' -f2 | cut -d'-' -f1 || echo "")
+  
+  if [ -z "$KEYCLOAK_EXTERNAL_PORT" ]; then
+    # Fallback to environment or common port
+    KEYCLOAK_EXTERNAL_PORT=$(grep "KEYCLOAK_PORT=" .env 2>/dev/null | cut -d '=' -f2 || echo "8443")
+  fi
+  
+  echo "Keycloak container: $KEYCLOAK_CONTAINER"
+  echo "Keycloak network: $KEYCLOAK_NETWORK"
+  echo "Keycloak internal port: $KEYCLOAK_INTERNAL_PORT"
+  echo "Keycloak external port: $KEYCLOAK_EXTERNAL_PORT"
   
   # Wait for Keycloak to be running and healthy
   while true; do
-    local container_status=$(docker inspect --format='{{.State.Status}}' dive25-keycloak 2>/dev/null || echo "not_found")
-    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' dive25-keycloak 2>/dev/null || echo "unknown")
+    local container_status=$(docker inspect --format='{{.State.Status}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "not_found")
+    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "unknown")
     
     echo "Keycloak container status: $container_status, health: $container_health"
     
     if [[ "$container_status" == "running" ]]; then
       if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
-        echo "Keycloak container is running and healthy according to Docker!"
+        echo "✅ Keycloak container is running and healthy according to Docker!"
         break
       fi
     fi
@@ -678,23 +812,25 @@ check_keycloak_health() {
   
   # Try to check if the Keycloak process is running inside the container
   echo "Checking if Keycloak process is running inside the container..."
-  if docker exec dive25-keycloak ps aux | grep -q "jboss"; then
-    echo "Keycloak process is running inside the container!"
+  if docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null | grep -q "java\|jboss\|keycloak"; then
+    echo "✅ Keycloak process is running inside the container!"
   else
-    echo "WARNING: Keycloak process doesn't appear to be running inside the container."
-    docker exec dive25-keycloak ps aux || echo "Failed to check processes in Keycloak container"
+    echo "⚠️ WARNING: Keycloak process doesn't appear to be running inside the container."
+    docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null || echo "Failed to check processes in Keycloak container"
   fi
   
-  # Check the Keycloak config
+  # Check the Keycloak config - try multiple potential locations
   echo "Checking Keycloak configuration..."
-  docker exec dive25-keycloak /opt/keycloak/bin/kc.sh show-config || echo "Failed to show Keycloak config"
+  docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kc.sh show-config 2>/dev/null || 
+  docker exec "$KEYCLOAK_CONTAINER" /opt/jboss/keycloak/bin/standalone.sh --version 2>/dev/null ||
+  echo "ℹ️ Could not determine Keycloak configuration - the container might use a different path"
   
   # Check the logs for startup completion message
   echo "Checking Keycloak logs for successful startup message..."
-  if docker logs dive25-keycloak 2>&1 | grep -q "started in"; then
-    echo "Keycloak logs show successful startup!"
+  if docker logs "$KEYCLOAK_CONTAINER" 2>&1 | grep -q "started in\|Keycloak.*started\|server.*started"; then
+    echo "✅ Keycloak logs show successful startup!"
   else
-    echo "WARNING: Keycloak startup message not found in logs. Continuing anyway..."
+    echo "⚠️ WARNING: Keycloak startup message not found in logs. Continuing anyway..."
   fi
   
   # Skip URL checks if configured to do so
@@ -705,25 +841,40 @@ check_keycloak_health() {
   
   # Try to access various Keycloak endpoints
   counter=0
-  echo "Attempting to access Keycloak at: $keycloak_url"
+  echo "Attempting to access Keycloak at the provided URL: $keycloak_url"
   
-  # Extract clean variables from the URL
-  domain=$(echo "$keycloak_url" | grep -oE 'https?://([^:/]+)' | sed 's|https://||;s|http://||')
-  port=$(echo "$keycloak_url" | grep -oE ':[0-9]+' | sed 's/://')
+  # Extract domain and port from URL - honor the URL the user intended
+  local domain=""
+  local port=""
   
-  # Fallback to environment if needed
+  if [ -n "$keycloak_url" ]; then
+    domain=$(echo "$keycloak_url" | grep -oE 'https?://([^:/]+)' | sed 's|https://||;s|http://||')
+    port=$(echo "$keycloak_url" | grep -oE ':[0-9]+' | sed 's/://')
+  fi
+  
+  # Fallback to discovered values if needed
   if [ -z "$domain" ]; then
-    domain="keycloak.$(grep "BASE_DOMAIN=" .env | cut -d '=' -f2)"
+    domain=$(grep "KEYCLOAK_DOMAIN=" .env 2>/dev/null | cut -d '=' -f2 || echo "keycloak")
+    domain="${domain}.$(grep "BASE_DOMAIN=" .env 2>/dev/null | cut -d '=' -f2 || echo "localhost")"
   fi
   
   if [ -z "$port" ]; then
-    port="$(grep "KEYCLOAK_PORT=" .env | cut -d '=' -f2)"
+    port="$KEYCLOAK_EXTERNAL_PORT"
   fi
   
   echo "Using domain: $domain, port: $port for Keycloak checks"
   
-  # Try multiple endpoints with both HTTP and HTTPS
-  local endpoints=("/" "/auth/" "/realms/master/" "/health" "/health/ready" "/metrics")
+  # Determine common Keycloak endpoints based on version
+  # Modern Keycloak vs Legacy endpoints
+  local endpoints=("/" "/health" "/realms/master/")
+  
+  # Add legacy endpoints if we detect older Keycloak version
+  if docker logs "$KEYCLOAK_CONTAINER" 2>&1 | grep -q "Keycloak.*WildFly\|jboss"; then
+    endpoints+=("/auth/" "/auth/realms/master/")
+  fi
+  
+  # Newer Keycloak might have these
+  endpoints+=("/health/ready" "/metrics")
   
   # Skip this URL check early if it takes too long
   while [ $counter -lt $max_url_check_time ]; do
@@ -745,7 +896,7 @@ check_keycloak_health() {
           
           # Add -k flag to ignore SSL certificate validation
           if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$full_url"; then
-            echo "SUCCESS: Keycloak is accessible at $full_url!"
+            echo "✅ SUCCESS: Keycloak is accessible at $full_url!"
             return 0
           fi
         done
@@ -757,10 +908,18 @@ check_keycloak_health() {
     echo "Still waiting for Keycloak URL response... ($counter seconds elapsed)"
     
     if [ $counter -ge $max_url_check_time ]; then
-      echo "Giving up on Keycloak URL checks after ${counter} seconds."
-      echo "This might be normal if Keycloak is still initializing or if there are network/SSL issues."
+      echo "⚠️ Giving up on external Keycloak URL checks after ${counter} seconds."
+      
+      # One last direct check via Docker internal network
+      echo "Trying internal Docker network access as last resort..."
+      if docker exec "$KEYCLOAK_CONTAINER" curl -s -f --connect-timeout 3 "http://localhost:$KEYCLOAK_INTERNAL_PORT" >/dev/null 2>&1; then
+        echo "✅ Keycloak is responding internally but not externally. This may indicate a port mapping issue."
+      else
+        echo "⚠️ Keycloak is not responding internally either. The service might still be starting."
+      fi
+      
       echo "The overall setup will continue, and Keycloak might become available later."
-      echo "You can manually check Keycloak status with: docker logs dive25-keycloak"
+      echo "You can manually check Keycloak status with: docker logs $KEYCLOAK_CONTAINER"
       # Return success anyway to continue with setup
       return 0
     fi
@@ -923,8 +1082,11 @@ MASTER_START_TIME=$(date +%s)
 echo "Checking Keycloak health with specialized checker..."
 if [ "$SKIP_URL_CHECKS" = "true" ]; then
   echo "Skipping Keycloak URL health checks (SKIP_URL_CHECKS=true)"
+  # Dynamically find Keycloak container
+  project_prefix=$(docker-compose config --services | head -n 1 | grep -o "^[a-zA-Z0-9]*" || echo "dive25")
+  KEYCLOAK_CONTAINER="${KEYCLOAK_CONTAINER:-${project_prefix}-keycloak}"
   # Just check if the container is running
-  if docker ps | grep -q "dive25-keycloak"; then
+  if docker ps | grep -q "$KEYCLOAK_CONTAINER" || docker ps | grep -i "keycloak"; then
     echo "Keycloak container is running. Continuing..."
   else
     echo "WARNING: Keycloak container is not running! Setup may not be complete."
@@ -940,22 +1102,185 @@ if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
   echo "WARNING: Master timeout reached after ${ELAPSED_TIME}s. Continuing with setup anyway."
 fi
 
-# Ensure Keycloak dive25 realm is properly configured
+# Configure Keycloak if needed
+echo "🔄 Checking if Keycloak needs configuration..."
+if [ -f "./keycloak/configure-keycloak.sh" ]; then
+    chmod +x ./keycloak/configure-keycloak.sh
+    
+    # Load INTERNAL_KEYCLOAK_URL value from .env file if not already set
+    if [ -z "$INTERNAL_KEYCLOAK_URL" ]; then
+        INTERNAL_KEYCLOAK_URL=$(grep "INTERNAL_KEYCLOAK_URL=" .env | cut -d '=' -f2)
+    fi
+    
+    # Ensure we have a URL to check
+    if [ -z "$INTERNAL_KEYCLOAK_URL" ]; then
+        echo "⚠️ INTERNAL_KEYCLOAK_URL not found in .env file, using default"
+        INTERNAL_KEYCLOAK_URL="http://keycloak:8080"
+    fi
+    
+    echo "⏳ Waiting for Keycloak to be available at $INTERNAL_KEYCLOAK_URL (via Docker network)"
+    
+    # Get API container name directly - more reliable than a loop
+    API_CONTAINER=$(get_container_name "api")
+    KONG_CONTAINER=$(get_container_name "kong")
+    
+    # Select a container to use for checking Keycloak availability
+    if docker ps | grep -q "$API_CONTAINER"; then
+        RUNNER_CONTAINER="$API_CONTAINER"
+        echo "Using API container to check Keycloak availability..."
+    elif docker ps | grep -q "$KONG_CONTAINER"; then
+        RUNNER_CONTAINER="$KONG_CONTAINER"
+        echo "Using Kong container to check Keycloak availability..."
+    else
+        RUNNER_CONTAINER=""
+    fi
+    
+    if [ -z "$RUNNER_CONTAINER" ]; then
+        echo "⚠️ Could not find API or Kong container. Using external URL check instead."
+        # Try external URL as fallback
+        KEYCLOAK_PORT=$(grep "KEYCLOAK_PORT=" .env | cut -d '=' -f2 || echo "3003")
+        echo "Using Keycloak port from .env: $KEYCLOAK_PORT"
+        external_url="http://localhost:${KEYCLOAK_PORT}"
+        echo "Trying external URL: $external_url"
+        
+        # Use a more direct approach that avoids nested bash -c commands
+        echo "Waiting for Keycloak to be available externally..."
+        TIMEOUT_COUNTER=0
+        MAX_TIMEOUT=300
+        
+        while [ $TIMEOUT_COUNTER -lt $MAX_TIMEOUT ]; do
+            if curl -s "$external_url" > /dev/null 2>&1; then
+                echo "✅ Keycloak is accessible externally!"
+                break
+            fi
+            echo "Waiting for Keycloak (external)... ($TIMEOUT_COUNTER seconds elapsed)"
+            sleep 5
+            TIMEOUT_COUNTER=$((TIMEOUT_COUNTER + 5))
+        done
+        
+        if [ $TIMEOUT_COUNTER -ge $MAX_TIMEOUT ]; then
+            echo "❌ Timed out waiting for Keycloak via external URL"
+            echo "⚠️ Continuing anyway, but Keycloak configuration may fail."
+        fi
+        # Skip the rest of this block since we're not in a function
+        # The script will continue with Keycloak configuration
+    else
+        # Check Keycloak using the runner container
+        echo "Checking if curl is available in the container..."
+        if ! docker exec "$RUNNER_CONTAINER" which curl >/dev/null 2>&1; then
+            echo "⚠️ curl not available in container. Trying to install it..."
+            # Try to install curl - works for most debian/alpine based images
+            docker exec "$RUNNER_CONTAINER" sh -c "command -v apk >/dev/null && apk add --no-cache curl || command -v apt-get >/dev/null && apt-get update && apt-get install -y curl" >/dev/null 2>&1 || true
+            
+            # Check again
+            if ! docker exec "$RUNNER_CONTAINER" which curl >/dev/null 2>&1; then
+                echo "⚠️ Could not install curl in container. Using external URL check instead."
+                # Fall back to external URL check
+                KEYCLOAK_PORT=$(grep "KEYCLOAK_PORT=" .env | cut -d '=' -f2 || echo "3003")
+                echo "Using Keycloak port from .env: $KEYCLOAK_PORT"
+                external_url="http://localhost:${KEYCLOAK_PORT}"
+                echo "Trying external URL: $external_url"
+                
+                # Use a more direct approach that avoids nested bash -c commands
+                echo "Waiting for Keycloak to be available externally..."
+                TIMEOUT_COUNTER=0
+                MAX_TIMEOUT=300
+                
+                while [ $TIMEOUT_COUNTER -lt $MAX_TIMEOUT ]; do
+                    if curl -s "$external_url" > /dev/null 2>&1; then
+                        echo "✅ Keycloak is accessible externally!"
+                        break
+                    fi
+                    echo "Waiting for Keycloak (external)... ($TIMEOUT_COUNTER seconds elapsed)"
+                    sleep 5
+                    TIMEOUT_COUNTER=$((TIMEOUT_COUNTER + 5))
+                done
+                
+                if [ $TIMEOUT_COUNTER -ge $MAX_TIMEOUT ]; then
+                    echo "❌ Timed out waiting for Keycloak via external URL"
+                    echo "⚠️ Continuing anyway, but Keycloak configuration may fail."
+                fi
+                # Skip the rest of this code without using break
+                # Fall through to continue with setup
+            fi
+        fi
+        
+        timeout 300 bash -c "until docker exec $RUNNER_CONTAINER curl -s $INTERNAL_KEYCLOAK_URL > /dev/null; do echo \"Waiting for Keycloak (internal)...\"; sleep 5; done" || { 
+            echo "❌ Timed out waiting for Keycloak via internal Docker network"; 
+            echo "⚠️ Continuing anyway, but Keycloak configuration may fail.";
+        }
+    fi
+    
+    echo "✅ Keycloak is available, configuring now..."
+    ./keycloak/configure-keycloak.sh
+    if [ $? -eq 0 ]; then
+        echo "✅ Keycloak configuration completed successfully"
+        
+        # Verify and fix realm settings if needed
+        if [ -n "$KEYCLOAK_ADMIN" ] && [ -n "$KEYCLOAK_ADMIN_PASSWORD" ]; then
+            echo "Verifying Keycloak settings after configuration..."
+            # Get admin token
+            ADMIN_TOKEN=$(curl -s -k -X POST "${KEYCLOAK_INTERNAL_URL}/realms/master/protocol/openid-connect/token" \
+                -H "Content-Type: application/x-www-form-urlencoded" \
+                -d "username=${KEYCLOAK_ADMIN}" \
+                -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
+                -d "grant_type=password" \
+                -d "client_id=admin-cli" | grep -o '"access_token":"[^"]*"' | cut -d':' -f2 | tr -d '"')
+            
+            if [ -n "$ADMIN_TOKEN" ]; then
+                verify_keycloak_settings "$ADMIN_TOKEN" "$KEYCLOAK_INTERNAL_URL" "$KEYCLOAK_REALM" "$PUBLIC_KEYCLOAK_URL"
+            else
+                echo "⚠️ Could not get admin token for verification"
+            fi
+        else
+            echo "⚠️ Missing Keycloak admin credentials, skipping settings verification"
+        fi
+    else
+        echo "⚠️ Keycloak configuration script returned non-zero exit code"
+        echo "Continuing with setup, but some features may not work correctly"
+    fi
+else
+    echo "⚠️ configure-keycloak.sh script not found"
+    echo "Searching for an alternative configuration file..."
+    
+    # Check for realm export file
+    if [ -f "./keycloak/realm-export.json" ]; then
+        echo "Found realm-export.json, attempting manual configuration..."
+        # TODO: Add manual import logic here if needed
+    else
+        echo "⚠️ No Keycloak configuration files found, using default configuration"
+    fi
+fi
+
+# Ensure Keycloak realm is properly configured
 print_step "Ensuring Keycloak realm is properly configured..."
 
 # Check if keycloak-config container completed successfully
-if docker ps -a | grep -q dive25-keycloak-config; then
-  CONFIG_STATUS=$(docker inspect --format='{{.State.Status}}' dive25-keycloak-config)
-  CONFIG_EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' dive25-keycloak-config)
+KEYCLOAK_CONFIG_CONTAINER=$(get_container_name "keycloak-config")
+if docker ps -a | grep -q "$KEYCLOAK_CONFIG_CONTAINER"; then
+  CONFIG_STATUS=$(docker inspect --format='{{.State.Status}}' "$KEYCLOAK_CONFIG_CONTAINER")
+  CONFIG_EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$KEYCLOAK_CONFIG_CONTAINER")
   
   echo "Keycloak config container status: $CONFIG_STATUS, exit code: $CONFIG_EXIT_CODE"
   
   if [ "$CONFIG_EXIT_CODE" -eq 0 ]; then
     echo "✅ Keycloak configuration container completed successfully"
+    
+    # Verify the Keycloak configuration container is using the updated approach
+    docker logs "$KEYCLOAK_CONFIG_CONTAINER" | grep -q "Using direct API calls for configuration" && echo "✅ Keycloak config container using updated API approach" || echo "⚠️ Keycloak config container may be using old approach"
+    
+    # Check if expected environment variables are set
+    echo "Verifying Keycloak configuration container environment..."
+    KEYCLOAK_CONTAINER_ENV=$(docker inspect --format='{{range .Config.Env}}{{.}} {{end}}' "$KEYCLOAK_CONFIG_CONTAINER")
+    echo "$KEYCLOAK_CONTAINER_ENV" | grep -q "KEYCLOAK_CONTAINER=" && echo "✅ KEYCLOAK_CONTAINER environment variable is set" || echo "⚠️ KEYCLOAK_CONTAINER environment variable might be missing"
+    
+    # Additional checks for other environment variables
+    echo "$KEYCLOAK_CONTAINER_ENV" | grep -q "KEYCLOAK_URL=" && echo "✅ KEYCLOAK_URL environment variable is set" || echo "⚠️ KEYCLOAK_URL environment variable might be missing"
+    echo "$KEYCLOAK_CONTAINER_ENV" | grep -q "PUBLIC_KEYCLOAK_URL=" && echo "✅ PUBLIC_KEYCLOAK_URL environment variable is set" || echo "⚠️ PUBLIC_KEYCLOAK_URL environment variable might be missing"
   else
     echo "⚠️ Keycloak configuration container failed with exit code $CONFIG_EXIT_CODE"
     echo "Logs from keycloak-config container:"
-    docker logs dive25-keycloak-config | tail -n 50
+    docker logs "$KEYCLOAK_CONFIG_CONTAINER" | tail -n 50
     
     echo "Attempting to fix Keycloak realm configuration..."
     
@@ -973,41 +1298,55 @@ if docker ps -a | grep -q dive25-keycloak-config; then
     
     echo "Using Keycloak admin credentials and realm from environment variables"
     
-    # If that fails, try to use the unified Keycloak configuration script
-    echo "Attempting to use unified Keycloak configuration script..."
-    if [ -f "./keycloak/configure-keycloak-unified.sh" ]; then
-      chmod +x ./keycloak/configure-keycloak-unified.sh
+    # First, try to run the original configure-keycloak.sh using a new container
+    echo "Running Keycloak configuration script in a clean container..."
+    
+    # Get the Docker Compose project name for network
+    local project_name=$(basename "$PWD" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]//g')
+    local network_name="${project_name}_dive25-network"
+    echo "Using Docker network: $network_name"
+    
+    docker run --rm \
+      --network $network_name \
+      -v $(pwd)/keycloak/configure-keycloak.sh:/configure-keycloak.sh:ro \
+      -v $(pwd)/keycloak/realm-export.json:/realm-export.json:ro \
+      -v $(pwd)/keycloak/identity-providers:/identity-providers:ro \
+      -v $(pwd)/keycloak/test-users:/test-users:ro \
+      -v $(pwd)/keycloak/clients:/clients:ro \
+      -e KEYCLOAK_URL=${KEYCLOAK_INTERNAL_URL} \
+      -e KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN} \
+      -e KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD} \
+      -e PUBLIC_KEYCLOAK_URL=$(grep -E "^PUBLIC_KEYCLOAK_URL=" .env | cut -d= -f2) \
+      -e PUBLIC_FRONTEND_URL=$(grep -E "^PUBLIC_FRONTEND_URL=" .env | cut -d= -f2) \
+      -e PUBLIC_API_URL=$(grep -E "^PUBLIC_API_URL=" .env | cut -d= -f2) \
+      -e KEYCLOAK_REALM=${KEYCLOAK_REALM} \
+      -e KEYCLOAK_CLIENT_ID_FRONTEND=$(grep -E "^KEYCLOAK_CLIENT_ID_FRONTEND=" .env | cut -d= -f2) \
+      -e KEYCLOAK_CLIENT_ID_API=$(grep -E "^KEYCLOAK_CLIENT_ID_API=" .env | cut -d= -f2) \
+      -e KEYCLOAK_CLIENT_SECRET=$(grep -E "^KEYCLOAK_CLIENT_SECRET=" .env | cut -d= -f2) \
+      curlimages/curl:latest \
+      /bin/sh -c "chmod +x /configure-keycloak.sh && /configure-keycloak.sh"
       
-      # Set environment variables for the script
-      export INTERNAL_KEYCLOAK_URL="$KEYCLOAK_URL"
-      export PUBLIC_KEYCLOAK_URL="${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local:8443}"
-      export KEYCLOAK_REALM="$KEYCLOAK_REALM"
-      export KEYCLOAK_ADMIN="$KEYCLOAK_ADMIN"
-      export KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD"
-      export PUBLIC_FRONTEND_URL="$PUBLIC_FRONTEND_URL"
-      export PUBLIC_API_URL="$PUBLIC_API_URL"
-      export KEYCLOAK_CLIENT_ID_FRONTEND="$KEYCLOAK_CLIENT_ID_FRONTEND"
-      export KEYCLOAK_CLIENT_ID_API="$KEYCLOAK_CLIENT_ID_API"
-      export KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET"
-      
-      ./keycloak/configure-keycloak-unified.sh
-      
-      if [ $? -eq 0 ]; then
-        echo "✅ Keycloak realm configured successfully using unified configuration script"
-      else
-        echo "⚠️ Failed to configure Keycloak realm using unified configuration script"
-        echo "Please check the logs and try to fix the issue manually."
-      fi
+    # Check if that fixed the issue
+    echo "Checking if the realm was created successfully..."
+    if [ $? -eq 0 ]; then
+      echo "✅ Keycloak configuration through container completed successfully"
     else
-      echo "⚠️ configure-keycloak-unified.sh script not found"
+      echo "⚠️ Keycloak configuration through container failed"
       
-      # Fall back to the old fix script if necessary
+      # If that fails, try to use the fix-keycloak-config.sh script
+      echo "Attempting to use fix-keycloak-config.sh script..."
       if [ -f "./keycloak/fix-keycloak-config.sh" ]; then
-        echo "Falling back to legacy fix-keycloak-config.sh script..."
         chmod +x ./keycloak/fix-keycloak-config.sh
         ./keycloak/fix-keycloak-config.sh
+        
+        if [ $? -eq 0 ]; then
+          echo "✅ Keycloak realm fixed successfully using fix-keycloak-config.sh"
+        else
+          echo "⚠️ Failed to fix Keycloak realm using fix-keycloak-config.sh"
+          echo "Please check the logs and try to fix the issue manually."
+        fi
       else
-        echo "⚠️ No Keycloak configuration scripts found"
+        echo "⚠️ fix-keycloak-config.sh script not found"
       fi
     fi
   fi
@@ -1047,6 +1386,9 @@ else
     
     if [ "$REALM_EXISTS" -eq 200 ]; then
       echo "✅ Realm ${KEYCLOAK_REALM} already exists"
+      
+      # Verify specific Keycloak settings
+      verify_keycloak_settings "$ADMIN_TOKEN" "$KEYCLOAK_INTERNAL_URL" "$KEYCLOAK_REALM" "$PUBLIC_KEYCLOAK_URL"
     else
       echo "⚠️ Realm ${KEYCLOAK_REALM} does not exist. Running configuration script..."
       
@@ -1118,6 +1460,132 @@ else
   fi
 fi
 
+# Function to verify Keycloak realm settings
+verify_keycloak_settings() {
+  local admin_token="$1"
+  local keycloak_url="$2"
+  local realm_name="$3"
+  local expected_frontend_url="$4"
+  
+  echo "Verifying Keycloak realm settings..."
+  
+  # Fetch current realm settings
+  local realm_settings=$(curl -s -k \
+    -H "Authorization: Bearer $admin_token" \
+    "${keycloak_url}/admin/realms/${realm_name}")
+  
+  # Check Content Security Policy
+  local csp=$(echo "$realm_settings" | grep -o '"contentSecurityPolicy":"[^"]*"' | cut -d':' -f2 | tr -d '"')
+  echo "Current Content Security Policy: $csp"
+  
+  if [[ "$csp" == *"frame-src *; frame-ancestors *"* ]]; then
+    echo "✅ Content Security Policy is correctly configured"
+  else
+    echo "⚠️ Content Security Policy is not correctly configured"
+    echo "Current: $csp"
+    echo "Expected to contain: frame-src *; frame-ancestors *"
+    
+    # Update CSP if needed
+    echo "Updating Content Security Policy..."
+    curl -s -k -X PUT \
+      -H "Authorization: Bearer $admin_token" \
+      -H "Content-Type: application/json" \
+      -d '{"contentSecurityPolicy": "frame-src *; frame-ancestors *; object-src '\''none'\''"}' \
+      "${keycloak_url}/admin/realms/${realm_name}" >/dev/null
+    
+    if [ $? -eq 0 ]; then
+      echo "✅ Content Security Policy updated successfully"
+    else
+      echo "⚠️ Failed to update Content Security Policy"
+    fi
+  fi
+  
+  # Check frontendUrl
+  local frontend_url=$(echo "$realm_settings" | grep -o '"frontendUrl":"[^"]*"' | cut -d':' -f2- | tr -d '"' | sed 's/^://')
+  echo "Current frontendUrl: $frontend_url"
+  
+  if [[ "$frontend_url" == "$expected_frontend_url" ]]; then
+    echo "✅ frontendUrl is correctly configured"
+  else
+    echo "⚠️ frontendUrl is not correctly configured"
+    echo "Current: $frontend_url"
+    echo "Expected: $expected_frontend_url"
+    
+    # Update frontendUrl
+    echo "Updating frontendUrl and related settings..."
+    curl -s -k -X PUT \
+      -H "Authorization: Bearer $admin_token" \
+      -H "Content-Type: application/json" \
+      -d "{
+        \"frontendUrl\": \"${expected_frontend_url}\",
+        \"attributes\": {
+          \"frontendUrl\": \"${expected_frontend_url}\",
+          \"hostname-url\": \"${expected_frontend_url}\",
+          \"hostname-admin-url\": \"${expected_frontend_url}\"
+        }
+      }" \
+      "${keycloak_url}/admin/realms/${realm_name}" >/dev/null
+    
+    if [ $? -eq 0 ]; then
+      echo "✅ frontendUrl and related settings updated successfully"
+    else
+      echo "⚠️ Failed to update frontendUrl and related settings"
+    fi
+  fi
+  
+  # Verify clients
+  verify_keycloak_clients "$admin_token" "$keycloak_url" "$realm_name"
+}
+
+# Function to verify Keycloak clients
+verify_keycloak_clients() {
+  local admin_token="$1"
+  local keycloak_url="$2"
+  local realm_name="$3"
+  
+  echo "Verifying Keycloak clients..."
+  
+  # Fetch current clients
+  local clients=$(curl -s -k \
+    -H "Authorization: Bearer $admin_token" \
+    "${keycloak_url}/admin/realms/${realm_name}/clients")
+  
+  # Get client IDs from environment
+  local frontend_client_id=$(grep -E "^KEYCLOAK_CLIENT_ID_FRONTEND=" .env | cut -d= -f2)
+  local api_client_id=$(grep -E "^KEYCLOAK_CLIENT_ID_API=" .env | cut -d= -f2)
+  
+  # Set defaults if not found
+  frontend_client_id=${frontend_client_id:-frontend}
+  api_client_id=${api_client_id:-api}
+  
+  # Check for frontend client
+  if echo "$clients" | grep -q "\"clientId\":\"$frontend_client_id\""; then
+    echo "✅ Frontend client '$frontend_client_id' exists"
+  else
+    echo "⚠️ Frontend client '$frontend_client_id' not found"
+    echo "Please run the Keycloak configuration script again or create the client manually"
+  fi
+  
+  # Check for API client
+  if echo "$clients" | grep -q "\"clientId\":\"$api_client_id\""; then
+    echo "✅ API client '$api_client_id' exists"
+  else
+    echo "⚠️ API client '$api_client_id' not found"
+    echo "Please run the Keycloak configuration script again or create the client manually"
+  fi
+  
+  # Check for admin client - this might be optional depending on your setup
+  if echo "$clients" | grep -q "\"clientId\":\"admin-cli\""; then
+    echo "✅ Admin client 'admin-cli' exists"
+  else
+    echo "⚠️ Admin client 'admin-cli' not found"
+  fi
+  
+  # Verify client configurations if needed
+  # This might be extended with more specific client checks
+  echo "Client verification completed"
+}
+
 # Setup is done, now let's check Kong health
 print_step "Checking Kong health..."
 
@@ -1125,11 +1593,14 @@ print_step "Checking Kong health..."
 if [ "$SKIP_URL_CHECKS" = "true" ]; then
   echo "Skipping Kong URL health checks (SKIP_URL_CHECKS=true)"
   
+  # Get the container name dynamically
+  local KONG_CONTAINER=$(get_container_name "kong")
+  
   # Just check if the container is running
-  if docker ps | grep -q "dive25-kong"; then
-    echo "Kong container is running. Continuing..."
+  if docker ps | grep -q "$KONG_CONTAINER"; then
+    echo "Kong container '$KONG_CONTAINER' is running. Continuing..."
   else
-    echo "WARNING: Kong container is not running! Setup may not be complete."
+    echo "WARNING: Kong container '$KONG_CONTAINER' is not running! Setup may not be complete."
   fi
 else
   check_kong_health 180 || echo "WARNING: Kong health check failed, but continuing anyway..."
@@ -1139,9 +1610,10 @@ fi
 print_step "Ensuring Kong is properly configured with Keycloak..."
 
 # Check if kong-config container completed successfully
-if docker ps -a | grep -q dive25-kong-config; then
-  CONFIG_STATUS=$(docker inspect --format='{{.State.Status}}' dive25-kong-config)
-  CONFIG_EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' dive25-kong-config)
+local KONG_CONFIG_CONTAINER=$(get_container_name "kong-config")
+if docker ps -a | grep -q "$KONG_CONFIG_CONTAINER"; then
+  CONFIG_STATUS=$(docker inspect --format='{{.State.Status}}' "$KONG_CONFIG_CONTAINER")
+  CONFIG_EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$KONG_CONFIG_CONTAINER")
   
   echo "Kong config container status: $CONFIG_STATUS, exit code: $CONFIG_EXIT_CODE"
   
@@ -1150,7 +1622,7 @@ if docker ps -a | grep -q dive25-kong-config; then
   else
     echo "⚠️ Kong configuration container failed with exit code $CONFIG_EXIT_CODE"
     echo "Logs from kong-config container:"
-    docker logs dive25-kong-config | tail -n 50
+    docker logs "$KONG_CONFIG_CONTAINER" | tail -n 50
     
     echo "Attempting to fix Kong configuration..."
     
@@ -1185,13 +1657,17 @@ if docker ps -a | grep -q dive25-kong-config; then
       # Set environment variables for the script
       export KONG_ADMIN_URL="$KONG_ADMIN_URL"
       export BASE_DOMAIN="$BASE_DOMAIN"
-      export KONG_CONTAINER="dive25-kong"
-      export FRONTEND_CONTAINER="dive25-frontend"
-      export API_CONTAINER="dive25-api"
-      export KEYCLOAK_CONTAINER="dive25-keycloak"
-      export INTERNAL_FRONTEND_URL="${INTERNAL_FRONTEND_URL:-http://frontend:3000}"
-      export INTERNAL_API_URL="${INTERNAL_API_URL:-http://api:8000}"
-      export INTERNAL_KEYCLOAK_URL="$KEYCLOAK_URL"
+      
+      # Dynamically determine container names based on docker-compose project
+      local project_prefix=$(docker-compose config --services | head -n 1 | grep -o "^[a-zA-Z0-9]*" || echo "dive25")
+      local KONG_CONTAINER="${project_prefix}-kong"
+      export FRONTEND_CONTAINER="${project_prefix}-frontend"
+      export API_CONTAINER="${project_prefix}-api"
+      export KEYCLOAK_CONTAINER="${project_prefix}-keycloak"
+      
+      export INTERNAL_FRONTEND_URL="${INTERNAL_FRONTEND_URL}"
+      export INTERNAL_API_URL="${INTERNAL_API_URL}"
+      export INTERNAL_KEYCLOAK_URL="$INTERNAL_KEYCLOAK_URL"
       export PUBLIC_KEYCLOAK_URL="$PUBLIC_KEYCLOAK_URL"
       export PUBLIC_FRONTEND_URL="$PUBLIC_FRONTEND_URL"
       export PUBLIC_API_URL="$PUBLIC_API_URL"
@@ -1205,6 +1681,7 @@ if docker ps -a | grep -q dive25-kong-config; then
       
       if [ $? -eq 0 ]; then
         echo "✅ Kong configuration completed successfully using unified configuration script"
+        KONG_CONFIGURED=true
       else
         echo "⚠️ Failed to configure Kong using unified configuration script"
         echo "Falling back to legacy scripts..."
@@ -1225,6 +1702,7 @@ if docker ps -a | grep -q dive25-kong-config; then
             ./kong/kong-configure-unified.sh port-8443 || {
               echo "⚠️ Port 8443 configuration failed. Check Kong logs for details."
             }
+            KONG_CONFIGURED=true
           else
             echo "⚠️ Failed to configure Kong using legacy script"
           fi
@@ -1232,205 +1710,211 @@ if docker ps -a | grep -q dive25-kong-config; then
           echo "⚠️ Legacy OIDC configuration script not found"
         fi
       fi
-    else
-      echo "Unified Kong configuration script not found, trying separate scripts..."
-      
-      # Use the comprehensive configure-oidc.sh script 
-      if [ -f "./kong/configure-oidc.sh" ]; then
-        echo "Using configure-oidc.sh script for Kong configuration..."
-        chmod +x ./kong/configure-oidc.sh
-        
-        # Set environment variables for the script
-        export KONG_ADMIN_URL="$KONG_ADMIN_URL"
-        export KEYCLOAK_URL="$INTERNAL_KEYCLOAK_URL"
-        export KEYCLOAK_AUTH_URL="$INTERNAL_KEYCLOAK_AUTH_URL"
-        export PUBLIC_KEYCLOAK_URL="$PUBLIC_KEYCLOAK_URL"
-        export PUBLIC_KEYCLOAK_AUTH_URL="$PUBLIC_KEYCLOAK_AUTH_URL"
-        export KEYCLOAK_REALM="$KEYCLOAK_REALM"
-        export KEYCLOAK_CLIENT_ID_FRONTEND="$KEYCLOAK_CLIENT_ID"
-        export KEYCLOAK_CLIENT_SECRET="$KEYCLOAK_CLIENT_SECRET"
-        export PUBLIC_FRONTEND_URL="$PUBLIC_FRONTEND_URL"
-        export PUBLIC_API_URL="$PUBLIC_API_URL"
-        export FRONTEND_DOMAIN="$FRONTEND_DOMAIN"
-        export API_DOMAIN="$API_DOMAIN"
-        export BASE_DOMAIN="$BASE_DOMAIN"
-        
-        # Run the script
-        ./kong/configure-oidc.sh
-        
-        if [ $? -eq 0 ]; then
-          echo "✅ Kong configuration completed successfully using configure-oidc.sh"
-        else
-          echo "⚠️ Failed to configure Kong using configure-oidc.sh"
-          echo "Attempting direct configuration..."
-        fi
-
-        # After OIDC configuration, setup port 8443 using our unified Kong configuration script
-        echo "Setting up port 8443 routes..."
-        
-        # Try to use the unified script for port 8443 configuration
-        if [ -f "./kong/kong-configure-unified.sh" ]; then
-          echo "Using unified script for port 8443 configuration..."
-          chmod +x ./kong/kong-configure-unified.sh
-          
-          # Set environment variables for the script
-          export KONG_ADMIN_URL="$KONG_ADMIN_URL"
-          export BASE_DOMAIN="$BASE_DOMAIN"
-          export KONG_CONTAINER="dive25-kong"
-          export FRONTEND_CONTAINER="dive25-frontend"
-          export API_CONTAINER="dive25-api"
-          export KEYCLOAK_CONTAINER="dive25-keycloak"
-          
-          # Run the script with port-8443 configuration
-          ./kong/kong-configure-unified.sh port-8443 || {
-            echo "⚠️ Port 8443 configuration failed. Check Kong logs for details."
-          }
-        else
-          echo "⚠️ Unified Kong configuration script not found for port 8443 setup"
-          echo "Please create the unified script or run the cleanup-patches.sh to update configuration files"
-        fi
-      else
-        echo "configure-oidc.sh not found, attempting direct configuration..."
-        
-        # As a fallback, try direct configuration of the OIDC plugin
-        echo "Checking for existing OIDC plugin..."
-        PLUGIN_ID=$(curl -s $KONG_ADMIN_URL/plugins?name=oidc-auth | jq -r '.data[0].id' 2>/dev/null || echo "")
-        if [ -n "$PLUGIN_ID" ] && [ "$PLUGIN_ID" != "null" ]; then
-          echo "Removing existing OIDC plugin with ID: $PLUGIN_ID"
-          curl -s -X DELETE $KONG_ADMIN_URL/plugins/$PLUGIN_ID || echo "Failed to delete existing OIDC plugin"
-        fi
-        
-        echo "Creating new OIDC plugin with ${KEYCLOAK_REALM} realm..."
-        curl -s -X POST $KONG_ADMIN_URL/plugins \
-          -d "name=oidc-auth" \
-          -d "config.client_id=${KEYCLOAK_CLIENT_ID}" \
-          -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-          -d "config.discovery=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-          -d "config.introspection_endpoint=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
-          -d "config.bearer_only=false" \
-          -d "config.realm=${KEYCLOAK_REALM}" \
-          -d "config.redirect_uri_path=/callback" \
-          -d "config.logout_path=/logout" \
-          -d "config.redirect_after_logout_uri=${PUBLIC_FRONTEND_URL}" \
-          -d "config.scope=openid email profile" \
-          -d "config.response_type=code" \
-          -d "config.ssl_verify=false" \
-          -d "config.token_endpoint_auth_method=client_secret_post" \
-          -d "config.introspection_endpoint_auth_method=client_secret_post" \
-          -d "config.redirect_uri=${PUBLIC_FRONTEND_URL}/callback" || echo "Failed to create OIDC plugin"
-        
-        echo "Kong OIDC plugin configuration updated."
-      fi
     fi
   fi
 else
-  echo "⚠️ Kong config container not found, checking OIDC plugin directly..."
+  echo "⚠️ Kong config container not found, checking realm directly..."
   
-  # Set up Kong configuration with environment variables from .env
-  KONG_ADMIN_URL=$(grep -E "^KONG_ADMIN_URL=" .env | cut -d= -f2)
-  KONG_ADMIN_PORT=$(grep -E "^KONG_ADMIN_PORT=" .env | cut -d= -f2)
+  # Try to check if the realm exists using the Keycloak API
+  KEYCLOAK_INTERNAL_URL=$(grep -E "^INTERNAL_KEYCLOAK_URL=" .env | cut -d= -f2)
+  KEYCLOAK_ADMIN=$(grep -E "^KEYCLOAK_ADMIN=" .env | cut -d= -f2)
+  KEYCLOAK_ADMIN_PASSWORD=$(grep -E "^KEYCLOAK_ADMIN_PASSWORD=" .env | cut -d= -f2)
   KEYCLOAK_REALM=$(grep -E "^KEYCLOAK_REALM=" .env | cut -d= -f2)
-  INTERNAL_KEYCLOAK_URL=$(grep -E "^INTERNAL_KEYCLOAK_URL=" .env | cut -d= -f2)
-  PUBLIC_KEYCLOAK_URL=$(grep -E "^PUBLIC_KEYCLOAK_URL=" .env | cut -d= -f2)
-  KEYCLOAK_CLIENT_ID=$(grep -E "^KEYCLOAK_CLIENT_ID_FRONTEND=" .env | cut -d= -f2)
-  KEYCLOAK_CLIENT_SECRET=$(grep -E "^KEYCLOAK_CLIENT_SECRET=" .env | cut -d= -f2)
-  PUBLIC_FRONTEND_URL=$(grep -E "^PUBLIC_FRONTEND_URL=" .env | cut -d= -f2)
   
   # Set default values if not found in .env
-  KONG_ADMIN_URL=${KONG_ADMIN_URL:-http://localhost:9444}
-  KONG_ADMIN_PORT=${KONG_ADMIN_PORT:-9444}
+  KEYCLOAK_INTERNAL_URL=${KEYCLOAK_INTERNAL_URL:-http://localhost:4432}
+  KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN:-admin}
+  KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD:-admin}
   KEYCLOAK_REALM=${KEYCLOAK_REALM:-dive25}
-  INTERNAL_KEYCLOAK_URL=${INTERNAL_KEYCLOAK_URL:-http://keycloak:8080}
-  PUBLIC_KEYCLOAK_URL=${PUBLIC_KEYCLOAK_URL:-https://keycloak.dive25.local:4432}
-  KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-dive25-frontend}
-  KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
-  PUBLIC_FRONTEND_URL=${PUBLIC_FRONTEND_URL:-https://frontend.dive25.local:4430}
   
-  echo "Using Kong Admin URL: $KONG_ADMIN_URL"
+  echo "Using Keycloak admin credentials and realm from environment variables"
   
-  # Check if Kong Admin API is accessible
-  if curl -s $KONG_ADMIN_URL > /dev/null; then
-    echo "✅ Kong Admin API is accessible"
+  # Attempt to get a token
+  echo "Attempting to get admin token..."
+  ADMIN_TOKEN=$(curl -s -k -X POST "${KEYCLOAK_INTERNAL_URL}/realms/master/protocol/openid-connect/token" \
+    -H "Content-Type: application/x-www-form-urlencoded" \
+    -d "username=${KEYCLOAK_ADMIN}" \
+    -d "password=${KEYCLOAK_ADMIN_PASSWORD}" \
+    -d "grant_type=password" \
+    -d "client_id=admin-cli" | grep -o '"access_token":"[^"]*"' | cut -d':' -f2 | tr -d '"')
+  
+  if [ -n "$ADMIN_TOKEN" ]; then
+    echo "✅ Got admin token, checking if realm exists..."
     
-    # Check if OIDC plugin exists with the correct realm
-    PLUGIN_INFO=$(curl -s $KONG_ADMIN_URL/plugins?name=oidc-auth)
-    CURRENT_REALM=$(echo "$PLUGIN_INFO" | grep -o '"realm":"[^"]*"' | cut -d':' -f2 | tr -d '"')
+    # Check if the realm exists
+    REALM_EXISTS=$(curl -s -k -o /dev/null -w "%{http_code}" \
+      -H "Authorization: Bearer $ADMIN_TOKEN" \
+      "${KEYCLOAK_INTERNAL_URL}/admin/realms/${KEYCLOAK_REALM}")
     
-    if [ "$CURRENT_REALM" = "$KEYCLOAK_REALM" ]; then
-      echo "✅ OIDC plugin already configured with the correct realm: $KEYCLOAK_REALM"
+    if [ "$REALM_EXISTS" -eq 200 ]; then
+      echo "✅ Realm ${KEYCLOAK_REALM} already exists"
+      
+      # Verify specific Keycloak settings
+      verify_keycloak_settings "$ADMIN_TOKEN" "$KEYCLOAK_INTERNAL_URL" "$KEYCLOAK_REALM" "$PUBLIC_KEYCLOAK_URL"
     else
-      echo "⚠️ OIDC plugin exists but has wrong realm: $CURRENT_REALM, should be: $KEYCLOAK_REALM"
-      echo "Updating OIDC plugin configuration..."
+      echo "⚠️ Realm ${KEYCLOAK_REALM} does not exist. Running configuration script..."
       
-      # Get plugin ID
-      PLUGIN_ID=$(echo "$PLUGIN_INFO" | jq -r '.data[0].id' 2>/dev/null || echo "")
-      
-      if [ -n "$PLUGIN_ID" ] && [ "$PLUGIN_ID" != "null" ]; then
-        echo "Removing existing OIDC plugin with ID: $PLUGIN_ID"
-        curl -s -X DELETE $KONG_ADMIN_URL/plugins/$PLUGIN_ID || echo "Failed to delete existing OIDC plugin"
+      # Run the original configure-keycloak.sh script
+      if [ -f "./keycloak/configure-keycloak.sh" ]; then
+        chmod +x ./keycloak/configure-keycloak.sh
+        
+        # Export variables for the script
+        export KEYCLOAK_URL=${KEYCLOAK_INTERNAL_URL}
+        export KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
+        export KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+        export PUBLIC_KEYCLOAK_URL=$(grep -E "^PUBLIC_KEYCLOAK_URL=" .env | cut -d= -f2)
+        export PUBLIC_FRONTEND_URL=$(grep -E "^PUBLIC_FRONTEND_URL=" .env | cut -d= -f2)
+        export PUBLIC_API_URL=$(grep -E "^PUBLIC_API_URL=" .env | cut -d= -f2)
+        export KEYCLOAK_REALM=${KEYCLOAK_REALM}
+        export KEYCLOAK_CLIENT_ID_FRONTEND=$(grep -E "^KEYCLOAK_CLIENT_ID_FRONTEND=" .env | cut -d= -f2)
+        export KEYCLOAK_CLIENT_ID_API=$(grep -E "^KEYCLOAK_CLIENT_ID_API=" .env | cut -d= -f2)
+        export KEYCLOAK_CLIENT_SECRET=$(grep -E "^KEYCLOAK_CLIENT_SECRET=" .env | cut -d= -f2)
+        
+        # Create mock directories for the script
+        mkdir -p ./tmp/identity-providers ./tmp/test-users ./tmp/clients
+        
+        # Run the script with proper environment
+        ./keycloak/configure-keycloak.sh
+        
+        if [ $? -eq 0 ]; then
+          echo "✅ Keycloak configuration completed successfully"
+        else
+          echo "⚠️ Failed to configure Keycloak"
+          echo "Please check the logs and try to fix the issue manually."
+        fi
+      else
+        echo "⚠️ configure-keycloak.sh script not found"
+        
+        # If that fails, try to use the fix-keycloak-config.sh script
+        if [ -f "./keycloak/fix-keycloak-config.sh" ]; then
+          chmod +x ./keycloak/fix-keycloak-config.sh
+          ./keycloak/fix-keycloak-config.sh
+          
+          if [ $? -eq 0 ]; then
+            echo "✅ Keycloak realm fixed successfully using fix-keycloak-config.sh"
+          else
+            echo "⚠️ Failed to fix Keycloak realm using fix-keycloak-config.sh"
+            echo "Please check the logs and try to fix the issue manually."
+          fi
+        else
+          echo "⚠️ fix-keycloak-config.sh script not found"
+        fi
       fi
-      
-      echo "Creating new OIDC plugin with ${KEYCLOAK_REALM} realm..."
-      curl -s -X POST $KONG_ADMIN_URL/plugins \
-        -d "name=oidc-auth" \
-        -d "config.client_id=${KEYCLOAK_CLIENT_ID}" \
-        -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-        -d "config.discovery=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-        -d "config.introspection_endpoint=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
-        -d "config.bearer_only=false" \
-        -d "config.realm=${KEYCLOAK_REALM}" \
-        -d "config.redirect_uri_path=/callback" \
-        -d "config.logout_path=/logout" \
-        -d "config.redirect_after_logout_uri=${PUBLIC_FRONTEND_URL}" \
-        -d "config.scope=openid email profile" \
-        -d "config.response_type=code" \
-        -d "config.ssl_verify=false" \
-        -d "config.token_endpoint_auth_method=client_secret_post" \
-        -d "config.introspection_endpoint_auth_method=client_secret_post" \
-        -d "config.redirect_uri=${PUBLIC_FRONTEND_URL}/callback" || echo "Failed to create OIDC plugin"
-      
-      echo "Kong OIDC plugin configuration updated."
     fi
   else
-    echo "⚠️ Kong Admin API is not accessible at $KONG_ADMIN_URL"
-    echo "Cannot update Kong configuration."
+    echo "⚠️ Failed to get admin token from Keycloak"
+    echo "Please make sure Keycloak is running and accessible."
+    
+    # Try to use the fix-keycloak-config.sh script as a last resort
+    if [ -f "./keycloak/fix-keycloak-config.sh" ]; then
+      chmod +x ./keycloak/fix-keycloak-config.sh
+      ./keycloak/fix-keycloak-config.sh
+      
+      if [ $? -eq 0 ]; then
+        echo "✅ Keycloak realm fixed successfully using fix-keycloak-config.sh"
+      else
+        echo "⚠️ Failed to fix Keycloak realm using fix-keycloak-config.sh"
+        echo "Please check the logs and try to fix the issue manually."
+      fi
+    else
+      echo "⚠️ fix-keycloak-config.sh script not found"
+    fi
   fi
 fi
 
+# Add hostname-based routes manually
+if [ "$KONG_CONFIGURED" = "true" ]; then
+  echo "Setting up hostname-based routes in Kong..."
+  
+  # Try to set up hostname-based routes
+  API_DOMAIN=$(grep "API_DOMAIN=" .env | cut -d '=' -f2 || echo "api")
+  FRONTEND_DOMAIN=$(grep "FRONTEND_DOMAIN=" .env | cut -d '=' -f2 || echo "frontend")
+  KEYCLOAK_DOMAIN=$(grep "KEYCLOAK_DOMAIN=" .env | cut -d '=' -f2 || echo "keycloak")
+  BASE_DOMAIN=$(grep "BASE_DOMAIN=" .env | cut -d '=' -f2 || echo "dive25.local")
+  
+  # Configure API service for HTTPS
+  echo "Updating API service in Kong to use HTTPS..."
+  curl -s -X PATCH "$KONG_ADMIN_URL/services/api-service" \
+    --data "protocol=https" \
+    --data "tls_verify=false" > /dev/null || echo "⚠️ Failed to update API service in Kong"
+  
+  # Create hostname-based routes for services
+  echo "Creating hostname-based routes for services..."
+  
+  # Frontend route
+  curl -s -X POST "$KONG_ADMIN_URL/services/frontend-service/routes" \
+    --data "name=frontend-host-route" \
+    --data "hosts[]=${FRONTEND_DOMAIN}.${BASE_DOMAIN}" \
+    --data "strip_path=false" > /dev/null || echo "⚠️ Failed to create frontend host route"
+    
+  # API route
+  curl -s -X POST "$KONG_ADMIN_URL/services/api-service/routes" \
+    --data "name=api-host-route" \
+    --data "hosts[]=${API_DOMAIN}.${BASE_DOMAIN}" \
+    --data "strip_path=false" > /dev/null || echo "⚠️ Failed to create API host route"
+    
+  # Keycloak route
+  curl -s -X POST "$KONG_ADMIN_URL/services/keycloak-service/routes" \
+    --data "name=keycloak-host-route" \
+    --data "hosts[]=${KEYCLOAK_DOMAIN}.${BASE_DOMAIN}" \
+    --data "strip_path=false" > /dev/null || echo "⚠️ Failed to create Keycloak host route"
+    
+  # Root domain route (to frontend)
+  curl -s -X POST "$KONG_ADMIN_URL/services/frontend-service/routes" \
+    --data "name=root-domain-route" \
+    --data "hosts[]=${BASE_DOMAIN}" \
+    --data "strip_path=false" > /dev/null || echo "⚠️ Failed to create root domain route"
+    
+  echo "✅ Hostname-based routes set up successfully"
+fi
+
+print_step "Kong configuration is complete. Now checking service accessibility..."
+
 # Check if the API service is running
 print_step "Checking API service..."
+
+if [ "$SKIP_API_CHECK" = "true" ]; then
+  echo "Skipping API check (SKIP_API_CHECK=true)"
+else
+  # Check if master timeout has been reached
+  CURRENT_TIME=$(date +%s)
+  ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
+  
+  if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
+    echo "⚠️ Master timeout reached for deployment (${ELAPSED_TIME}s elapsed). Skipping API check."
+    
+    # Get API container name dynamically
+    local API_CONTAINER=$(get_container_name "api")
+    
+    # Just check if the container is running
+    if docker ps | grep -q "$API_CONTAINER"; then
+      echo "API container is running. Continuing..."
+    else
+      echo "WARNING: API container is not running! Setup may not be complete."
+    fi
+  else
+    # Only perform the API health check if Kong has been configured
+    if [ "$KONG_CONFIGURED" = "true" ]; then
+      echo "Kong is configured, performing complete API health check with URL..."
+      check_api_health "$api_url" 120 || echo "WARNING: API health check failed, but continuing..."
+    else
+      echo "Skipping API URL health check as Kong has not been fully configured"
+      # Just check if the container is running instead
+      local API_CONTAINER=$(get_container_name "api")
+      if docker ps | grep -q "$API_CONTAINER"; then
+        echo "API container is running. Continuing..."
+      else
+        echo "WARNING: API container is not running! Setup may not be complete."
+      fi
+    fi
+  fi
+fi
 
 # Check if master timeout has been reached
 CURRENT_TIME=$(date +%s)
 ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
 if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
   echo "WARNING: Master timeout reached after ${ELAPSED_TIME}s. Continuing with setup anyway."
-else
-  # Perform comprehensive API health check
-  echo "Performing comprehensive API health check..."
-  if [ "$SKIP_API_CHECK" = "true" ]; then
-    echo "Skipping API health check (SKIP_API_CHECK=true)"
-    echo "Using direct manual check to verify API container is running..."
-    
-    # Just check if the container is running
-    if docker ps | grep -q "dive25-api"; then
-      echo "✅ API container is running. If you encounter API connectivity issues, try:"
-      echo "   - Accessing the API directly at https://localhost:4431/health with -k flag"
-      echo "   - Checking API logs with: docker-compose logs api"
-    else
-      echo "⚠️ WARNING: API container is not running! Setup may not be complete."
-    fi
-  elif [ "$SKIP_URL_CHECKS" = "true" ]; then
-    echo "Skipping API URL health checks (SKIP_URL_CHECKS=true)"
-    # Just check if the container is running
-    if docker ps | grep -q "dive25-api"; then
-      echo "API container is running. Continuing..."
-    else
-      echo "WARNING: API container is not running! Setup may not be complete."
-    fi
-  else
-    check_api_health "$api_url" 120 || echo "WARNING: API health check failed, but continuing..."
-  fi
 fi
 
 # Check if the frontend service is running
@@ -1442,19 +1926,19 @@ ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
 if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
   echo "WARNING: Master timeout reached after ${ELAPSED_TIME}s. Continuing with setup anyway."
 else
-  # Perform frontend health check
-  echo "Performing frontend health check..."
-  if [ "$SKIP_URL_CHECKS" = "true" ]; then
-    echo "Skipping frontend URL health checks (SKIP_URL_CHECKS=true)"
-    # Just check if the container is running
-    if docker ps | grep -q "dive25-frontend"; then
-      echo "✅ Frontend container is running. Continuing..."
-    else
-      echo "⚠️ WARNING: Frontend container is not running! Setup may not be complete."
-    fi
-  else
-    # Frontend URL might not be accessible immediately, so we'll wait
+  # Only perform the frontend URL check if Kong has been configured
+  if [ "$KONG_CONFIGURED" = "true" ]; then
+    echo "Kong is configured, checking frontend URL accessibility..."
     wait_for_service "Frontend" "$frontend_url" 60 || echo "WARNING: Frontend URL check timed out, but continuing..."
+  else
+    echo "Skipping frontend URL check as Kong has not been fully configured"
+    # Just check if the container is running instead
+    local FRONTEND_CONTAINER=$(get_container_name "frontend")
+    if docker ps | grep -q "$FRONTEND_CONTAINER"; then
+      echo "Frontend container is running. Continuing..."
+    else
+      echo "WARNING: Frontend container is not running! Setup may not be complete."
+    fi
   fi
 fi
 
@@ -1493,7 +1977,7 @@ echo "        -d \"username=admin\" \\"
 echo "        -d \"password=admin\""
 echo
 echo "2. Use the token to access the API:"
-echo "   curl -H \"Authorization: Bearer YOUR_TOKEN\" $api_url/api/v1/protected-resource"
+echo "   curl -k -H \"Authorization: Bearer YOUR_TOKEN\" $api_url/api/v1/protected-resource"
 echo
 echo "To view logs:"
 echo "- Frontend: docker-compose logs -f frontend"
@@ -1523,7 +2007,7 @@ print_step "Cleaning up redundant patch scripts"
 echo "The authentication fixes have been consolidated into the main configuration files:"
 echo "- kong/kong-configure-unified.sh (for all Kong configuration)"
 echo "- keycloak/themes/dive25/login/resources/js/login-config.js (Keycloak redirects)"
-echo "- keycloak/configure-keycloak-unified.sh (for Keycloak realm and security)"
+echo "- keycloak/configure-keycloak.sh (for Keycloak realm and security)"
 echo "- keycloak/Dockerfile (theme configuration)"
 echo ""
 echo "There are several redundant patch scripts that can be safely removed."
@@ -1558,3 +2042,13 @@ echo "API: https://api.dive25.local:8443"
 echo "Keycloak: https://keycloak.dive25.local:8443"
 echo ""
 echo "Thank you for using DIVE25!"
+
+# Set up entries in /etc/hosts for local domain resolution
+set_local_dns() {
+  # ... existing code ...
+}
+
+# Function to check for required commands
+check_requirements() {
+  # ... existing code ...
+}

@@ -21,11 +21,12 @@
 #   port-8443      - Configure Kong routes for port 8443
 #   ssl            - Set up SSL certificates for Kong
 #   status         - Check Kong and service status
+#   troubleshoot   - Perform basic troubleshooting
 #   all            - Run all configuration steps (default)
 #   help           - Display this help message
 #
 # Environment Variables:
-#   KONG_ADMIN_URL  - Kong Admin API URL (default: http://localhost:8001)
+#   KONG_ADMIN_URL  - Kong Admin API URL (default: http://localhost:9444)
 #   BASE_DOMAIN     - Base domain for services (default: dive25.local)
 #   KONG_CONTAINER  - Name of Kong container (default: dive25-kong)
 #   FRONTEND_CONTAINER - Name of frontend container (default: dive25-frontend)
@@ -42,22 +43,24 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Default values
-KONG_ADMIN_URL=${KONG_ADMIN_URL:-http://localhost:8001}
-BASE_DOMAIN=${BASE_DOMAIN:-dive25.local}
+KONG_ADMIN_URL=${KONG_ADMIN_URL:-"http://kong:8001"}
+BASE_DOMAIN=${BASE_DOMAIN:-"dive25.local"}
 KONG_CONTAINER=${KONG_CONTAINER:-dive25-kong}
 FRONTEND_CONTAINER=${FRONTEND_CONTAINER:-dive25-frontend}
 API_CONTAINER=${API_CONTAINER:-dive25-api}
 KEYCLOAK_CONTAINER=${KEYCLOAK_CONTAINER:-dive25-keycloak}
-INTERNAL_FRONTEND_URL=${INTERNAL_FRONTEND_URL:-http://frontend:3000}
-INTERNAL_API_URL=${INTERNAL_API_URL:-http://api:8000}
-INTERNAL_KEYCLOAK_URL=${INTERNAL_KEYCLOAK_URL:-http://keycloak:8080}
-PUBLIC_KEYCLOAK_URL=${PUBLIC_KEYCLOAK_URL:-https://keycloak.$BASE_DOMAIN:8443}
-PUBLIC_FRONTEND_URL=${PUBLIC_FRONTEND_URL:-https://frontend.$BASE_DOMAIN:8443}
-PUBLIC_API_URL=${PUBLIC_API_URL:-https://api.$BASE_DOMAIN:8443}
-KEYCLOAK_REALM=${KEYCLOAK_REALM:-dive25}
-KEYCLOAK_CLIENT_ID_FRONTEND=${KEYCLOAK_CLIENT_ID_FRONTEND:-dive25-frontend}
-KEYCLOAK_CLIENT_ID_API=${KEYCLOAK_CLIENT_ID_API:-dive25-api}
-KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
+INTERNAL_FRONTEND_URL=${INTERNAL_FRONTEND_URL:-"http://frontend:3000"}
+INTERNAL_API_URL=${INTERNAL_API_URL:-"http://api:3000"}
+INTERNAL_KEYCLOAK_URL=${INTERNAL_KEYCLOAK_URL:-"http://keycloak:8080"}
+PUBLIC_KEYCLOAK_URL=${PUBLIC_KEYCLOAK_URL:-"https://keycloak.$BASE_DOMAIN:8443"}
+PUBLIC_FRONTEND_URL=${PUBLIC_FRONTEND_URL:-"https://frontend.$BASE_DOMAIN:8443"}
+PUBLIC_API_URL=${PUBLIC_API_URL:-"https://api.$BASE_DOMAIN:8443"}
+KEYCLOAK_REALM=${KEYCLOAK_REALM:-"dive25"}
+KEYCLOAK_CLIENT_ID_FRONTEND=${KEYCLOAK_CLIENT_ID_FRONTEND:-"dive25-frontend"}
+KEYCLOAK_CLIENT_ID_API=${KEYCLOAK_CLIENT_ID_API:-"dive25-api"}
+KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-"change-me-in-production"}
+MAX_RETRIES=20
+RETRY_INTERVAL=5
 
 # Load environment variables if they exist
 load_environment_variables() {
@@ -109,310 +112,236 @@ check_kong_health() {
 
 # Function to wait for Kong to become healthy
 wait_for_kong() {
-  echo -e "${BLUE}Waiting for Kong to become healthy...${NC}"
-  local attempts=0
-  local max_attempts=30
-  
-  while [ $attempts -lt $max_attempts ]; do
-    if docker ps | grep -q "$KONG_CONTAINER"; then
-      local status=$(docker inspect --format='{{.State.Health.Status}}' $KONG_CONTAINER 2>/dev/null)
-      
-      if [ "$status" == "healthy" ]; then
-        echo -e "${GREEN}✅ Kong is healthy!${NC}"
-        return 0
-      fi
+  echo "Waiting for Kong Admin API to be ready..."
+  local retry=0
+  while [ $retry -lt $MAX_RETRIES ]; do
+    if curl -s -o /dev/null -w "%{http_code}" "$KONG_ADMIN_URL" | grep -q "200"; then
+      echo "✅ Kong Admin API is ready"
+      return 0
     fi
-    
-    echo "Waiting for Kong to become healthy (attempt $((attempts+1))/$max_attempts)..."
-    sleep 2
-    attempts=$((attempts+1))
+    retry=$((retry+1))
+    echo "Attempt $retry/$MAX_RETRIES: Kong Admin API not ready yet, waiting $RETRY_INTERVAL seconds..."
+    sleep $RETRY_INTERVAL
   done
-  
-  echo -e "${RED}❌ Kong did not become healthy after $max_attempts attempts${NC}"
+  echo "❌ Kong Admin API did not become ready after $MAX_RETRIES attempts"
   return 1
 }
 
-# Function to reset Kong's DNS resolution
-reset_kong_dns() {
-  echo -e "${BLUE}Resetting Kong's DNS resolution...${NC}"
+# Function to check for realm marker file
+check_keycloak_realm_ready() {
+  echo "Checking if Keycloak realm is ready..."
   
-  # Check the frontend container's IP and hostname
-  FRONTEND_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $FRONTEND_CONTAINER)
-  echo -e "${GREEN}Frontend container IP: ${FRONTEND_IP}${NC}"
-  echo -e "${YELLOW}Kong should connect to frontend container via hostname 'frontend' instead of IP${NC}"
+  # First check the marker file
+  if [ -f "/tmp/keycloak-config/realm-ready" ]; then
+    echo "✅ Found realm marker file"
+    return 0
+  fi
   
-  # Restart Kong to force DNS refresh
-  echo -e "${BLUE}Restarting Kong container to force DNS refresh...${NC}"
-  docker restart $KONG_CONTAINER
-  
-  # Wait for Kong to be healthy
-  wait_for_kong || {
-    echo -e "${RED}❌ Failed to wait for Kong after restart${NC}"
-    return 1
-  }
-  
-  # Test DNS resolution
-  echo -e "${BLUE}Testing DNS resolution from Kong container...${NC}"
-  docker exec $KONG_CONTAINER sh -c "cat /etc/resolv.conf" || echo "Couldn't check resolv.conf"
-  
-  # Test connectivity to frontend
-  echo -e "${BLUE}Testing connectivity from Kong to frontend...${NC}"
-  docker exec $KONG_CONTAINER sh -c "ping -c 1 frontend" || echo "Ping failed, but this may be normal"
-  
-  echo -e "${GREEN}✅ Kong DNS resolution reset completed${NC}"
-  return 0
-}
-
-# Function to configure SSL certificates
-setup_ssl() {
-  echo -e "${BLUE}Setting up SSL certificates for Kong...${NC}"
-  
-  # Create SSL directory if it doesn't exist
-  mkdir -p kong/ssl
-  
-  # Check if certs directory exists with certificates
-  if [ -d "kong/certs" ] && [ -f "kong/certs/dive25-cert.pem" ] && [ -f "kong/certs/dive25-key.pem" ]; then
-    echo -e "${GREEN}✅ Found existing certificates in kong/certs${NC}"
+  # Then try direct check with Keycloak
+  local retry=0
+  while [ $retry -lt $MAX_RETRIES ]; do
+    local status_code=$(curl -s -o /dev/null -w "%{http_code}" "${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}")
     
-    # Copy certificates to Kong SSL directory
-    echo -e "${BLUE}Copying certificates to kong/ssl...${NC}"
-    cp kong/certs/dive25-cert.pem kong/ssl/kong.crt
-    cp kong/certs/dive25-key.pem kong/ssl/kong.key
-  else
-    echo -e "${YELLOW}No existing certificates found in kong/certs${NC}"
-    
-    # Check if SSL certificates exist in the parent directory
-    if [ -d "../certs" ] && [ -f "../certs/dive25-cert.pem" ] && [ -f "../certs/dive25-key.pem" ]; then
-      echo -e "${GREEN}✅ Found existing certificates in ../certs${NC}"
-      
-      # Copy certificates to Kong SSL directory
-      echo -e "${BLUE}Copying certificates to kong/ssl...${NC}"
-      cp ../certs/dive25-cert.pem kong/ssl/kong.crt
-      cp ../certs/dive25-key.pem kong/ssl/kong.key
-    else
-      echo -e "${RED}❌ No certificates found. Please generate them first.${NC}"
-      echo "You can generate certificates using the setup-local-dev-certs.sh script."
-      return 1
+    if [ "$status_code" == "200" ]; then
+      echo "✅ Keycloak realm ${KEYCLOAK_REALM} is accessible"
+      # Create marker file for future reference
+      mkdir -p /tmp/keycloak-config
+      echo "${KEYCLOAK_REALM}" > /tmp/keycloak-config/realm-ready
+      return 0
     fi
-  fi
+    
+    retry=$((retry+1))
+    echo "Attempt $retry/$MAX_RETRIES: Keycloak realm not ready yet, waiting $RETRY_INTERVAL seconds..."
+    sleep $RETRY_INTERVAL
+  done
   
-  # Configure Kong to use SSL certificates
-  echo -e "${BLUE}Configuring Kong to use SSL certificates...${NC}"
-  curl -s -X PATCH $KONG_ADMIN_URL/certificates/default \
-    -d "cert=$(cat kong/ssl/kong.crt)" \
-    -d "key=$(cat kong/ssl/kong.key)" || {
-    echo -e "${RED}❌ Failed to configure Kong SSL certificates${NC}"
-    return 1
-  }
-  
-  echo -e "${GREEN}✅ SSL certificates configured successfully${NC}"
-  return 0
+  echo "⚠️ Could not verify Keycloak realm readiness after $MAX_RETRIES attempts"
+  echo "Will attempt to configure Kong anyway, but routes to Keycloak may not work correctly"
+  return 1
 }
 
-# Function to configure OIDC authentication
-configure_oidc() {
-  echo -e "${BLUE}Configuring Kong with OIDC authentication for Keycloak...${NC}"
-  echo "Using a phased approach for safer deployment..."
+# Function to create/update a service
+create_or_update_service() {
+  local name=$1
+  local url=$2
   
-  # Verify Kong Admin API is accessible
-  if ! check_kong_health; then
-    echo -e "${RED}❌ Cannot proceed with OIDC configuration${NC}"
-    return 1
+  echo "Creating/updating service: $name -> $url"
+  
+  # Check if service exists
+  local service_exists=$(curl -s "$KONG_ADMIN_URL/services/$name" | grep -c "id")
+  
+  if [ "$service_exists" -gt 0 ]; then
+    echo "Service $name exists, updating..."
+    curl -s -X PATCH "$KONG_ADMIN_URL/services/$name" \
+      -d "name=$name" \
+      -d "url=$url" > /dev/null
+  else
+    echo "Service $name does not exist, creating..."
+    curl -s -X POST "$KONG_ADMIN_URL/services/" \
+      -d "name=$name" \
+      -d "url=$url" > /dev/null
   fi
   
-  # Step 1: Create a consistent session secret for all OIDC plugins
-  # This is critical for preventing state parameter mismatch errors
-  echo -e "${BLUE}Creating consistent session secret...${NC}"
-  SESSION_SECRET=$(openssl rand -base64 32)
-  
-  # Step 2: Create or update frontend route-specific OIDC plugin
-  echo -e "${BLUE}Configuring route-specific OIDC authentication for frontend...${NC}"
-  
-  # Get the frontend service ID (needed for route)
-  FRONTEND_SERVICE_ID=$(curl -s $KONG_ADMIN_URL/services | jq -r '.data[] | select(.name == "frontend").id')
-  if [ -z "$FRONTEND_SERVICE_ID" ]; then
-    echo -e "${RED}❌ Frontend service not found. Please make sure it exists.${NC}"
-    return 1
-  fi
-  
-  # Get frontend route ID
-  FRONTEND_ROUTE_ID=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "frontend-route").id')
-  if [ -z "$FRONTEND_ROUTE_ID" ]; then
-    echo -e "${RED}❌ Frontend route not found. Please make sure it exists.${NC}"
-    return 1
-  }
-  
-  # Delete existing OIDC plugin on frontend route if it exists
-  OIDC_PLUGIN_ID=$(curl -s "$KONG_ADMIN_URL/routes/$FRONTEND_ROUTE_ID/plugins" | jq -r '.data[] | select(.name == "oidc-auth").id')
-  if [ -n "$OIDC_PLUGIN_ID" ] && [ "$OIDC_PLUGIN_ID" != "null" ]; then
-    echo -e "${YELLOW}Removing existing OIDC plugin on frontend route...${NC}"
-    curl -s -X DELETE "$KONG_ADMIN_URL/routes/$FRONTEND_ROUTE_ID/plugins/$OIDC_PLUGIN_ID" || {
-      echo -e "${RED}❌ Failed to delete existing OIDC plugin${NC}"
-    }
-  fi
-  
-  # Create a new OIDC plugin on the frontend route
-  echo -e "${BLUE}Creating new OIDC plugin for frontend route...${NC}"
-  curl -s -X POST "$KONG_ADMIN_URL/routes/$FRONTEND_ROUTE_ID/plugins" \
-    -H "Content-Type: application/x-www-form-urlencoded" \
-    -d "name=oidc-auth" \
-    -d "config.client_id=${KEYCLOAK_CLIENT_ID_FRONTEND}" \
-    -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-    -d "config.discovery=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
-    -d "config.introspection_endpoint=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
-    -d "config.bearer_only=false" \
-    -d "config.realm=${KEYCLOAK_REALM}" \
-    -d "config.redirect_uri_path=/callback" \
-    -d "config.logout_path=/logout" \
-    -d "config.redirect_after_logout_uri=${PUBLIC_FRONTEND_URL}" \
-    -d "config.scope=openid email profile" \
-    -d "config.response_type=code" \
-    -d "config.ssl_verify=false" \
-    -d "config.token_endpoint_auth_method=client_secret_post" \
-    -d "config.introspection_endpoint_auth_method=client_secret_post" \
-    -d "config.session_secret=${SESSION_SECRET}" \
-    -d "config.session_storage=cookie" \
-    -d "config.session_lifetime=3600" \
-    -d "config.cookie_lifetime=3600" \
-    -d "config.cookie_domain=$BASE_DOMAIN" \
-    -d "config.cookie_secure=true" \
-    -d "config.cookie_httponly=true" \
-    -d "config.cookie_samesite=None" || {
-      echo -e "${RED}❌ Failed to create OIDC plugin for frontend route${NC}"
-      return 1
-    }
-  
-  echo -e "${GREEN}✅ OIDC authentication configured successfully${NC}"
-  return 0
+  echo "✅ Service $name configured successfully"
 }
 
-# Function to configure port 8443 routes
-configure_port_8443() {
-  echo -e "${BLUE}Configuring Kong for port 8443 access...${NC}"
+# Function to create/update a route
+create_or_update_route() {
+  local name=$1
+  local service_name=$2
+  local hosts=$3
+  local paths=$4
+  local strip_path=${5:-true}
+  local preserve_host=${6:-false}
   
-  # Check if Kong is accessible
-  if ! check_kong_health; then
-    echo -e "${RED}❌ Cannot proceed with port 8443 configuration${NC}"
-    return 1
+  echo "Creating/updating route: $name -> $service_name (hosts: $hosts, paths: $paths)"
+  
+  # Check if route exists
+  local route_exists=$(curl -s "$KONG_ADMIN_URL/routes/$name" | grep -c "id")
+  
+  if [ "$route_exists" -gt 0 ]; then
+    echo "Route $name exists, updating..."
+    curl -s -X PATCH "$KONG_ADMIN_URL/routes/$name" \
+      -d "name=$name" \
+      -d "service.name=$service_name" \
+      -d "hosts=$hosts" \
+      -d "paths=$paths" \
+      -d "strip_path=$strip_path" \
+      -d "preserve_host=$preserve_host" > /dev/null
+  else
+    echo "Route $name does not exist, creating..."
+    curl -s -X POST "$KONG_ADMIN_URL/routes/" \
+      -d "name=$name" \
+      -d "service.name=$service_name" \
+      -d "hosts=$hosts" \
+      -d "paths=$paths" \
+      -d "strip_path=$strip_path" \
+      -d "preserve_host=$preserve_host" > /dev/null
   fi
   
-  # Define services to be created or updated
-  echo -e "${BLUE}Setting up services for frontend, API, and Keycloak...${NC}"
+  echo "✅ Route $name configured successfully"
+}
+
+# Configure Keycloak routes
+configure_keycloak_routes() {
+  echo "Configuring Keycloak routes..."
   
-  # Create or update Frontend service
-  echo -e "${BLUE}Creating/updating frontend service...${NC}"
-  curl -s -X PUT "$KONG_ADMIN_URL/services/frontend" \
-    -d "url=$INTERNAL_FRONTEND_URL" \
-    -d "name=frontend" \
-    -d "retries=5" || {
-      echo -e "${RED}❌ Failed to create/update frontend service${NC}"
-      return 1
-    }
+  # Create Keycloak service
+  create_or_update_service "keycloak-service" "$INTERNAL_KEYCLOAK_URL"
   
-  # Create or update API service
-  echo -e "${BLUE}Creating/updating API service...${NC}"
-  curl -s -X PUT "$KONG_ADMIN_URL/services/api" \
-    -d "url=$INTERNAL_API_URL" \
-    -d "name=api" \
-    -d "retries=5" || {
-      echo -e "${RED}❌ Failed to create/update API service${NC}"
-      return 1
-    }
+  # Create Keycloak routes
+  create_or_update_route "keycloak-domain-route" "keycloak-service" "keycloak.${BASE_DOMAIN}" "/" false true
+  create_or_update_route "keycloak-auth-route" "keycloak-service" "keycloak.${BASE_DOMAIN}" "/auth" false true
+  create_or_update_route "keycloak-realms-route" "keycloak-service" "keycloak.${BASE_DOMAIN}" "/realms" false true
+  create_or_update_route "keycloak-resources-route" "keycloak-service" "keycloak.${BASE_DOMAIN}" "/resources" false true
+  create_or_update_route "keycloak-js-route" "keycloak-service" "keycloak.${BASE_DOMAIN}" "/js" false true
+  create_or_update_route "keycloak-admin-route" "keycloak-service" "keycloak.${BASE_DOMAIN}" "/admin" false true
   
-  # Create or update Keycloak service
-  echo -e "${BLUE}Creating/updating Keycloak service...${NC}"
-  curl -s -X PUT "$KONG_ADMIN_URL/services/keycloak" \
-    -d "url=$INTERNAL_KEYCLOAK_URL" \
-    -d "name=keycloak" \
-    -d "retries=5" || {
-      echo -e "${RED}❌ Failed to create/update Keycloak service${NC}"
-      return 1
-    }
+  echo "✅ Keycloak routes configured successfully"
+}
+
+# Configure API routes
+configure_api_routes() {
+  echo "Configuring API routes..."
   
-  # Create routes for port 8443
-  echo -e "${BLUE}Creating/updating routes for port 8443...${NC}"
+  # Create API service
+  create_or_update_service "api-service" "$INTERNAL_API_URL"
   
-  # Create or update Frontend route for port 8443
-  echo -e "${BLUE}Creating/updating frontend route for port 8443...${NC}"
-  curl -s -X PUT "$KONG_ADMIN_URL/routes/frontend-route" \
-    -d "service.id=$(curl -s $KONG_ADMIN_URL/services/frontend | jq -r '.id')" \
-    -d "name=frontend-route" \
-    -d "protocols[]=https" \
-    -d "protocols[]=http" \
-    -d "hosts[]=frontend.$BASE_DOMAIN" \
-    -d "hosts[]=$BASE_DOMAIN" \
-    -d "https_redirect_status_code=308" \
-    -d "port=8443" || {
-      echo -e "${RED}❌ Failed to create/update frontend route${NC}"
-      return 1
-    }
+  # Create API routes
+  create_or_update_route "api-domain-route" "api-service" "api.${BASE_DOMAIN}" "/" true false
   
-  # Create or update API route for port 8443
-  echo -e "${BLUE}Creating/updating API route for port 8443...${NC}"
-  curl -s -X PUT "$KONG_ADMIN_URL/routes/api-route" \
-    -d "service.id=$(curl -s $KONG_ADMIN_URL/services/api | jq -r '.id')" \
-    -d "name=api-route" \
-    -d "protocols[]=https" \
-    -d "protocols[]=http" \
-    -d "hosts[]=api.$BASE_DOMAIN" \
-    -d "https_redirect_status_code=308" \
-    -d "port=8443" || {
-      echo -e "${RED}❌ Failed to create/update API route${NC}"
-      return 1
-    }
+  echo "✅ API routes configured successfully"
+}
+
+# Configure Frontend routes
+configure_frontend_routes() {
+  echo "Configuring Frontend routes..."
   
-  # Create or update Keycloak route for port 8443
-  echo -e "${BLUE}Creating/updating Keycloak route for port 8443...${NC}"
-  curl -s -X PUT "$KONG_ADMIN_URL/routes/keycloak-route" \
-    -d "service.id=$(curl -s $KONG_ADMIN_URL/services/keycloak | jq -r '.id')" \
-    -d "name=keycloak-route" \
-    -d "protocols[]=https" \
-    -d "protocols[]=http" \
-    -d "hosts[]=keycloak.$BASE_DOMAIN" \
-    -d "https_redirect_status_code=308" \
-    -d "port=8443" || {
-      echo -e "${RED}❌ Failed to create/update Keycloak route${NC}"
-      return 1
-    }
+  # Create Frontend service
+  create_or_update_service "frontend-service" "$INTERNAL_FRONTEND_URL"
   
-  echo -e "${GREEN}✅ Port 8443 configuration complete${NC}"
-  return 0
+  # Create Frontend routes
+  create_or_update_route "frontend-domain-route" "frontend-service" "frontend.${BASE_DOMAIN}" "/" true false
+  create_or_update_route "root-domain-route" "frontend-service" "${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ Frontend routes configured successfully"
 }
 
 # Function to check Kong status
-check_status() {
+check_kong_status() {
   echo -e "${BLUE}Checking Kong status...${NC}"
   
-  # Check if Kong container is running
-  if docker ps | grep -q "$KONG_CONTAINER"; then
-    echo -e "${GREEN}✅ Kong container is running${NC}"
+  # Test the Kong Admin API
+  local kong_status=$(curl -s -o /dev/null -w "%{http_code}" "$KONG_ADMIN_URL/status")
+  
+  if [ "$kong_status" = "200" ]; then
+    echo -e "${GREEN}✅ Kong admin API is responding${NC}"
+    
+    # Get Kong status response
+    local status_response=$(curl -s "$KONG_ADMIN_URL/status")
+    echo -e "Kong Status: $status_response"
+    
+    # Check configured plugins
+    echo -e "${BLUE}Checking configured plugins...${NC}"
+    curl -s "$KONG_ADMIN_URL/plugins" | grep -o '"name":"[^"]*"' | sort || echo "No plugins found"
+    
+    # Check routes
+    echo -e "${BLUE}Checking routes...${NC}"
+    local routes_count=$(curl -s "$KONG_ADMIN_URL/routes" | grep -o '"data":' | wc -l | tr -d ' ')
+    echo -e "Routes configured: $routes_count"
+    
+    # Check services
+    echo -e "${BLUE}Checking services...${NC}"
+    local services_count=$(curl -s "$KONG_ADMIN_URL/services" | grep -o '"data":' | wc -l | tr -d ' ')
+    echo -e "Services configured: $services_count"
+    
+    return 0
   else
-    echo -e "${RED}❌ Kong container is not running${NC}"
+    echo -e "${RED}❌ Kong container is not running or not accessible${NC}"
+    echo -e "HTTP status: $kong_status"
+    echo -e "${YELLOW}Make sure Kong is running and properly configured.${NC}"
     return 1
   fi
+}
+
+# Function for basic troubleshooting
+troubleshoot() {
+  echo -e "${BLUE}Performing basic troubleshooting...${NC}"
   
   # Check if Kong is accessible
-  if check_kong_health; then
-    echo -e "${GREEN}✅ Kong Admin API is accessible${NC}"
-  else
-    echo -e "${RED}❌ Kong Admin API is not accessible${NC}"
-    return 1
-  fi
+  echo -e "${BLUE}Testing Kong Admin API...${NC}"
+  curl -s -I $KONG_ADMIN_URL || echo "Cannot connect to Kong Admin API"
   
-  # Check services
-  echo -e "${BLUE}Checking Kong services...${NC}"
-  curl -s $KONG_ADMIN_URL/services | jq -r '.data[] | "Service: \(.name), URL: \(.url)"'
+  # Check SSL configuration
+  echo -e "${BLUE}Checking SSL configuration...${NC}"
+  curl -s $KONG_ADMIN_URL/certificates | grep -o '"data":\[[^]]*\]' || echo "No certificates configured"
   
-  # Check routes
-  echo -e "${BLUE}Checking Kong routes...${NC}"
-  curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | "Route: \(.name), Service: \(.service.id), Hosts: \(.hosts)"'
+  # Check for routes
+  echo -e "${BLUE}Checking for routes...${NC}"
+  curl -s $KONG_ADMIN_URL/routes | grep -o '"next":[^,]*' || echo "No routes found"
   
-  # Check plugins
-  echo -e "${BLUE}Checking Kong plugins...${NC}"
-  curl -s $KONG_ADMIN_URL/plugins | jq -r '.data[] | "Plugin: \(.name), Enabled: \(.enabled)"'
+  # Check for services 
+  echo -e "${BLUE}Checking for services...${NC}"
+  curl -s $KONG_ADMIN_URL/services | grep -o '"next":[^,]*' || echo "No services found"
   
-  echo -e "${GREEN}✅ Kong status check complete${NC}"
-  return 0
+  # Check for plugins
+  echo -e "${BLUE}Checking for plugins...${NC}"
+  curl -s $KONG_ADMIN_URL/plugins | grep -o '"next":[^,]*' || echo "No plugins found"
+  
+  # Testing Kong proxy
+  echo -e "${BLUE}Testing Kong proxy...${NC}"
+  curl -s -I -o /dev/null -w "%{http_code}" "http://localhost:8000" || echo "Kong proxy not accessible"
+  
+  # Testing Kong HTTPS proxy 
+  echo -e "${BLUE}Testing Kong HTTPS proxy...${NC}"
+  curl -s -k -I -o /dev/null -w "%{http_code}" "https://localhost:8443" || echo "Kong HTTPS proxy not accessible"
+  
+  echo -e "${GREEN}✅ Troubleshooting completed${NC}"
+  echo -e "If you're still experiencing issues, please check the following:"
+  echo -e "1. Make sure your Docker containers are running"
+  echo -e "2. Check that your SSL certificates are properly configured"
+  echo -e "3. Verify that Kong has access to backend services via their DNS names"
+  echo -e "4. Check the Kong container logs for detailed error messages"
 }
 
 # Usage information
@@ -427,11 +356,12 @@ show_help() {
   echo "  port-8443      - Configure Kong routes for port 8443"
   echo "  ssl            - Set up SSL certificates for Kong"
   echo "  status         - Check Kong and service status"
+  echo "  troubleshoot   - Perform basic troubleshooting"
   echo "  all            - Run all configuration steps (default)"
   echo "  help           - Display this help message"
   echo ""
   echo "Environment Variables:"
-  echo "  KONG_ADMIN_URL        - Kong Admin API URL (default: http://localhost:8001)"
+  echo "  KONG_ADMIN_URL        - Kong Admin API URL (default: http://localhost:9444)"
   echo "  BASE_DOMAIN           - Base domain for services (default: dive25.local)"
   echo "  KONG_CONTAINER        - Name of Kong container (default: dive25-kong)"
   echo "  FRONTEND_CONTAINER    - Name of frontend container (default: dive25-frontend)"
@@ -443,22 +373,72 @@ show_help() {
 run_all() {
   echo -e "${BLUE}Running all configuration steps...${NC}"
   
+  # Initialize failure tracking
+  local has_failures=false
+  
   # First, reset DNS to ensure proper service resolution
-  reset_kong_dns || echo -e "${YELLOW}DNS reset had issues, continuing...${NC}"
+  reset_kong_dns || {
+    echo -e "${YELLOW}DNS reset had issues, continuing...${NC}"
+    has_failures=true
+  }
   
   # Set up SSL certificates
-  setup_ssl || echo -e "${YELLOW}SSL setup had issues, continuing...${NC}"
+  setup_ssl || {
+    echo -e "${YELLOW}SSL setup had issues, continuing...${NC}"
+    has_failures=true
+  }
   
   # Configure port 8443 routes
-  configure_port_8443 || echo -e "${YELLOW}Port 8443 configuration had issues, continuing...${NC}"
+  configure_port_8443 || {
+    echo -e "${YELLOW}Port 8443 configuration had issues, continuing...${NC}"
+    has_failures=true
+  }
   
   # Configure OIDC authentication
-  configure_oidc || echo -e "${YELLOW}OIDC configuration had issues, continuing...${NC}"
+  configure_oidc || {
+    echo -e "${YELLOW}OIDC configuration had issues, continuing...${NC}"
+    has_failures=true
+  }
   
   # Check final status
-  check_status || echo -e "${YELLOW}Status check had issues, continuing...${NC}"
+  check_kong_status || {
+    echo -e "${YELLOW}Status check had issues, continuing...${NC}"
+    has_failures=true
+  }
+  
+  # If there were any failures, run the troubleshooting routine
+  if [ "$has_failures" = true ]; then
+    echo -e "${YELLOW}Some configuration steps had issues. Running troubleshooting...${NC}"
+    troubleshoot
+  fi
   
   echo -e "${GREEN}✅ All Kong configuration steps completed${NC}"
+  
+  # Final verification of essential services and routes
+  echo -e "${BLUE}Verifying essential services and routes...${NC}"
+  
+  # Check if frontend route exists
+  FRONTEND_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "frontend-route") | .id')
+  if [ -z "$FRONTEND_ROUTE" ] || [ "$FRONTEND_ROUTE" == "null" ]; then
+    echo -e "${RED}❌ Frontend route is missing! Try accessing http://localhost:4433/frontend manually.${NC}"
+  else
+    echo -e "${GREEN}✅ Frontend route exists${NC}"
+  fi
+  
+  # Check if API route exists
+  API_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "api-route") | .id')
+  if [ -z "$API_ROUTE" ] || [ "$API_ROUTE" == "null" ]; then
+    echo -e "${RED}❌ API route is missing! Try accessing http://localhost:4433/api manually.${NC}"
+  else
+    echo -e "${GREEN}✅ API route exists${NC}"
+  fi
+  
+  # Provide final instructions
+  echo -e "${BLUE}Configuration complete. You can now access:${NC}"
+  echo -e "  Frontend: ${GREEN}http://localhost:4433/frontend${NC} or ${GREEN}https://localhost:8443/frontend${NC}"
+  echo -e "  API: ${GREEN}http://localhost:4433/api${NC} or ${GREEN}https://localhost:8443/api${NC}"
+  
+  return 0
 }
 
 # Main execution flow
@@ -484,7 +464,10 @@ case $COMMAND in
     setup_ssl
     ;;
   status)
-    check_status
+    check_kong_status
+    ;;
+  troubleshoot)
+    troubleshoot
     ;;
   all)
     run_all
