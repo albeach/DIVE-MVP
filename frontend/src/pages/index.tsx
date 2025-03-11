@@ -1,12 +1,33 @@
 // frontend/src/pages/index.tsx
+import React from 'react';
+import Link from 'next/link';
 import Head from 'next/head';
 import { GetStaticProps } from 'next';
-import Link from 'next/link';
 import { useAuth } from '@/context/auth-context';
 import { Button } from '@/components/ui/Button';
 import { useRouter } from 'next/router';
 import { useTranslation } from 'next-i18next';
 import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
+
+// Custom debugging login URL
+const directLogin = () => {
+  const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+  const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
+  const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
+  
+  // Make sure we don't have /auth in the URL
+  const baseUrl = keycloakUrl?.endsWith('/auth') 
+    ? keycloakUrl.slice(0, -5) 
+    : keycloakUrl;
+  
+  const callbackUrl = `${window.location.origin}/auth/callback`;
+  const redirectUri = encodeURIComponent(callbackUrl);
+  
+  const loginUrl = `${baseUrl}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid`;
+  
+  console.log('Direct login URL:', loginUrl);
+  window.location.href = loginUrl;
+};
 
 export default function Home() {
   const router = useRouter();
@@ -78,13 +99,30 @@ export default function Home() {
                 <p className="text-lg text-gray-600">
                   Sign in to access the secure document repository
                 </p>
-                <Button 
-                  onClick={login}
-                  variant="primary"
-                  size="lg"
-                >
-                  Sign In
-                </Button>
+                <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 justify-center">
+                  <Button 
+                    onClick={login}
+                    variant="primary"
+                    size="lg"
+                  >
+                    Sign In
+                  </Button>
+                  
+                  <Button 
+                    onClick={directLogin}
+                    variant="secondary"
+                    size="lg"
+                  >
+                    Direct Sign In
+                  </Button>
+                </div>
+                
+                {/* Debug section */}
+                <div className="mt-6">
+                  <Link href="/debug" className="text-sm text-blue-600 hover:underline">
+                    Auth Diagnostic Tools
+                  </Link>
+                </div>
               </div>
             )}
           </div>

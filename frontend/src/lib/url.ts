@@ -32,5 +32,6 @@ export const getBaseUrl = (): string => {
  * Get the auth server URL for login/logout operations
  */
 export const getAuthServerUrl = (): string => {
-    return process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'https://keycloak.dive25.local/auth';
+    // Use the Keycloak URL directly without adding '/auth'
+    return process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'https://keycloak.dive25.local';
 }; 

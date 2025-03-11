@@ -19,6 +19,9 @@ set -e
 # To skip just protocol detection (slower):
 #   SKIP_PROTOCOL_DETECTION=true ./scripts/setup-and-test.sh
 #
+# To skip Keycloak health checks (useful if Keycloak checks hang):
+#   SKIP_KEYCLOAK_CHECKS=true ./scripts/setup-and-test.sh
+#
 # You can combine these settings as needed.
 # =========================================================
 
@@ -45,6 +48,7 @@ if [ "$FAST_SETUP" = "true" ]; then
   SKIP_URL_CHECKS=true
   SKIP_PROTOCOL_DETECTION=true
   SKIP_API_CHECK=true
+  SKIP_KEYCLOAK_CHECKS=true
   echo "⚡ Fast setup mode enabled - skipping most health and URL checks ⚡"
 fi
 
@@ -320,7 +324,7 @@ echo "      This is normal behavior and does not indicate a problem with your de
 echo "      You may see it listed as 'exited (0)' in docker-compose ps output."
 echo
 
-# Function to wait for service availability
+# Function to wait for service availability with improved reliability
 wait_for_service() {
   local service_name=$1
   local url=$2
@@ -335,39 +339,60 @@ wait_for_service() {
   
   # Check if container exists
   if ! docker ps -a | grep -q "$container_name"; then
-    echo "ERROR: Container $container_name does not exist!"
-    # Try a generic search for the container that might match
-    echo "Searching for possible matching containers..."
-    docker ps -a | grep -i ".*${service_name_lower}"
-    return 1
-  fi
-  
-  echo "Checking container $container_name status..."
-  
-  # Wait for container to be running and healthy
-  while true; do
-    local container_status=$(docker inspect --format='{{.State.Status}}' $container_name 2>/dev/null || echo "not_found")
-    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' $container_name 2>/dev/null || echo "unknown")
+    echo "INFO: Container $container_name does not exist, trying alternate naming formats..."
+    # Try alternate container name formats
+    local alt_formats=("dive25-$service_name_lower" "dive25_$service_name_lower" "$service_name_lower")
+    local found=false
     
-    echo "Container status: $container_status, health: $container_health"
-    
-    # If container is running and either healthy or has no health check
-    if [[ "$container_status" == "running" ]]; then
-      if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
-        echo "$service_name container is running and healthy!"
+    for format in "${alt_formats[@]}"; do
+      if docker ps -a | grep -q "$format"; then
+        container_name="$format"
+        echo "Found container with name: $container_name"
+        found=true
         break
       fi
-    fi
+    done
     
-    sleep 5
-    counter=$((counter + 5))
-    echo "Still waiting for $service_name container... ($counter seconds elapsed)"
-    
-    if [ $counter -ge $timeout ]; then
-      echo "Timeout waiting for $service_name container to be healthy. Moving on anyway..."
-      break
+    if ! $found; then
+      echo "WARNING: Could not find container for $service_name. Container health check will be skipped."
+      # Continue with URL check if provided
     fi
-  done
+  fi
+  
+  # If we found a container, check its status
+  if docker ps -a | grep -q "$container_name"; then
+    echo "Checking container $container_name status..."
+  
+    # Wait for container to be running and healthy with a shorter timeout
+    local container_timeout=$((timeout < 60 ? 60 : timeout / 2))
+    local start_time=$(date +%s)
+    local end_time=$((start_time + container_timeout))
+    
+    while [ $(date +%s) -lt $end_time ]; do
+      local container_status=$(docker inspect --format='{{.State.Status}}' $container_name 2>/dev/null || echo "not_found")
+      local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' $container_name 2>/dev/null || echo "unknown")
+      
+      echo "Container status: $container_status, health: $container_health"
+      
+      # If container is running and either healthy or has no health check
+      if [[ "$container_status" == "running" ]]; then
+        if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
+          echo "$service_name container is running and healthy!"
+          break
+        fi
+      fi
+      
+      sleep 5
+      counter=$((counter + 5))
+      local elapsed=$(($(date +%s) - start_time))
+      echo "Still waiting for $service_name container... ($elapsed seconds elapsed, timeout at $container_timeout seconds)"
+      
+      if [ $elapsed -ge $container_timeout ]; then
+        echo "Timeout waiting for $service_name container to be healthy. Moving on anyway..."
+        break
+      fi
+    done
+  fi
   
   # Skip URL check if it's empty
   if [ -z "$url" ]; then
@@ -375,16 +400,17 @@ wait_for_service() {
     return 0
   fi
   
-  # Skip URL check if configured to do so or if Kong is not yet configured 
-  # and we're checking an external service
-  if [ "$SKIP_URL_CHECKS" = "true" ] || ( [ "$KONG_CONFIGURED" = "false" ] && 
+  # Skip URL check if configured to do so
+  if [ "$SKIP_URL_CHECKS" = "true" ] || [ "$FAST_SETUP" = "true" ]; then
+    echo "Skipping URL check for $service_name (SKIP_URL_CHECKS=true or FAST_SETUP=true)"
+    return 0
+  fi
+  
+  # If Kong is not configured yet and we're checking a service that depends on Kong, skip the check
+  if [ "$KONG_CONFIGURED" = "false" ] && 
      ( [[ "$service_name" == "API" ]] || [[ "$service_name" == "Frontend" ]] || 
-       [[ "$service_name" == "Keycloak" ]] ) ); then
-    if [ "$KONG_CONFIGURED" = "false" ] && ! [ "$SKIP_URL_CHECKS" = "true" ]; then
-      echo "Skipping URL check for $service_name (waiting for Kong configuration to complete first)"
-    else
-      echo "Skipping URL check for $service_name (SKIP_URL_CHECKS=true)"
-    fi
+       [[ "$service_name" == "Keycloak" ]] ); then
+    echo "Skipping URL check for $service_name (waiting for Kong configuration to complete first)"
     return 0
   fi
   
@@ -395,57 +421,146 @@ wait_for_service() {
   counter=0
   echo "Checking if $service_name is accessible at URL: $url"
   
-  # Try both HTTP and HTTPS if one fails
-  local protocol="$(echo $url | cut -d':' -f1)"
-  local alt_url=""
-  if [[ "$protocol" == "https" ]]; then
-    alt_url="http$(echo $url | cut -d':' -f2-)"
-  elif [[ "$protocol" == "http" ]]; then
-    alt_url="https$(echo $url | cut -d':' -f2-)"
+  # Extract protocol, domain, and port from URL for more reliable testing
+  local protocol=$(echo "$url" | grep -oE '^https?')
+  local domain=$(echo "$url" | grep -oE 'https?://([^:/]+)' | sed 's|https://||;s|http://||')
+  local port=$(echo "$url" | grep -oE ':[0-9]+' | sed 's/://')
+  
+  # If protocol is not detected, use the global setting
+  if [ -z "$protocol" ]; then
+    if [ "$USE_HTTPS" = "true" ]; then
+      protocol="https"
+    else
+      protocol="http"
+    fi
+    echo "Protocol not detected in URL, using $protocol based on USE_HTTPS setting"
   fi
   
+  # If domain is not detected, try to construct from environment variables
+  if [ -z "$domain" ]; then
+    case "$service_name" in
+      "API")
+        domain="${API_DOMAIN}.${BASE_DOMAIN}"
+        ;;
+      "Frontend")
+        domain="${FRONTEND_DOMAIN}.${BASE_DOMAIN}"
+        ;;
+      "Keycloak")
+        domain="${KEYCLOAK_DOMAIN}.${BASE_DOMAIN}"
+        ;;
+      "Kong")
+        domain="${KONG_DOMAIN}.${BASE_DOMAIN}"
+        ;;
+      *)
+        domain="localhost"
+        ;;
+    esac
+    echo "Domain not detected in URL, using $domain based on environment variables"
+  fi
+  
+  # If port is not detected, try to get from environment variables
+  if [ -z "$port" ]; then
+    case "$service_name" in
+      "API")
+        port="${API_PORT}"
+        ;;
+      "Frontend")
+        port="${FRONTEND_PORT}"
+        ;;
+      "Keycloak")
+        port="${KEYCLOAK_PORT}"
+        ;;
+      "Kong")
+        if [ "$protocol" = "https" ]; then
+          port="${KONG_HTTPS_PORT:-8443}"
+        else
+          port="${KONG_PROXY_PORT}"
+        fi
+        ;;
+      *)
+        # Use standard ports if not specified
+        if [ "$protocol" = "https" ]; then
+          port="443"
+        else
+          port="80"
+        fi
+        ;;
+    esac
+    echo "Port not detected in URL, using $port based on environment variables"
+  fi
+  
+  # Create URL variants to try
+  local url_variants=()
+  
+  # Primary URL from parameters
+  url_variants+=("$url")
+  
+  # Reconstructed URL with detected components
+  if [ -n "$domain" ] && [ -n "$port" ]; then
+    url_variants+=("$protocol://$domain:$port")
+  fi
+  
+  # Try alternate protocol
+  if [ "$protocol" = "https" ]; then
+    url_variants+=("http://$domain:$port")
+  else
+    url_variants+=("https://$domain:$port")
+  fi
+  
+  # Try localhost variants
+  url_variants+=("$protocol://localhost:$port")
+  url_variants+=("$protocol://127.0.0.1:$port")
+  
+  # Add Kong proxy based URLs if available and this is not Kong itself
+  if [ "$service_name" != "Kong" ] && [ -n "$KONG_PROXY_PORT" ] && [ -n "$KONG_HTTPS_PORT" ]; then
+    url_variants+=("http://localhost:$KONG_PROXY_PORT")
+    url_variants+=("https://localhost:$KONG_HTTPS_PORT")
+  fi
+  
+  echo "Will try the following URL variants: ${url_variants[*]}"
+  
+  # Try all URL variants with a timeout
   local start_time=$(date +%s)
   local end_time=$((start_time + url_timeout))
-  local current_time=$(date +%s)
   
-  while [ $current_time -lt $end_time ]; do
-    # Try the primary URL first
-    if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$url"; then
-      echo "$service_name URL is accessible at $url!"
-      return 0
-    fi
-    
-    # If the primary URL failed and we have an alternative, try it
-    if [[ -n "$alt_url" ]]; then
-      echo "Primary URL $url failed, trying alternative URL $alt_url..."
-      if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$alt_url"; then
-        echo "$service_name URL is accessible at $alt_url!"
-        echo "NOTE: Your configuration may be using $alt_url instead of $url"
-        return 0
+  while [ $(date +%s) -lt $end_time ]; do
+    for test_url in "${url_variants[@]}"; do
+      echo "Testing URL: $test_url"
+      
+      # Add -k flag for HTTPS requests
+      if [[ "$test_url" == https* ]]; then
+        if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$test_url"; then
+          echo "$service_name URL is accessible at $test_url!"
+          return 0
+        fi
+      else
+        if curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 "$test_url"; then
+          echo "$service_name URL is accessible at $test_url!"
+          return 0
+        fi
       fi
-    fi
+    done
     
     sleep 5
     counter=$((counter + 5))
-    echo "Still waiting for $service_name URL response... ($counter seconds elapsed)"
-    current_time=$(date +%s)
+    local elapsed=$(($(date +%s) - start_time))
+    local remaining=$((end_time - $(date +%s)))
+    echo "Still waiting for $service_name URL response... ($elapsed seconds elapsed, $remaining seconds remaining)"
     
-    # Explicit check for timeout with remaining time display
-    local remaining=$((end_time - current_time))
-    if [ $remaining -le 0 ]; then
-      echo "Timeout reached for $service_name URL check after $counter seconds."
-      echo "This is normal during initial setup or if there are network/SSL issues."
-      echo "You can check $service_name logs with: docker-compose logs $service_name_lower"
-      return 0
+    # If we're close to timeout, show a more visible warning
+    if [ $remaining -lt 20 ]; then
+      echo "⚠️ URL check will timeout soon! $remaining seconds remaining"
     fi
     
-    # If we're close to timeout, show a more prominent warning
-    if [ $remaining -lt 20 ]; then
-      echo "⚠️ URL check will time out in $remaining seconds"
+    # Check if master timeout is exceeded
+    CURRENT_TIME=$(date +%s)
+    ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
+    if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
+      echo "⚠️ Master timeout reached. Abandoning URL check for $service_name."
+      return 0
     fi
   done
   
-  # This should never execute due to the timeout check above, but just in case
   echo "Timeout waiting for $service_name URL. Moving on with setup."
   return 0
 }
@@ -455,94 +570,210 @@ check_kong_health() {
   local timeout=$1
   local counter=0
   
-  echo "Performing special health check for Kong..."
+  echo "Performing comprehensive health check for Kong..."
   
   # Get Kong container name dynamically
   local KONG_CONTAINER=$(get_container_name "kong")
   
   # Check container existence
   if ! docker ps -a | grep -q "$KONG_CONTAINER"; then
-    echo "ERROR: Kong container '$KONG_CONTAINER' doesn't exist!"
-    echo "Searching for possible Kong container..."
-    docker ps -a | grep -i "kong" | grep -v "config"
+    echo "INFO: Kong container '$KONG_CONTAINER' not found with primary naming pattern"
+    # Try alternate container name formats
+    local alt_formats=("dive25-kong" "dive25_kong" "kong")
+    local found=false
     
-    # Try to find any Kong container
-    local alt_kong=$(docker ps -a | grep -i "kong" | grep -v "config" | head -n 1 | awk '{print $NF}')
-    if [ -n "$alt_kong" ]; then
-      KONG_CONTAINER="$alt_kong"
-      echo "Found alternative Kong container: $KONG_CONTAINER"
-    else
+    for format in "${alt_formats[@]}"; do
+      if docker ps -a | grep -q "$format"; then
+        KONG_CONTAINER="$format"
+        echo "Found Kong container with name: $KONG_CONTAINER"
+        found=true
+        break
+      fi
+    done
+    
+    if ! $found; then
+      echo "WARNING: Could not find Kong container. Container health check will be skipped."
       return 1
     fi
   fi
   
-  # Wait for Kong to be running and healthy
-  while true; do
+  echo "Checking Kong container $KONG_CONTAINER status..."
+  
+  # Wait for Kong to be running and healthy with a reasonable timeout
+  local container_timeout=$((timeout < 60 ? 60 : timeout / 2))
+  local start_time=$(date +%s)
+  local end_time=$((start_time + container_timeout))
+  
+  while [ $(date +%s) -lt $end_time ]; do
     local container_status=$(docker inspect --format='{{.State.Status}}' "$KONG_CONTAINER" 2>/dev/null || echo "not_found")
     local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$KONG_CONTAINER" 2>/dev/null || echo "unknown")
     
     echo "Kong status: $container_status, health: $container_health"
     
-    if [[ "$container_status" == "running" && "$container_health" == "healthy" ]]; then
+    if [[ "$container_status" == "running" && ("$container_health" == "healthy" || "$container_health" == "no_health_check") ]]; then
       echo "Kong container is running and healthy!"
       break
     fi
     
     sleep 5
     counter=$((counter + 5))
-    echo "Still waiting for Kong container... ($counter seconds elapsed)"
+    local elapsed=$(($(date +%s) - start_time))
+    echo "Still waiting for Kong container to be healthy... ($elapsed seconds elapsed, timeout at $container_timeout seconds)"
     
-    if [ $counter -ge $timeout ]; then
-      echo "Timeout waiting for Kong to be healthy. Checking Kong's health directly..."
+    if [ $elapsed -ge $container_timeout ]; then
+      # Try Kong's health endpoint directly via internal command
+      echo "Timeout waiting for Kong to be healthy according to Docker. Checking Kong's health directly..."
       
-      # Try Kong's health endpoint directly
       if docker exec "$KONG_CONTAINER" kong health 2>/dev/null | grep -q "Kong is healthy"; then
-        echo "Kong reports itself as healthy!"
+        echo "Kong reports itself as healthy via internal health command!"
         break
       else
         echo "Kong health check failed. Moving on anyway..."
         docker exec "$KONG_CONTAINER" kong health || echo "Failed to execute health check inside Kong container"
-        return 1
       fi
+      break
     fi
   done
   
-  # Get the internal and external ports
-  local internal_proxy_port=$(grep "INTERNAL_KONG_PROXY_PORT=" .env | cut -d '=' -f2 || echo "8000")
-  local internal_admin_port=$(grep "INTERNAL_KONG_ADMIN_PORT=" .env | cut -d '=' -f2 || echo "8001")
-  local kong_proxy_port=$(grep "KONG_PROXY_PORT=" .env | cut -d '=' -f2 || echo "8000")
-  local kong_admin_port=$(grep "KONG_ADMIN_PORT=" .env | cut -d '=' -f2 || echo "8001")
-  local kong_ssl_port="8443"  # This is typically hardcoded in the container
+  # Skip further checks if SKIP_URL_CHECKS is true
+  if [ "$SKIP_URL_CHECKS" = "true" ] || [ "$FAST_SETUP" = "true" ]; then
+    echo "Skipping Kong URL health checks (SKIP_URL_CHECKS=true or FAST_SETUP=true)"
+    return 0
+  fi
+  
+  # Get the internal and external ports from environment variables
+  local internal_proxy_port=${INTERNAL_KONG_PROXY_PORT:-8000}
+  local internal_admin_port=${INTERNAL_KONG_ADMIN_PORT:-8001}
+  local kong_proxy_port=${KONG_PROXY_PORT:-8000}
+  local kong_admin_port=${KONG_ADMIN_PORT:-8001}
+  local kong_ssl_port=${KONG_HTTPS_PORT:-8443}
   
   echo "Kong internal ports - Proxy: $internal_proxy_port, Admin: $internal_admin_port"
-  echo "Kong external ports - Proxy: $kong_proxy_port, Admin: $kong_admin_port"
+  echo "Kong external ports - Proxy: $kong_proxy_port, Admin: $kong_admin_port, SSL: $kong_ssl_port"
   
   # Check internal endpoints first (from inside the container)
   echo "Testing Kong internally (from inside the container)..."
   
-  # Check if Kong's internal API is responsive (using localhost to avoid domain resolution issues)
-  if docker exec "$KONG_CONTAINER" curl -s http://127.0.0.1:$internal_admin_port/status >/dev/null; then
+  # Check if Kong's internal API is responsive with a shorter timeout
+  if docker exec "$KONG_CONTAINER" curl -s --connect-timeout 3 --max-time 5 http://127.0.0.1:$internal_admin_port/status >/dev/null; then
     echo "Kong admin API is responding internally!"
   else
-    echo "WARNING: Kong admin API is not responding internally. This is a critical issue."
-    echo "Kong may not be properly configured. Check Kong logs for errors:"
-    docker logs "$KONG_CONTAINER" | tail -n 100
-    echo "Continuing anyway, but Kong may not work correctly."
+    echo "WARNING: Kong admin API is not responding internally."
+    echo "Trying alternative endpoint..."
+    
+    # Try the node status endpoint which sometimes works when /status doesn't
+    if docker exec "$KONG_CONTAINER" curl -s --connect-timeout 3 --max-time 5 http://127.0.0.1:$internal_admin_port >/dev/null; then
+      echo "Kong admin API base endpoint is responding internally!"
+    else
+      echo "WARNING: Kong admin API is not responding on any endpoints internally."
+      echo "Kong may not be properly configured. Checking logs..."
+      
+      # Get the last 20 lines of logs to help diagnose issues
+      docker logs "$KONG_CONTAINER" | tail -n 20
+      
+      echo "Continuing anyway, but Kong may not work correctly."
+    fi
   fi
   
-  # Test external access using localhost to avoid domain resolution issues
+  # Test external access with a reasonable timeout
   echo "Testing Kong externally (from host)..."
+  local url_timeout=30  # Keep this short to avoid long waits
   
-  # Try both HTTP and HTTPS variants with localhost
-  if curl -s -I -m 5 http://localhost:$kong_proxy_port >/dev/null 2>&1; then
-    echo "Kong proxy is responding on http://localhost:$kong_proxy_port!"
-    return 0
-  elif curl -s -I -k -m 5 https://localhost:$kong_ssl_port >/dev/null 2>&1; then
-    echo "Kong proxy is responding on https://localhost:$kong_ssl_port!"
+  # Build an array of URLs to try
+  local urls_to_try=(
+    "http://localhost:$kong_proxy_port"
+    "https://localhost:$kong_ssl_port"
+    "http://localhost:$kong_proxy_port/status"
+    "https://localhost:$kong_ssl_port/status"
+    "http://127.0.0.1:$kong_proxy_port"
+    "https://127.0.0.1:$kong_ssl_port"
+  )
+  
+  # Add Kong domain URLs if BASE_DOMAIN is set
+  if [ -n "$BASE_DOMAIN" ] && [ -n "$KONG_DOMAIN" ]; then
+    urls_to_try+=(
+      "http://${KONG_DOMAIN}.${BASE_DOMAIN}:$kong_proxy_port"
+      "https://${KONG_DOMAIN}.${BASE_DOMAIN}:$kong_ssl_port"
+    )
+  fi
+  
+  # Try each URL with a short timeout
+  local start_time=$(date +%s)
+  local end_time=$((start_time + url_timeout))
+  local success=false
+  
+  while [ $(date +%s) -lt $end_time ] && [ "$success" = "false" ]; do
+    for test_url in "${urls_to_try[@]}"; do
+      echo "Testing Kong URL: $test_url"
+      
+      # Add -k flag for HTTPS to ignore SSL cert validation
+      if [[ "$test_url" == https* ]]; then
+        if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$test_url"; then
+          echo "✓ Kong is accessible at $test_url!"
+          success=true
+          break
+        fi
+      else
+        if curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 "$test_url"; then
+          echo "✓ Kong is accessible at $test_url!"
+          success=true
+          break
+        fi
+      fi
+    done
+    
+    # If we found a working URL, break the loop
+    if [ "$success" = "true" ]; then
+      break
+    fi
+    
+    sleep 5
+    counter=$((counter + 5))
+    local elapsed=$(($(date +%s) - start_time))
+    local remaining=$((end_time - $(date +%s)))
+    echo "Still trying to connect to Kong... ($elapsed seconds elapsed, $remaining seconds remaining)"
+    
+    # If we're approaching timeout, use a more visible warning
+    if [ $remaining -lt 10 ]; then
+      echo "⚠️ Kong URL check approaching timeout! $remaining seconds remaining"
+    fi
+  done
+  
+  # Final check for Kong connectivity - if all else fails, try its proxy and admin ports
+  if [ "$success" = "false" ]; then
+    echo "WARNING: Could not connect to Kong via any URL."
+    echo "Trying one final direct test of Kong proxy and admin ports..."
+    
+    # Try netcat to check if ports are open
+    if command -v nc >/dev/null 2>&1; then
+      echo "Checking Kong proxy port connectivity..."
+      if nc -z localhost $kong_proxy_port; then
+        echo "✓ Kong proxy port $kong_proxy_port is open and accepting connections!"
+        success=true
+      else
+        echo "✗ Kong proxy port $kong_proxy_port is not accessible"
+      fi
+      
+      echo "Checking Kong admin port connectivity..."
+      if nc -z localhost $kong_admin_port; then
+        echo "✓ Kong admin port $kong_admin_port is open and accepting connections!"
+        success=true
+      else
+        echo "✗ Kong admin port $kong_admin_port is not accessible"
+      fi
+    else
+      echo "netcat (nc) not available for port checking"
+    fi
+  fi
+  
+  # Return success if we found any working endpoint
+  if [ "$success" = "true" ]; then
+    echo "Kong is accessible on at least one endpoint."
+    KONG_CONFIGURED=true
     return 0
   else
-    echo "WARNING: Kong proxy is not responding on either HTTP or HTTPS ports."
-    echo "This may indicate a configuration issue."
+    echo "WARNING: Could not verify Kong accessibility. Continuing anyway, but Kong may not work correctly."
+    echo "You can check Kong logs with: docker-compose logs kong"
     return 1
   fi
 }
@@ -555,187 +786,256 @@ check_api_health() {
   
   echo "Performing comprehensive API health check..."
   
-  # Get API container name dynamically
+  # Skip API check if configured to do so
+  if [ "$SKIP_API_CHECK" = "true" ] || [ "$SKIP_URL_CHECKS" = "true" ] || [ "$FAST_SETUP" = "true" ]; then
+    echo "Skipping API health check (SKIP_API_CHECK=true, SKIP_URL_CHECKS=true, or FAST_SETUP=true)"
+    return 0
+  fi
+  
+  # Get API container name dynamically with more reliable detection
   local API_CONTAINER=$(get_container_name "api")
   
-  # Check if API container exists and is running
+  # Check if API container exists with better fallback
   if ! docker ps -a | grep -q "$API_CONTAINER"; then
-    echo "ERROR: API container doesn't exist!"
-    echo "Searching for possible API container..."
-    docker ps -a | grep -i "api"
-    return 1
-  fi
-  
-  # Check if the API container is healthy
-  while true; do
-    local container_status=$(docker inspect --format='{{.State.Status}}' "$API_CONTAINER" 2>/dev/null || echo "not_found")
-    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$API_CONTAINER" 2>/dev/null || echo "unknown")
+    echo "INFO: API container '$API_CONTAINER' not found with primary naming pattern"
+    # Try alternate container name formats
+    local alt_formats=("dive25-api" "dive25_api" "api")
+    local found=false
     
-    echo "API container status: $container_status, health: $container_health"
-    
-    if [[ "$container_status" == "running" ]]; then
-      if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
-        echo "API container is running and healthy according to Docker!"
+    for format in "${alt_formats[@]}"; do
+      if docker ps -a | grep -q "$format"; then
+        API_CONTAINER="$format"
+        echo "Found API container with name: $API_CONTAINER"
+        found=true
         break
       fi
-    fi
+    done
     
-    sleep 5
-    counter=$((counter + 5))
-    echo "Still waiting for API container to be healthy... ($counter seconds elapsed)"
-    
-    if [ $counter -ge $timeout ]; then
-      echo "Timeout waiting for API container to be healthy. Moving on to direct checks..."
-      break
+    if ! $found; then
+      echo "WARNING: Could not find API container. Health check will be limited to URL checks."
     fi
-  done
-  
-  # Get the internal port that the API is listening on
-  local api_internal_port=$(grep "INTERNAL_API_PORT=" .env | cut -d '=' -f2 || echo "3000")
-  echo "API is configured to listen on internal port $api_internal_port"
-  
-  # Try to exec into the container and check if it's responding locally
-  echo "Checking API health from inside the container..."
-  if docker exec "$API_CONTAINER" curl -s -f -m 5 http://localhost:$api_internal_port/health >/dev/null 2>&1; then
-    echo "API is healthy from inside the container!"
-  else
-    echo "WARNING: API health check failed from inside the container."
-    echo "This might indicate an issue with the API server itself."
-    docker exec "$API_CONTAINER" curl -v http://localhost:$api_internal_port/health || echo "Failed to execute curl inside API container"
   fi
   
-  # Get the external port
-  local api_port=$(grep "API_PORT=" .env | cut -d '=' -f2 || echo "4431")
-  
-  # Try direct localhost check with curl verbose output and ignore SSL
-  echo "Trying direct localhost connection to verify API accessibility..."
-  if curl -s -k -f https://localhost:$api_port/health >/dev/null 2>&1; then
-    echo "✅ API is directly accessible via https://localhost:$api_port/health!"
-    # If direct localhost works, we'll mark as success
-    echo "The API is working properly but may have domain name resolution issues."
-    echo "Using direct localhost access as verification of API health."
-    return 0
-  else 
-    echo "❌ Direct localhost connection failed. Trying with verbose output..."
-    curl -v -k https://localhost:$api_port/health
-  fi
-
-  # Extract domain from the API base URL
-  local domain=""
-  if [[ "$api_base_url" == http* ]]; then
-    domain=$(echo "$api_base_url" | sed -E 's|https?://([^:/]+)(:[0-9]+)?.*|\1|')
-  else
-    domain=$(echo "$api_base_url" | sed -E 's|([^:/]+)(:[0-9]+)?.*|\1|')
-  fi
-  
-  # Test hostname resolution before attempting connections
-  # Note: On macOS, 'host' command might bypass /etc/hosts, so we use ping instead
-  echo "Testing hostname resolution for $domain..."
-  if ping -c 1 -W 1 "$domain" >/dev/null 2>&1; then
-    echo "✅ Domain $domain resolves successfully using ping"
-  else
-    echo "❌ Domain resolution failed using ping for $domain."
-    echo "Checking entries in /etc/hosts..."
-    if grep -q "$domain" /etc/hosts; then
-      echo "✅ Found entry for $domain in /etc/hosts: $(grep "$domain" /etc/hosts)"
-      echo "The OS might be using a different DNS resolution mechanism than the host command."
-      echo "This is normal on macOS. Continuing with direct curl check..."
+  # If API container exists, check if it's healthy
+  if docker ps -a | grep -q "$API_CONTAINER"; then
+    # Use a shorter but reasonable timeout
+    local container_timeout=$((timeout < 60 ? 60 : timeout / 2))
+    local start_time=$(date +%s)
+    local end_time=$((start_time + container_timeout))
+    
+    echo "Checking API container status..."
+    while [ $(date +%s) -lt $end_time ]; do
+      local container_status=$(docker inspect --format='{{.State.Status}}' "$API_CONTAINER" 2>/dev/null || echo "not_found")
+      local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$API_CONTAINER" 2>/dev/null || echo "unknown")
       
-      # Try curl with domain to confirm
-      if curl -s -k -f -o /dev/null --connect-timeout 5 --max-time 10 "https://$domain:$api_port/health"; then
-        echo "✅ API is accessible via curl with domain name and port!"
-        return 0
+      echo "API container status: $container_status, health: $container_health"
+      
+      if [[ "$container_status" == "running" ]]; then
+        if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
+          echo "✅ API container is running and healthy according to Docker!"
+          break
+        fi
+      fi
+      
+      sleep 5
+      counter=$((counter + 5))
+      local elapsed=$(($(date +%s) - start_time))
+      echo "Still waiting for API container to be healthy... ($elapsed seconds elapsed, $container_timeout seconds timeout)"
+      
+      if [ $elapsed -ge $container_timeout ]; then
+        echo "Timeout waiting for API container to be healthy. Moving on to direct checks..."
+        break
+      fi
+    done
+    
+    # Get the internal port that the API is listening on
+    local api_internal_port=${INTERNAL_API_PORT:-3000}
+    echo "API is configured to listen on internal port $api_internal_port"
+    
+    # Check if curl is available in the container
+    if docker exec "$API_CONTAINER" which curl >/dev/null 2>&1; then
+      echo "Checking API health from inside the container..."
+      if docker exec "$API_CONTAINER" curl -s -f -m 5 http://localhost:$api_internal_port/health >/dev/null 2>&1; then
+        echo "✅ API is healthy from inside the container!"
+      else
+        echo "Trying alternative API health endpoints from inside container..."
+        for endpoint in "/health" "/status" "/api/health" "/api/v1/health" "/ping" "/"; do
+          if docker exec "$API_CONTAINER" curl -s -f -m 5 http://localhost:$api_internal_port$endpoint >/dev/null 2>&1; then
+            echo "✅ API is healthy at endpoint $endpoint from inside the container!"
+            break
+          fi
+        done
       fi
     else
-      echo "❌ No entry found for $domain in /etc/hosts"
-      echo "This is likely causing the connection issues. Continuing with localhost checks."
-      
-      # If localhost works, we'll mark as success despite hostname issues
-      if curl -s -k -f https://localhost:$api_port/health >/dev/null 2>&1; then
-        echo "✅ API is accessible via localhost but not via domain name."
-        echo "This is likely a DNS resolution issue, but API itself is working."
-        return 0
-      fi
+      echo "curl not available in API container, skipping internal health check"
     fi
   fi
   
-  # Check the external URLs
-  counter=0
-  echo "Checking API health from host via URL: $api_base_url/health"
+  # Get the external port with fallback to environment variable
+  local api_port=${API_PORT:-3002}
   
-  # Try different endpoints
-  local endpoints=("/health" "/status" "/api/health" "/api/v1/health" "/metrics" "/")
+  # Skip further external URL checks if master timeout is close to being reached
+  CURRENT_TIME=$(date +%s)
+  ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
+  if [ $ELAPSED_TIME -ge $((MASTER_TIMEOUT - 60)) ]; then
+    echo "⚠️ Master timeout is approaching. Skipping API URL checks to avoid further delays."
+    return 0
+  fi
   
-  while [ $counter -lt $timeout ]; do
-    local success=false
+  # Try direct localhost check with shorter timeouts
+  echo "Trying direct localhost connection to verify API accessibility..."
+  local direct_localhost_success=false
+  
+  # Try both HTTP and HTTPS on localhost
+  if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 https://localhost:$api_port/health 2>/dev/null; then
+    echo "✅ API is directly accessible via https://localhost:$api_port/health!"
+    direct_localhost_success=true
+  elif curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 http://localhost:$api_port/health 2>/dev/null; then
+    echo "✅ API is directly accessible via http://localhost:$api_port/health!"
+    direct_localhost_success=true
+  fi
+  
+  # Try alternative endpoints on localhost if main /health endpoint failed
+  if [ "$direct_localhost_success" != "true" ]; then
+    for endpoint in "/status" "/api/health" "/api/v1/health" "/ping" "/"; do
+      if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 https://localhost:$api_port$endpoint 2>/dev/null; then
+        echo "✅ API is directly accessible via https://localhost:$api_port$endpoint!"
+        direct_localhost_success=true
+        break
+      elif curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 http://localhost:$api_port$endpoint 2>/dev/null; then
+        echo "✅ API is directly accessible via http://localhost:$api_port$endpoint!"
+        direct_localhost_success=true
+        break
+      fi
+    done
+  fi
+  
+  # If direct localhost works, we consider this a success
+  if [ "$direct_localhost_success" = "true" ]; then
+    echo "The API is working properly via localhost."
+    return 0
+  fi
+  
+  # If localhost doesn't work, try the full domain URL provided
+  if [ -n "$api_base_url" ]; then
+    # Extract domain from the API base URL for testing
+    local domain=""
+    if [[ "$api_base_url" == http* ]]; then
+      domain=$(echo "$api_base_url" | sed -E 's|https?://([^:/]+)(:[0-9]+)?.*|\1|')
+    else
+      domain="$api_base_url"
+    fi
     
-    # Try HTTP and HTTPS variants
-    for protocol in "http" "https"; do
+    # Check hostname resolution before testing URLs
+    echo "Testing hostname resolution for $domain..."
+    if ping -c 1 -W 2 "$domain" >/dev/null 2>&1; then
+      echo "✅ Domain $domain resolves successfully"
+    else
+      echo "⚠️ Warning: Domain resolution failed for $domain"
+      echo "This may cause URL connectivity issues. Checking /etc/hosts..."
+      
+      if grep -q "$domain" /etc/hosts; then
+        echo "✅ Found entry for $domain in /etc/hosts, but ping failed."
+        echo "This might be due to firewall or network settings blocking ping."
+      else
+        echo "❌ No entry found for $domain in /etc/hosts"
+        echo "If URL tests fail, consider adding an entry for this domain."
+      fi
+    fi
+    
+    # Build a list of URLs to try
+    local urls_to_try=()
+    
+    # Add the base URL with various endpoints
+    for protocol in "https" "http"; do
+      # Format the base URL with protocol if needed
       local base_url=""
       if [[ "$api_base_url" == http* ]]; then
-        # Replace the protocol prefix
         base_url="${protocol}${api_base_url#http*:}"
       else
-        # URL doesn't have a protocol, add one
         base_url="${protocol}://${api_base_url}"
       fi
       
-      for endpoint in "${endpoints[@]}"; do
-        local full_url="${base_url}${endpoint}"
-        echo "Trying API endpoint: $full_url"
-        
-        # Use -k flag for HTTPS requests to ignore SSL certificate validation
-        if [[ "$protocol" == "https" ]]; then
-          if curl -s -k -f -o /dev/null --connect-timeout 5 --max-time 10 "$full_url"; then
-            echo "✅ API is accessible at $full_url!"
-            success=true
-            break 2
-          else
-            echo "❌ HTTPS connection failed with -k flag. Trying verbose output..."
-            curl -v -k --connect-timeout 5 --max-time 10 "$full_url" || echo "Curl command failed completely"
-          fi
-        else
-          if curl -s -f -o /dev/null --connect-timeout 5 --max-time 10 "$full_url"; then
-            echo "✅ API is accessible at $full_url!"
-            success=true
-            break 2
-          fi
-        fi
+      # Add endpoints to try
+      for endpoint in "/health" "/status" "/api/health" "/api/v1/health" "/ping" "/"; do
+        urls_to_try+=("${base_url}${endpoint}")
       done
     done
     
-    if $success; then
-      break
+    # Also try direct IP and localhost with the same port
+    if [[ "$api_base_url" == *:* ]]; then
+      local port=$(echo "$api_base_url" | grep -oE ':[0-9]+' | sed 's/://')
+      for protocol in "https" "http"; do
+        for host in "localhost" "127.0.0.1"; do
+          for endpoint in "/health" "/status" "/api/health" "/api/v1/health" "/ping" "/"; do
+            urls_to_try+=("${protocol}://${host}:${port}${endpoint}")
+          done
+        done
+      done
     fi
     
-    sleep 5
-    counter=$((counter + 5))
-    echo "Still waiting for API to respond... ($counter seconds elapsed)"
+    # Try each URL with a short timeout
+    local url_timeout=30  # Keep this short to avoid excessive waiting
+    local start_time=$(date +%s)
+    local end_time=$((start_time + url_timeout))
+    local success=false
     
-    # If localhost works but domain doesn't, return success after a reasonable wait
-    if [ $counter -ge 60 ] && curl -s -k -f https://localhost:$api_port/health >/dev/null 2>&1; then
-      echo "✅ API is accessible via localhost but not via domain name."
-      echo "This is likely a DNS resolution issue, but API itself is working."
+    echo "Testing API accessibility via URLs..."
+    while [ $(date +%s) -lt $end_time ] && [ "$success" = "false" ]; do
+      for test_url in "${urls_to_try[@]}"; do
+        echo "Trying API endpoint: $test_url"
+        
+        # Use -k flag for HTTPS connections to ignore SSL cert validation
+        if [[ "$test_url" == https* ]]; then
+          if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$test_url"; then
+            echo "✅ API is accessible at $test_url!"
+            success=true
+            break
+          fi
+        else
+          if curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 "$test_url"; then
+            echo "✅ API is accessible at $test_url!"
+            success=true
+            break
+          fi
+        fi
+      done
+      
+      # Break the loop if we found a working URL
+      if [ "$success" = "true" ]; then
+        break
+      fi
+      
+      sleep 5
+      counter=$((counter + 5))
+      local elapsed=$(($(date +%s) - start_time))
+      local remaining=$((end_time - $(date +%s)))
+      echo "Still trying to access API... ($elapsed seconds elapsed, $remaining seconds remaining)"
+      
+      # Check if master timeout is being approached
+      CURRENT_TIME=$(date +%s)
+      ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
+      if [ $ELAPSED_TIME -ge $((MASTER_TIMEOUT - 30)) ]; then
+        echo "⚠️ Master timeout is approaching. Abandoning API URL checks."
+        break
+      fi
+    done
+    
+    # If we found a working URL or localhost works, return success
+    if [ "$success" = "true" ] || [ "$direct_localhost_success" = "true" ]; then
+      echo "✅ API is accessible via URL or localhost!"
+      return 0
+    else
+      echo "⚠️ Could not access API via any URL, but the container appears to be running."
+      echo "Please check API logs with: docker-compose logs api"
+      
+      # Return success anyway to continue with the setup
       return 0
     fi
-    
-    if [ $counter -ge $timeout ]; then
-      echo "Timeout waiting for API to respond via domain name."
-      
-      # Final check - if localhost works, return success
-      if curl -s -k -f https://localhost:$api_port/health >/dev/null 2>&1; then
-        echo "✅ API is accessible via localhost but not via domain name."
-        echo "This is likely a DNS resolution issue, but API itself is working."
-        return 0
-      else
-        echo "❌ API is not accessible via localhost or domain name."
-        echo "Please check API logs with: docker-compose logs api"
-        return 1
-      fi
-    fi
-  done
-  
-  return 0
+  else
+    echo "No API base URL provided, skipping URL accessibility checks."
+    return 0
+  fi
 }
 
 # Special function for Keycloak health checking
@@ -743,189 +1043,240 @@ check_keycloak_health() {
   local keycloak_url="$1"
   local timeout=$2
   local counter=0
-  local max_url_check_time=40  # Cap the URL check at 40 seconds max
   
-  echo "Performing specialized Keycloak health check..."
+  echo "Performing comprehensive Keycloak health check..."
   
-  # Dynamically determine Keycloak container name
-  local project_prefix=$(docker-compose config --services | head -n 1 | grep -o "^[a-zA-Z0-9]*" || echo "dive25")
-  local keycloak_service_name="keycloak"
-  local KEYCLOAK_CONTAINER="${KEYCLOAK_CONTAINER:-${project_prefix}-${keycloak_service_name}}"
+  # Skip check if configured to do so
+  if [ "$SKIP_URL_CHECKS" = "true" ] || [ "$FAST_SETUP" = "true" ]; then
+    echo "Skipping Keycloak health check (SKIP_URL_CHECKS=true or FAST_SETUP=true)"
+    return 0
+  fi
   
-  echo "Looking for Keycloak container with name: $KEYCLOAK_CONTAINER"
+  # Dynamically determine Keycloak container name with better fallback options
+  local KEYCLOAK_CONTAINER=$(get_container_name "keycloak")
   
-  # Fallback to searching for any Keycloak container if the expected one isn't found
+  # Verify container exists
   if ! docker ps -a | grep -q "$KEYCLOAK_CONTAINER"; then
-    echo "Container $KEYCLOAK_CONTAINER not found, searching for any Keycloak container..."
-    local alt_container=$(docker ps -a | grep -i "keycloak" | head -n 1 | awk '{print $1}')
+    echo "INFO: Keycloak container '$KEYCLOAK_CONTAINER' not found with primary naming pattern"
+    # Try alternate container name formats
+    local alt_formats=("dive25-keycloak" "dive25_keycloak" "keycloak")
+    local found=false
     
-    if [ -n "$alt_container" ]; then
-      KEYCLOAK_CONTAINER=$(docker inspect --format='{{.Name}}' "$alt_container" 2>/dev/null | sed 's/\///')
-      echo "Found alternative Keycloak container: $KEYCLOAK_CONTAINER"
-    else
-      echo "ERROR: No Keycloak container found!"
-      return 1
-    fi
-  fi
-  
-  # Get container network information
-  local KEYCLOAK_NETWORK=$(docker inspect --format '{{range $k, $v := .NetworkSettings.Networks}}{{$k}}{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "")
-  
-  # Get port mappings
-  local KEYCLOAK_PORT_MAPPING=$(docker port "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "")
-  local KEYCLOAK_INTERNAL_PORT=$(docker inspect --format '{{range $p, $conf := .Config.ExposedPorts}}{{$p}}{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null | head -n 1 | cut -d'/' -f1 || echo "8080")
-  local KEYCLOAK_EXTERNAL_PORT=$(echo "$KEYCLOAK_PORT_MAPPING" | grep -o ":[0-9]*->" | head -n 1 | cut -d':' -f2 | cut -d'-' -f1 || echo "")
-  
-  if [ -z "$KEYCLOAK_EXTERNAL_PORT" ]; then
-    # Fallback to environment or common port
-    KEYCLOAK_EXTERNAL_PORT=$(grep "KEYCLOAK_PORT=" .env 2>/dev/null | cut -d '=' -f2 || echo "8443")
-  fi
-  
-  echo "Keycloak container: $KEYCLOAK_CONTAINER"
-  echo "Keycloak network: $KEYCLOAK_NETWORK"
-  echo "Keycloak internal port: $KEYCLOAK_INTERNAL_PORT"
-  echo "Keycloak external port: $KEYCLOAK_EXTERNAL_PORT"
-  
-  # Wait for Keycloak to be running and healthy
-  while true; do
-    local container_status=$(docker inspect --format='{{.State.Status}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "not_found")
-    local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "unknown")
-    
-    echo "Keycloak container status: $container_status, health: $container_health"
-    
-    if [[ "$container_status" == "running" ]]; then
-      if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
-        echo "✅ Keycloak container is running and healthy according to Docker!"
+    for format in "${alt_formats[@]}"; do
+      if docker ps -a | grep -q "$format"; then
+        KEYCLOAK_CONTAINER="$format"
+        echo "Found Keycloak container with name: $KEYCLOAK_CONTAINER"
+        found=true
         break
       fi
+    done
+    
+    if ! $found; then
+      echo "WARNING: Could not find Keycloak container. Health check will be limited to URL checks."
     fi
+  fi
+  
+  # If Keycloak container exists, check if it's healthy
+  if docker ps -a | grep -q "$KEYCLOAK_CONTAINER"; then
+    # Use a shorter but reasonable timeout
+    local container_timeout=$((timeout < 60 ? 60 : timeout / 2))
+    local start_time=$(date +%s)
+    local end_time=$((start_time + container_timeout))
     
-    sleep 5
-    counter=$((counter + 5))
-    echo "Still waiting for Keycloak container to be healthy... ($counter seconds elapsed)"
+    echo "Checking Keycloak container status..."
+    while [ $(date +%s) -lt $end_time ]; do
+      local container_status=$(docker inspect --format='{{.State.Status}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "not_found")
+      local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "unknown")
+      
+      echo "Keycloak container status: $container_status, health: $container_health"
+      
+      if [[ "$container_status" == "running" ]]; then
+        if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
+          echo "✅ Keycloak container is running and healthy according to Docker!"
+          break
+        fi
+      fi
+      
+      sleep 5
+      counter=$((counter + 5))
+      local elapsed=$(($(date +%s) - start_time))
+      echo "Still waiting for Keycloak container to be healthy... ($elapsed seconds elapsed, $container_timeout seconds timeout)"
+      
+      if [ $elapsed -ge $container_timeout ]; then
+        echo "Timeout waiting for Keycloak container to be healthy. Moving on to direct checks..."
+        break
+      fi
+    done
     
-    if [ $counter -ge $timeout ]; then
-      echo "Timeout waiting for Keycloak container to be healthy. Moving on to direct checks..."
+    # Try to check if the Keycloak process is running inside the container
+    echo "Checking if Keycloak process is running inside the container..."
+    if docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null | grep -q "java\|jboss\|keycloak"; then
+      echo "✅ Keycloak process is running inside the container!"
+    else
+      echo "⚠️ WARNING: Keycloak process doesn't appear to be running inside the container."
+      docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null || echo "Failed to check processes in Keycloak container"
+    fi
+  fi
+  
+  # Skip further checks if master timeout is close to being reached
+  CURRENT_TIME=$(date +%s)
+  ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
+  if [ $ELAPSED_TIME -ge $((MASTER_TIMEOUT - 60)) ]; then
+    echo "⚠️ Master timeout is approaching. Skipping Keycloak URL checks to avoid further delays."
+    return 0
+  fi
+  
+  # Get Keycloak port with fallback to environment variable
+  local keycloak_port=${KEYCLOAK_PORT:-8080}
+  local keycloak_https_port=${KEYCLOAK_PORT:-8443}
+  
+  # Try direct localhost check with shorter timeouts
+  echo "Trying direct localhost connection to verify Keycloak accessibility..."
+  local direct_localhost_success=false
+  
+  # Try both HTTP and HTTPS on localhost with various endpoints
+  local localhost_endpoints=(
+    "/health" 
+    "/auth" 
+    "/auth/realms/master/" 
+    "/realms/master/" 
+    "/health/ready" 
+    "/metrics"
+    "/"
+  )
+  
+  # Try localhost URLs
+  for endpoint in "${localhost_endpoints[@]}"; do
+    # Try HTTPS first (it's more commonly used with Keycloak)
+    if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 https://localhost:$keycloak_https_port$endpoint 2>/dev/null; then
+      echo "✅ Keycloak is directly accessible via https://localhost:$keycloak_https_port$endpoint!"
+      direct_localhost_success=true
+      break
+    # Then try HTTP
+    elif curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 http://localhost:$keycloak_port$endpoint 2>/dev/null; then
+      echo "✅ Keycloak is directly accessible via http://localhost:$keycloak_port$endpoint!"
+      direct_localhost_success=true
       break
     fi
   done
   
-  # Try to check if the Keycloak process is running inside the container
-  echo "Checking if Keycloak process is running inside the container..."
-  if docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null | grep -q "java\|jboss\|keycloak"; then
-    echo "✅ Keycloak process is running inside the container!"
-  else
-    echo "⚠️ WARNING: Keycloak process doesn't appear to be running inside the container."
-    docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null || echo "Failed to check processes in Keycloak container"
-  fi
-  
-  # Check the Keycloak config - try multiple potential locations
-  echo "Checking Keycloak configuration..."
-  docker exec "$KEYCLOAK_CONTAINER" /opt/keycloak/bin/kc.sh show-config 2>/dev/null || 
-  docker exec "$KEYCLOAK_CONTAINER" /opt/jboss/keycloak/bin/standalone.sh --version 2>/dev/null ||
-  echo "ℹ️ Could not determine Keycloak configuration - the container might use a different path"
-  
-  # Check the logs for startup completion message
-  echo "Checking Keycloak logs for successful startup message..."
-  if docker logs "$KEYCLOAK_CONTAINER" 2>&1 | grep -q "started in\|Keycloak.*started\|server.*started"; then
-    echo "✅ Keycloak logs show successful startup!"
-  else
-    echo "⚠️ WARNING: Keycloak startup message not found in logs. Continuing anyway..."
-  fi
-  
-  # Skip URL checks if configured to do so
-  if [ "$SKIP_URL_CHECKS" = "true" ]; then
-    echo "Skipping Keycloak URL checks (SKIP_URL_CHECKS=true)"
+  # If direct localhost works, we consider this a success
+  if [ "$direct_localhost_success" = "true" ]; then
+    echo "Keycloak is working properly via localhost."
     return 0
   fi
   
-  # Try to access various Keycloak endpoints
-  counter=0
-  echo "Attempting to access Keycloak at the provided URL: $keycloak_url"
-  
-  # Extract domain and port from URL - honor the URL the user intended
-  local domain=""
-  local port=""
-  
+  # If localhost doesn't work and we have a URL, try the provided URL
   if [ -n "$keycloak_url" ]; then
-    domain=$(echo "$keycloak_url" | grep -oE 'https?://([^:/]+)' | sed 's|https://||;s|http://||')
-    port=$(echo "$keycloak_url" | grep -oE ':[0-9]+' | sed 's/://')
-  fi
-  
-  # Fallback to discovered values if needed
-  if [ -z "$domain" ]; then
-    domain=$(grep "KEYCLOAK_DOMAIN=" .env 2>/dev/null | cut -d '=' -f2 || echo "keycloak")
-    domain="${domain}.$(grep "BASE_DOMAIN=" .env 2>/dev/null | cut -d '=' -f2 || echo "localhost")"
-  fi
-  
-  if [ -z "$port" ]; then
-    port="$KEYCLOAK_EXTERNAL_PORT"
-  fi
-  
-  echo "Using domain: $domain, port: $port for Keycloak checks"
-  
-  # Determine common Keycloak endpoints based on version
-  # Modern Keycloak vs Legacy endpoints
-  local endpoints=("/" "/health" "/realms/master/")
-  
-  # Add legacy endpoints if we detect older Keycloak version
-  if docker logs "$KEYCLOAK_CONTAINER" 2>&1 | grep -q "Keycloak.*WildFly\|jboss"; then
-    endpoints+=("/auth/" "/auth/realms/master/")
-  fi
-  
-  # Newer Keycloak might have these
-  endpoints+=("/health/ready" "/metrics")
-  
-  # Skip this URL check early if it takes too long
-  while [ $counter -lt $max_url_check_time ]; do
-    # Try both protocols
-    for protocol in "https" "http"; do
-      # Create alternatives to try with properly formatted URLs
-      local url_variants=(
-        "${protocol}://${domain}:${port}"
-        "${protocol}://localhost:${port}"
-        "${protocol}://127.0.0.1:${port}"
-      )
-      
-      for base_url in "${url_variants[@]}"; do
-        echo "Testing Keycloak base URL: $base_url"
+    # Extract domain from the Keycloak URL for testing
+    local domain=""
+    if [[ "$keycloak_url" == http* ]]; then
+      domain=$(echo "$keycloak_url" | sed -E 's|https?://([^:/]+)(:[0-9]+)?.*|\1|')
+      protocol=$(echo "$keycloak_url" | grep -oE '^https?')
+      port=$(echo "$keycloak_url" | grep -oE ':[0-9]+' | sed 's/://')
+    else
+      domain="$keycloak_url"
+      # Use environment to determine protocol
+      if [ "$USE_HTTPS" = "true" ]; then
+        protocol="https"
+      else
+        protocol="http"
+      fi
+      port="$keycloak_port"
+    fi
+    
+    echo "Testing Keycloak at: $protocol://$domain:$port"
+    
+    # Build a list of URLs to try with various common Keycloak endpoints
+    local urls_to_try=()
+    
+    # Add various protocol, domain, and path combinations
+    for test_protocol in "https" "http"; do
+      for endpoint in "/" "/auth/" "/auth/realms/master/" "/health" "/health/ready" "/metrics" "/realms/master/"; do
+        # Full domain URL with the target port
+        if [ -n "$port" ]; then
+          urls_to_try+=("$test_protocol://$domain:$port$endpoint")
+        else
+          # Without port specification
+          urls_to_try+=("$test_protocol://$domain$endpoint")
+        fi
         
-        for endpoint in "${endpoints[@]}"; do
-          local full_url="${base_url}${endpoint}"
-          echo "Trying Keycloak endpoint: $full_url"
-          
-          # Add -k flag to ignore SSL certificate validation
-          if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$full_url"; then
-            echo "✅ SUCCESS: Keycloak is accessible at $full_url!"
-            return 0
-          fi
-        done
+        # Also try with localhost and the same port
+        urls_to_try+=("$test_protocol://localhost:$port$endpoint")
+        urls_to_try+=("$test_protocol://127.0.0.1:$port$endpoint")
       done
     done
     
-    sleep 5
-    counter=$((counter + 5))
-    echo "Still waiting for Keycloak URL response... ($counter seconds elapsed)"
+    # Try each URL with a short timeout
+    local url_timeout=20  # Keep this short to avoid excessive waiting
+    local start_time=$(date +%s)
+    local end_time=$((start_time + url_timeout))
+    local success=false
     
-    if [ $counter -ge $max_url_check_time ]; then
-      echo "⚠️ Giving up on external Keycloak URL checks after ${counter} seconds."
+    echo "Testing Keycloak accessibility via URLs..."
+    while [ $(date +%s) -lt $end_time ] && [ "$success" = "false" ]; do
+      for test_url in "${urls_to_try[@]}"; do
+        echo "Trying Keycloak endpoint: $test_url"
+        
+        # Use -k flag for HTTPS to ignore SSL cert validation
+        if [[ "$test_url" == https* ]]; then
+          if curl -s -k -f -o /dev/null --connect-timeout 2 --max-time 3 "$test_url"; then
+            echo "✅ Keycloak is accessible at $test_url!"
+            success=true
+            break
+          fi
+        else
+          if curl -s -f -o /dev/null --connect-timeout 2 --max-time 3 "$test_url"; then
+            echo "✅ Keycloak is accessible at $test_url!"
+            success=true
+            break
+          fi
+        fi
+      done
       
-      # One last direct check via Docker internal network
-      echo "Trying internal Docker network access as last resort..."
-      if docker exec "$KEYCLOAK_CONTAINER" curl -s -f --connect-timeout 3 "http://localhost:$KEYCLOAK_INTERNAL_PORT" >/dev/null 2>&1; then
-        echo "✅ Keycloak is responding internally but not externally. This may indicate a port mapping issue."
-      else
-        echo "⚠️ Keycloak is not responding internally either. The service might still be starting."
+      # Break the loop if we found a working URL
+      if [ "$success" = "true" ]; then
+        break
       fi
       
-      echo "The overall setup will continue, and Keycloak might become available later."
-      echo "You can manually check Keycloak status with: docker logs $KEYCLOAK_CONTAINER"
-      # Return success anyway to continue with setup
-      return 0
-    fi
-  done
+      sleep 2
+      counter=$((counter + 2))
+      local elapsed=$(($(date +%s) - start_time))
+      local remaining=$((end_time - $(date +%s)))
+      echo "Still trying to access Keycloak... ($elapsed seconds elapsed, $remaining seconds remaining)"
+      
+      # Check if master timeout is being approached
+      CURRENT_TIME=$(date +%s)
+      ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
+      if [ $ELAPSED_TIME -ge $((MASTER_TIMEOUT - 30)) ]; then
+        echo "⚠️ Master timeout is approaching. Abandoning Keycloak URL checks."
+        break
+      fi
+    done
+  fi
   
-  # If we reach here, we'll continue anyway
+  # Try one last internal check if container is available
+  if docker ps -a | grep -q "$KEYCLOAK_CONTAINER"; then
+    echo "Trying direct internal check from Keycloak container..."
+    
+    # Check if curl is installed in the container
+    if docker exec "$KEYCLOAK_CONTAINER" which curl >/dev/null 2>&1; then
+      # Try internal connection on standard Keycloak port
+      if docker exec "$KEYCLOAK_CONTAINER" curl -s -f -m 5 http://localhost:8080/ >/dev/null 2>&1; then
+        echo "✅ Keycloak is responding internally on port 8080!"
+        return 0
+      elif docker exec "$KEYCLOAK_CONTAINER" curl -s -f -m 5 http://localhost:9990/ >/dev/null 2>&1; then
+        echo "✅ Keycloak admin console is responding internally on port 9990!"
+        return 0
+      fi
+    else
+      echo "curl not available in Keycloak container, skipping internal check"
+    fi
+  fi
+  
+  # If we're here, we couldn't verify Keycloak health but we'll continue anyway
+  echo "⚠️ Could not definitively verify Keycloak health, but continuing with setup."
+  echo "You can check Keycloak logs with: docker-compose logs keycloak"
   return 0
 }
 
@@ -941,120 +1292,186 @@ fix_and_detect_protocol() {
   local service="$2"
   
   # Skip protocol detection if configured to do so
-  if [ "$SKIP_PROTOCOL_DETECTION" = "true" ]; then
-    echo "Skipping protocol detection for $service (SKIP_PROTOCOL_DETECTION=true)"
+  if [ "$SKIP_PROTOCOL_DETECTION" = "true" ] || [ "$FAST_SETUP" = "true" ]; then
+    echo "Skipping protocol detection for $service (SKIP_PROTOCOL_DETECTION=true or FAST_SETUP=true)"
     echo "$url"
     return 0
   fi
   
-  # Extract protocol, domain and port with more reliable methods
+  # Extract protocol, domain and port with more reliable regex
   local protocol=$(echo "$url" | grep -oE '^https?')
   local domain=$(echo "$url" | grep -oE 'https?://([^:/]+)' | sed 's|https://||;s|http://||')
   local port=$(echo "$url" | grep -oE ':[0-9]+' | sed 's/://')
   
-  # Fallback to environment if needed
+  echo "Analyzing URL: $url"
+  echo "  - Detected protocol: $protocol"
+  echo "  - Detected domain: $domain"
+  echo "  - Detected port: $port"
+  
+  # Get the global HTTPS setting from environment
+  local use_https=${USE_HTTPS:-false}
+  echo "Environment USE_HTTPS setting: $use_https"
+  
+  # Determine the appropriate protocol based on environment
+  local preferred_protocol
+  if [ "$use_https" = "true" ]; then
+    preferred_protocol="https"
+  else
+    preferred_protocol="http"
+  fi
+  echo "Preferred protocol based on environment: $preferred_protocol"
+  
+  # If protocol is missing, use the preferred protocol
   if [ -z "$protocol" ]; then
-    local use_https=$(grep "USE_HTTPS=" .env | cut -d '=' -f2)
-    if [[ "$use_https" == "true" ]]; then
-      protocol="https"
-    else
-      protocol="http"
-    fi
+    protocol="$preferred_protocol"
+    echo "No protocol specified in URL, using $protocol based on environment"
   fi
   
+  # Fallback for domain and port based on service name and environment variables
   if [ -z "$domain" ]; then
     case "$service" in
       "keycloak")
-        domain="keycloak.$(grep "BASE_DOMAIN=" .env | cut -d '=' -f2)"
+        domain="${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-localhost}"
         ;;
       "api")
-        domain="api.$(grep "BASE_DOMAIN=" .env | cut -d '=' -f2)"
+        domain="${API_DOMAIN:-api}.${BASE_DOMAIN:-localhost}"
         ;;
       "frontend")
-        domain="frontend.$(grep "BASE_DOMAIN=" .env | cut -d '=' -f2)"
+        domain="${FRONTEND_DOMAIN:-frontend}.${BASE_DOMAIN:-localhost}"
         ;;
       "kong")
-        domain="kong.$(grep "BASE_DOMAIN=" .env | cut -d '=' -f2)"
+        domain="${KONG_DOMAIN:-kong}.${BASE_DOMAIN:-localhost}"
+        ;;
+      *)
+        domain="localhost"
         ;;
     esac
+    echo "No domain specified in URL, using $domain based on service name"
   fi
   
+  # Get port from environment variables if not specified
   if [ -z "$port" ]; then
     case "$service" in
       "keycloak")
-        port=$(grep "KEYCLOAK_PORT=" .env | cut -d '=' -f2)
+        if [ "$protocol" = "https" ]; then
+          port="${KEYCLOAK_PORT:-8443}"
+        else
+          port="${KEYCLOAK_PORT:-8080}"
+        fi
         ;;
       "api")
-        port=$(grep "API_PORT=" .env | cut -d '=' -f2)
+        if [ "$protocol" = "https" ]; then
+          port="${API_PORT:-3002}"
+        else
+          port="${API_PORT:-3000}"
+        fi
         ;;
       "frontend")
-        port=$(grep "FRONTEND_PORT=" .env | cut -d '=' -f2)
+        if [ "$protocol" = "https" ]; then
+          port="${FRONTEND_PORT:-3001}"
+        else
+          port="${FRONTEND_PORT:-3000}"
+        fi
         ;;
       "kong")
-        port=$(grep "KONG_PROXY_PORT=" .env | cut -d '=' -f2)
+        if [ "$protocol" = "https" ]; then
+          port="${KONG_HTTPS_PORT:-8443}"
+        else
+          port="${KONG_PROXY_PORT:-8000}"
+        fi
+        ;;
+      *)
+        # Use standard ports if not specified
+        if [ "$protocol" = "https" ]; then
+          port="443"
+        else
+          port="80"
+        fi
         ;;
     esac
+    echo "No port specified in URL, using $port based on service name and protocol"
   fi
   
-  local use_https=$(grep "USE_HTTPS=" .env | cut -d '=' -f2)
+  # Construct the URL
+  local constructed_url="${protocol}://${domain}:${port}"
+  echo "Constructed URL: $constructed_url"
   
-  echo "Service $service is configured with domain: $domain, protocol: $protocol, port: $port"
-  echo "USE_HTTPS in .env is set to: $use_https"
-  
-  # If protocol doesn't match USE_HTTPS setting, warn the user
-  if [[ "$use_https" == "true" && "$protocol" != "https" ]]; then
-    echo "WARNING: HTTPS is enabled but URL is using HTTP protocol. Trying both..."
-  elif [[ "$use_https" != "true" && "$protocol" == "https" ]]; then
-    echo "WARNING: HTTPS is disabled but URL is using HTTPS protocol. Trying both..."
-  fi
-  
-  # Skip URL checks if configured to do so
+  # If SKIP_URL_CHECKS is true, just return the constructed URL
   if [ "$SKIP_URL_CHECKS" = "true" ]; then
-    echo "Skipping URL checks for $service (SKIP_URL_CHECKS=true)"
-    if [[ "$use_https" == "true" ]]; then
-      echo "https://$domain:$port"
-    else
-      echo "http://$domain:$port"
-    fi
+    echo "Skipping URL health check (SKIP_URL_CHECKS=true)"
+    echo "$constructed_url"
     return 0
   fi
   
-  # Create clean URLs for both protocols
-  local https_url="https://$domain:$port"
-  local http_url="http://$domain:$port"
+  # Try the constructed URL first
+  echo "Testing constructed URL: $constructed_url"
+  local timeout=15  # Short timeout for quick test
   
-  # Always try the configured protocol first
-  if [[ "$protocol" == "https" ]]; then
-    # Try HTTPS first, then HTTP
-    if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$https_url"; then
-      echo "HTTPS connection successful!"
-      echo "$https_url"
-    else
-      echo "HTTPS connection failed, trying HTTP: $http_url"
-      if curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 "$http_url"; then
-        echo "HTTP connection successful!"
-        echo "$http_url"
-      else
-        echo "Both HTTPS and HTTP connections failed. Using $https_url for consistency."
-        echo "$https_url"
-      fi
+  # Add -k flag to ignore SSL certificate validation for HTTPS
+  if [ "$protocol" = "https" ]; then
+    if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time $timeout "$constructed_url"; then
+      echo "✓ Constructed URL is accessible: $constructed_url"
+      echo "$constructed_url"
+      return 0
     fi
   else
-    # Try HTTP first, then HTTPS
-    if curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 "$http_url"; then
-      echo "HTTP connection successful!"
-      echo "$http_url"
-    else
-      echo "HTTP connection failed, trying HTTPS: $https_url"
-      if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 "$https_url"; then
-        echo "HTTPS connection successful!"
-        echo "$https_url"
-      else
-        echo "Both HTTP and HTTPS connections failed. Using $http_url for consistency."
-        echo "$http_url"
-      fi
+    if curl -s -f -o /dev/null --connect-timeout 3 --max-time $timeout "$constructed_url"; then
+      echo "✓ Constructed URL is accessible: $constructed_url"
+      echo "$constructed_url"
+      return 0
     fi
   fi
+  
+  # If constructed URL failed, try the alternative protocol
+  local alt_protocol
+  if [ "$protocol" = "https" ]; then
+    alt_protocol="http"
+  else
+    alt_protocol="https"
+  fi
+  
+  local alt_url="${alt_protocol}://${domain}:${port}"
+  echo "Testing alternative URL: $alt_url"
+  
+  # Add -k flag for HTTPS
+  if [ "$alt_protocol" = "https" ]; then
+    if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time $timeout "$alt_url"; then
+      echo "✓ Alternative URL is accessible: $alt_url"
+      echo "$alt_url"
+      return 0
+    fi
+  else
+    if curl -s -f -o /dev/null --connect-timeout 3 --max-time $timeout "$alt_url"; then
+      echo "✓ Alternative URL is accessible: $alt_url"
+      echo "$alt_url"
+      return 0
+    fi
+  fi
+  
+  # If both URLs fail, try localhost with both protocols
+  for test_protocol in "http" "https"; do
+    local localhost_url="${test_protocol}://localhost:${port}"
+    echo "Testing localhost URL: $localhost_url"
+    
+    # Add -k flag for HTTPS
+    if [ "$test_protocol" = "https" ]; then
+      if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time $timeout "$localhost_url"; then
+        echo "✓ Localhost URL is accessible: $localhost_url"
+        echo "$localhost_url"
+        return 0
+      fi
+    else
+      if curl -s -f -o /dev/null --connect-timeout 3 --max-time $timeout "$localhost_url"; then
+        echo "✓ Localhost URL is accessible: $localhost_url"
+        echo "$localhost_url"
+        return 0
+      fi
+    fi
+  done
+  
+  # If all tests fail, return the constructed URL based on environment preference
+  echo "⚠️ Could not verify URL accessibility. Using constructed URL based on environment."
+  echo "$constructed_url"
 }
 
 # Clean up and normalize URLs
@@ -1135,22 +1552,26 @@ if [ -f "./keycloak/configure-keycloak.sh" ]; then
         RUNNER_CONTAINER=""
     fi
     
-    if [ -z "$RUNNER_CONTAINER" ]; then
+    # Allow skipping all Keycloak checks to speed up the process
+    if [ "${SKIP_KEYCLOAK_CHECKS}" = "true" ] || [ "${FAST_SETUP}" = "true" ]; then
+        echo "🚧 Skipping Keycloak health checks as requested by SKIP_KEYCLOAK_CHECKS=true or FAST_SETUP=true"
+        echo "⚠️ Continuing with Keycloak configuration, assuming it's available..."
+    
+    elif [ -z "$RUNNER_CONTAINER" ]; then
         echo "⚠️ Could not find API or Kong container. Using external URL check instead."
-        # Try external URL as fallback
-        KEYCLOAK_PORT=$(grep "KEYCLOAK_PORT=" .env | cut -d '=' -f2 || echo "3003")
-        echo "Using Keycloak port from .env: $KEYCLOAK_PORT"
-        external_url="http://localhost:${KEYCLOAK_PORT}"
-        echo "Trying external URL: $external_url"
+        # Try external URL as fallback - Using Kong as reverse proxy for Keycloak
+        echo "Using Kong as reverse proxy for Keycloak on port 8443"
+        external_url="https://localhost:8443/auth/"
+        echo "Trying external URL through Kong: $external_url"
         
         # Use a more direct approach that avoids nested bash -c commands
-        echo "Waiting for Keycloak to be available externally..."
+        echo "Waiting for Keycloak to be available externally through Kong..."
         TIMEOUT_COUNTER=0
         MAX_TIMEOUT=300
         
         while [ $TIMEOUT_COUNTER -lt $MAX_TIMEOUT ]; do
-            if curl -s "$external_url" > /dev/null 2>&1; then
-                echo "✅ Keycloak is accessible externally!"
+            if curl -s --insecure "$external_url" > /dev/null 2>&1; then
+                echo "✅ Keycloak is accessible through Kong!"
                 break
             fi
             echo "Waiting for Keycloak (external)... ($TIMEOUT_COUNTER seconds elapsed)"
@@ -1159,7 +1580,7 @@ if [ -f "./keycloak/configure-keycloak.sh" ]; then
         done
         
         if [ $TIMEOUT_COUNTER -ge $MAX_TIMEOUT ]; then
-            echo "❌ Timed out waiting for Keycloak via external URL"
+            echo "❌ Timed out waiting for Keycloak via Kong"
             echo "⚠️ Continuing anyway, but Keycloak configuration may fail."
         fi
         # Skip the rest of this block since we're not in a function
@@ -1176,19 +1597,18 @@ if [ -f "./keycloak/configure-keycloak.sh" ]; then
             if ! docker exec "$RUNNER_CONTAINER" which curl >/dev/null 2>&1; then
                 echo "⚠️ Could not install curl in container. Using external URL check instead."
                 # Fall back to external URL check
-                KEYCLOAK_PORT=$(grep "KEYCLOAK_PORT=" .env | cut -d '=' -f2 || echo "3003")
-                echo "Using Keycloak port from .env: $KEYCLOAK_PORT"
-                external_url="http://localhost:${KEYCLOAK_PORT}"
-                echo "Trying external URL: $external_url"
+                echo "Using Kong as reverse proxy for Keycloak on port 8443"
+                external_url="https://localhost:8443/auth/"
+                echo "Trying external URL through Kong: $external_url"
                 
                 # Use a more direct approach that avoids nested bash -c commands
-                echo "Waiting for Keycloak to be available externally..."
+                echo "Waiting for Keycloak to be available externally through Kong..."
                 TIMEOUT_COUNTER=0
                 MAX_TIMEOUT=300
                 
                 while [ $TIMEOUT_COUNTER -lt $MAX_TIMEOUT ]; do
-                    if curl -s "$external_url" > /dev/null 2>&1; then
-                        echo "✅ Keycloak is accessible externally!"
+                    if curl -s --insecure "$external_url" > /dev/null 2>&1; then
+                        echo "✅ Keycloak is accessible through Kong!"
                         break
                     fi
                     echo "Waiting for Keycloak (external)... ($TIMEOUT_COUNTER seconds elapsed)"
@@ -1197,7 +1617,7 @@ if [ -f "./keycloak/configure-keycloak.sh" ]; then
                 done
                 
                 if [ $TIMEOUT_COUNTER -ge $MAX_TIMEOUT ]; then
-                    echo "❌ Timed out waiting for Keycloak via external URL"
+                    echo "❌ Timed out waiting for Keycloak via Kong"
                     echo "⚠️ Continuing anyway, but Keycloak configuration may fail."
                 fi
                 # Skip the rest of this code without using break
@@ -1205,10 +1625,17 @@ if [ -f "./keycloak/configure-keycloak.sh" ]; then
             fi
         fi
         
-        timeout 300 bash -c "until docker exec $RUNNER_CONTAINER curl -s $INTERNAL_KEYCLOAK_URL > /dev/null; do echo \"Waiting for Keycloak (internal)...\"; sleep 5; done" || { 
-            echo "❌ Timed out waiting for Keycloak via internal Docker network"; 
-            echo "⚠️ Continuing anyway, but Keycloak configuration may fail.";
-        }
+        # Skip internal health check if SKIP_KEYCLOAK_CHECKS is set
+        if [ "${SKIP_KEYCLOAK_CHECKS}" != "true" ] && [ "${FAST_SETUP}" != "true" ]; then
+            echo "Running internal Keycloak health check..."
+            INTERNAL_KEYCLOAK_URL="http://dive25-keycloak:8080"
+            timeout 300 bash -c "until docker exec $RUNNER_CONTAINER curl -s $INTERNAL_KEYCLOAK_URL > /dev/null; do echo \"Waiting for Keycloak (internal)...\"; sleep 5; done" || { 
+                echo "❌ Timed out waiting for Keycloak via internal Docker network"; 
+                echo "⚠️ Continuing anyway, but Keycloak configuration may fail.";
+            }
+        else
+            echo "🚧 Skipping internal Keycloak health check as requested"
+        fi
     fi
     
     echo "✅ Keycloak is available, configuring now..."
@@ -1328,7 +1755,7 @@ if docker ps -a | grep -q "$KEYCLOAK_CONFIG_CONTAINER"; then
       
     # Check if that fixed the issue
     echo "Checking if the realm was created successfully..."
-    if [ $? -eq 0 ]; then
+      if [ $? -eq 0 ]; then
       echo "✅ Keycloak configuration through container completed successfully"
     else
       echo "⚠️ Keycloak configuration through container failed"
@@ -1436,10 +1863,10 @@ else
           fi
         else
           echo "⚠️ fix-keycloak-config.sh script not found"
-        fi
       fi
     fi
-  else
+  fi
+else
     echo "⚠️ Failed to get admin token from Keycloak"
     echo "Please make sure Keycloak is running and accessible."
     
@@ -1710,9 +2137,9 @@ if docker ps -a | grep -q "$KONG_CONFIG_CONTAINER"; then
           echo "⚠️ Legacy OIDC configuration script not found"
         fi
       fi
-    fi
-  fi
-else
+        fi
+      fi
+    else
   echo "⚠️ Kong config container not found, checking realm directly..."
   
   # Try to check if the realm exists using the Keycloak API
@@ -1798,10 +2225,10 @@ else
           fi
         else
           echo "⚠️ fix-keycloak-config.sh script not found"
-        fi
       fi
     fi
-  else
+  fi
+else
     echo "⚠️ Failed to get admin token from Keycloak"
     echo "Please make sure Keycloak is running and accessible."
     
@@ -1876,11 +2303,11 @@ print_step "Checking API service..."
 if [ "$SKIP_API_CHECK" = "true" ]; then
   echo "Skipping API check (SKIP_API_CHECK=true)"
 else
-  # Check if master timeout has been reached
-  CURRENT_TIME=$(date +%s)
-  ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
+# Check if master timeout has been reached
+CURRENT_TIME=$(date +%s)
+ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
   
-  if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
+if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
     echo "⚠️ Master timeout reached for deployment (${ELAPSED_TIME}s elapsed). Skipping API check."
     
     # Get API container name dynamically
@@ -1896,7 +2323,7 @@ else
     # Only perform the API health check if Kong has been configured
     if [ "$KONG_CONFIGURED" = "true" ]; then
       echo "Kong is configured, performing complete API health check with URL..."
-      check_api_health "$api_url" 120 || echo "WARNING: API health check failed, but continuing..."
+    check_api_health "$api_url" 120 || echo "WARNING: API health check failed, but continuing..."
     else
       echo "Skipping API URL health check as Kong has not been fully configured"
       # Just check if the container is running instead

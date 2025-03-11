@@ -14,15 +14,31 @@ const logger = createLogger('auth');
 
 // Hardcoded default values as fallbacks for local development only
 // These should match the defaults in our .env.development file
-const DEFAULT_KEYCLOAK_URL = 'http://localhost:8080/auth';
+const DEFAULT_KEYCLOAK_URL = 'http://localhost:8080';
 const DEFAULT_REALM = 'dive25';
 const DEFAULT_CLIENT_ID = 'dive25-frontend';
+
+/**
+ * Ensures a URL doesn't have a trailing /auth by removing it if present
+ */
+const removeAuthPathFromUrl = (url: string): string => {
+    if (url.endsWith('/auth')) {
+        const cleanUrl = url.slice(0, -5);
+        logger.debug(`Removed '/auth' from URL: ${url} -> ${cleanUrl}`);
+        return cleanUrl;
+    }
+    return url;
+};
 
 // Initialize Keycloak instance with proper URL handling
 const keycloakInit = () => {
     // Get Keycloak URL from environment with fallback to default
-    // The environment should provide the complete URL including /auth path
-    const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL || DEFAULT_KEYCLOAK_URL;
+    // Use the URL directly as provided in the environment variable
+    let keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL || DEFAULT_KEYCLOAK_URL;
+
+    // Ensure we don't have a trailing /auth in the URL
+    keycloakUrl = removeAuthPathFromUrl(keycloakUrl);
+
     const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || DEFAULT_REALM;
     const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || DEFAULT_CLIENT_ID;
 
@@ -45,6 +61,13 @@ const keycloakInit = () => {
         realm: keycloak.realm,
         clientId: keycloak.clientId
     });
+
+    // Override Keycloak's URL with our cleaned version if needed
+    if (keycloak.authServerUrl && keycloak.authServerUrl.endsWith('/auth')) {
+        const cleanUrl = removeAuthPathFromUrl(keycloak.authServerUrl);
+        // We can't modify keycloak.authServerUrl directly, so log a warning
+        logger.warn(`Keycloak's authServerUrl contains '/auth': ${keycloak.authServerUrl}`);
+    }
 
     // Set custom theme in login options
     const originalLogin = keycloak.login;

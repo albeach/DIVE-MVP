@@ -16,6 +16,7 @@ const TOKEN_REFRESH_BUFFER = 120; // 2 minutes
 const TOKEN_CHECK_INTERVAL = 10000; // 10 seconds
 const SESSION_STORAGE_TOKEN_KEY = 'kc_token';
 const SESSION_STORAGE_REFRESH_TOKEN_KEY = 'kc_refreshToken';
+const AUTH_ERROR_KEY = 'auth_error'; // New key to store authentication errors
 
 interface AuthContextProps {
   isAuthenticated: boolean;
@@ -204,14 +205,30 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     return userProfile as User;
   }, []);
 
-  // Initialize Keycloak
+  // Initialize Keycloak - update to work better with our callback page
   const initKeycloak = async (): Promise<boolean> => {
-    if (isLoading || initializationComplete) return isAuthenticated;
+    if (isLoading) {
+      console.log('Already loading, waiting for completion...');
+      return isAuthenticated;
+    }
+    
+    // If already initialized and authenticated, just return the status
+    if (initializationComplete && isAuthenticated) {
+      console.log('Already initialized and authenticated');
+      return true;
+    }
     
     setIsLoading(true);
     logger.debug('Initializing Keycloak...');
     
     try {
+      // Check for previous auth errors and display them
+      const storedError = sessionStorage.getItem(AUTH_ERROR_KEY);
+      if (storedError) {
+        toast.error(`Previous authentication error: ${storedError}`);
+        sessionStorage.removeItem(AUTH_ERROR_KEY);
+      }
+      
       // Use our configured Keycloak instance
       const keycloakInstance = getKeycloak();
 
@@ -230,55 +247,84 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       // Configure token refresh behavior
       keycloakInstance.onTokenExpired = () => {
         logger.debug('Token expired, attempting to refresh...');
-        keycloakInstance.updateToken(30).catch((error) => {
+        keycloakInstance.updateToken(30).then(() => {
+          logger.debug('Token refreshed after expiry');
+          toast.success('Session extended', { id: 'token-refresh' });
+        }).catch((error) => {
           logger.warn('Token refresh failed after expiry', error);
+          toast.error('Your session has expired. Please log in again.', { id: 'token-expired' });
           setIsAuthenticated(false);
         });
       };
 
-      // Calculate the silent check URI with explicit protocol
-      const origin = window.location.origin;
-      const silentCheckUri = `${origin}/silent-check-sso.html`;
-      
-      logger.debug('Using silent check URI:', silentCheckUri);
-      
       // Get stored tokens (if any)
       const storedToken = sessionStorage.getItem(SESSION_STORAGE_TOKEN_KEY);
       const storedRefreshToken = sessionStorage.getItem(SESSION_STORAGE_REFRESH_TOKEN_KEY);
       
-      // Configure initialization options - use a more direct approach for Keycloak 21
+      // Check if we're on the callback page
+      const isCallbackPage = window.location.pathname.includes('/auth/callback');
+      console.log('Current page is callback page:', isCallbackPage);
+      
+      // Configure initialization options with all problematic checks disabled
       const initOptions = {
-        onLoad: 'check-sso' as const,
-        silentCheckSsoRedirectUri: silentCheckUri,
+        onLoad: isCallbackPage ? 'login-required' as const : 'check-sso' as const,
+        silentCheckSsoRedirectUri: undefined, // Disable silent check SSO
+        silentCheckSsoFallback: false, // Disable fallback
+        checkLoginIframe: false, // Disable iframe checks completely
+        checkLoginIframeInterval: 0, // Disable iframe check interval
+        enableLogging: true, // Keep logging enabled
         pkceMethod: 'S256' as const,
-        checkLoginIframe: false, // Always disable iframe checks
-        checkLoginIframeInterval: 0, // Disable completely
-        enableLogging: true,
         flow: 'standard' as const,
-        responseMode: 'fragment' as const,
+        responseMode: 'query' as const, // Use query parameters instead of fragment
         promiseType: 'native' as const,
         token: storedToken || undefined,
         refreshToken: storedRefreshToken || undefined,
-        timeSkew: 10, // Add a time skew allowance
-        adapter: 'default' as const, // Use default adapter, force-clear any session issues
-        redirectUri: window.location.origin, // Simplify the redirect URI
-        silentLogin: false, // Don't attempt silent login on init
-        useNonce: true // Better security
+        timeSkew: 10, // Add time skew allowance
+        adapter: 'default' as const,
+        redirectUri: isCallbackPage ? window.location.origin + '/auth/callback' : window.location.origin,
+        silentLogin: false, // Don't attempt silent login
+        useNonce: true,
+        scope: 'openid',
+        checkSsoFallback: false // Disable SSO fallback mechanisms entirely
       };
       
-      // Set a timeout for initialization to handle potential iframe issues
-      const initPromise = keycloakInstance.init(initOptions);
+      logger.debug('Initializing Keycloak with options:', {
+        ...initOptions,
+        onLoad: initOptions.onLoad,
+        redirectUri: initOptions.redirectUri
+      });
       
-      // Create a timeout promise
+      // Set a timeout for initialization to handle potential iframe issues
+      let initPromise;
+      try {
+        // Explicitly warn that we're skipping iframe checks
+        logger.debug('Starting Keycloak initialization with iframe checks disabled');
+        initPromise = keycloakInstance.init(initOptions);
+      } catch (error) {
+        logger.error('Error during Keycloak init call:', error);
+        toast.error('Authentication service initialization failed. Please try again later.');
+        initPromise = Promise.resolve(false);
+      }
+      
+      // Create a timeout promise with longer timeout
       const timeoutPromise = new Promise<boolean>((resolve) => {
         setTimeout(() => {
           logger.warn('Keycloak initialization timed out, continuing with unauthenticated state');
+          toast.error('Authentication service timed out. Please try logging in manually.');
           resolve(false);
-        }, 10000); // 10 second timeout
+        }, 20000); // 20 second timeout (increased from 10s)
       });
       
       // Race the init promise against the timeout
-      const authenticated = await Promise.race([initPromise, timeoutPromise]);
+      let authenticated;
+      try {
+        authenticated = await Promise.race([initPromise, timeoutPromise]);
+        logger.debug(`Keycloak initialization completed with result: ${authenticated}`);
+      } catch (error) {
+        logger.error('Error during Keycloak initialization:', error);
+        toast.error('Authentication failed. Please try again later.');
+        authenticated = false;
+      }
       
       logger.debug(`Keycloak initialization completed, authenticated: ${authenticated}`);
 
@@ -297,14 +343,32 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
         startTokenExpiryCheck(keycloakInstance);
         
         // Extract user information from token
-        updateUserFromToken(keycloakInstance);
+        const userInfo = updateUserFromToken(keycloakInstance);
+        
+        // Show welcome toast
+        if (userInfo?.givenName) {
+          toast.success(`Welcome, ${userInfo.givenName}!`, { id: 'welcome-user' });
+        } else {
+          toast.success('Successfully authenticated!', { id: 'auth-success' });
+        }
+        
+        // Only redirect if we're on the homepage or login page and NOT on callback page
+        const currentPath = window.location.pathname;
+        if ((currentPath === '/' || currentPath === '/login') && !isCallbackPage) {
+          setTimeout(() => {
+            window.location.href = '/documents';
+          }, 100);
+        }
       }
       
       setInitializationComplete(true);
       return authenticated;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown authentication error';
       logger.error('Failed to initialize Keycloak', error);
-      setInitError(error instanceof Error ? error.message : 'Unknown error');
+      setInitError(errorMessage);
+      toast.error(`Authentication error: ${errorMessage}`);
+      sessionStorage.setItem(AUTH_ERROR_KEY, errorMessage);
       setIsAuthenticated(false);
       setInitializationComplete(true);
       return false;
@@ -323,36 +387,109 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     // Skip initialization on the server
     if (typeof window === 'undefined') return;
     
+    // Check if we have a hash that looks like a Keycloak callback
+    const hasAuthParams = window.location.hash && 
+      (window.location.hash.includes('state=') || 
+       window.location.hash.includes('code=') || 
+       window.location.hash.includes('session_state='));
+    
+    // If we detect authentication parameters in the URL, we need to handle the callback
+    if (hasAuthParams) {
+      logger.debug('Detected authentication parameters in URL, handling callback');
+      
+      // Show loading toast
+      toast.loading('Completing authentication...', { id: 'auth-callback' });
+      
+      // Process the callback
+      (async () => {
+        try {
+          // If Keycloak isn't initialized yet, initialize it
+          if (!keycloak) {
+            await initKeycloak();
+          }
+          
+          if (isAuthenticated && user) {
+            logger.debug('Successfully authenticated from callback');
+            toast.dismiss('auth-callback');
+            toast.success(`Welcome, ${user.givenName || user.username}!`);
+            
+            // Clear the hash to remove the auth parameters
+            window.history.replaceState(null, '', window.location.pathname);
+            
+            // Get redirect path from session or default to documents
+            const redirectPath = sessionStorage.getItem('auth_redirect') || '/documents';
+            sessionStorage.removeItem('auth_redirect');
+            
+            // Redirect after a short delay
+            setTimeout(() => {
+              window.location.href = redirectPath;
+            }, 300);
+          } else {
+            logger.warn('Callback detected but authentication failed');
+            toast.dismiss('auth-callback');
+            toast.error('Authentication failed. Please try again.');
+          }
+        } catch (error) {
+          logger.error('Error processing authentication callback', error);
+          toast.dismiss('auth-callback');
+          toast.error('Failed to complete login. Please try again.');
+        }
+      })();
+    }
     // Auto-initialize if explicitly requested OR the path requires auth
-    if (autoInitialize || shouldAuthenticate(window.location.pathname)) {
+    else if (autoInitialize || shouldAuthenticate(window.location.pathname)) {
       initKeycloak();
     }
-  }, [autoInitialize, shouldAuthenticate]);
+  }, [autoInitialize, shouldAuthenticate, isAuthenticated, user, keycloak]);
 
   // Login function - will initialize Keycloak if needed
   const login = async () => {
     try {
+      toast.loading('Connecting to authentication service...', { id: 'auth-loading' });
+      
       // Make sure Keycloak is initialized first
       if (!initializationComplete) {
         const success = await initKeycloak();
         if (!success) {
           // If initialization failed, try a direct login instead
           logger.warn("Keycloak initialization failed, attempting direct login");
+          toast.dismiss('auth-loading');
+          toast.loading('Trying alternative login method...', { id: 'direct-login' });
           
-          // Get a fresh instance
-          const keycloakInstance = getKeycloak();
-          
-          // Store the current path to redirect back after login
-          const currentPath = window.location.pathname + window.location.search;
-          if (currentPath !== '/' && !currentPath.includes('/login') && !currentPath.includes('/auth/') && !currentPath.includes('/callback')) {
-            sessionStorage.setItem('auth_redirect', currentPath);
+          try {
+            // Get a fresh instance
+            const keycloakInstance = getKeycloak();
+            
+            // Store the current path to redirect back after login
+            const currentPath = window.location.pathname + window.location.search;
+            if (currentPath !== '/' && !currentPath.includes('/login') && !currentPath.includes('/auth/') && !currentPath.includes('/callback')) {
+              sessionStorage.setItem('auth_redirect', currentPath);
+            }
+            
+            // Handle the case where we want to go to documents after login
+            if (currentPath === '/' || currentPath === '/login') {
+              sessionStorage.setItem('auth_redirect', '/documents');
+            }
+            
+            // Use a direct login approach with more options
+            logger.debug("Initiating direct login to Keycloak");
+            toast.dismiss('direct-login');
+            keycloakInstance.login({
+              redirectUri: window.location.origin,
+              prompt: 'login',
+              scope: 'openid',
+              maxAge: 86400 // 24 hours - more generous to avoid frequent re-authentications
+            });
+          } catch (directLoginError) {
+            logger.error("Direct login failed", directLoginError);
+            toast.dismiss('direct-login');
+            toast.error('Login service unavailable. Please try again later.');
+            
+            // If all else fails, try the absolute simplest login approach
+            setTimeout(() => {
+              window.location.href = `${process.env.NEXT_PUBLIC_KEYCLOAK_URL}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/auth?client_id=${process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID}&redirect_uri=${encodeURIComponent(window.location.origin)}&response_type=code&scope=openid`;
+            }, 1000);
           }
-          
-          // Use a direct login approach
-          keycloakInstance.login({
-            redirectUri: window.location.origin,
-            prompt: 'login'
-          });
           return;
         }
       }
@@ -364,17 +501,31 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
           sessionStorage.setItem('auth_redirect', currentPath);
         }
         
-        // Use explicit login options
+        // Handle the case where we want to go to documents after login
+        if (currentPath === '/' || currentPath === '/login') {
+          sessionStorage.setItem('auth_redirect', '/documents');
+        }
+        
+        // Use explicit login options with more parameters
+        logger.debug("Initiating login with initialized Keycloak");
+        toast.dismiss('auth-loading');
         keycloak.login({
           redirectUri: window.location.origin,
-          prompt: 'login'
+          prompt: 'login',
+          scope: 'openid',
+          maxAge: 86400 // 24 hours
         });
       } else {
         logger.error("Keycloak not initialized for login");
+        toast.dismiss('auth-loading');
+        toast.error("Authentication service not available. Please try again later.");
         throw new Error("Authentication service not available");
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown login error';
       logger.error("Login failed", error);
+      toast.dismiss('auth-loading');
+      toast.error(`Login failed: ${errorMessage}`);
       throw error;
     }
   };
@@ -383,6 +534,8 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
   const logout = useCallback(() => {
     if (keycloak && keycloak.authenticated) {
       try {
+        toast.loading('Signing out...', { id: 'logout-loading' });
+        
         // Clear tokens from storage
         sessionStorage.removeItem(SESSION_STORAGE_TOKEN_KEY);
         sessionStorage.removeItem(SESSION_STORAGE_REFRESH_TOKEN_KEY);
@@ -401,6 +554,7 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
         keycloak.logout();
       } catch (error) {
         logger.error('Logout error', error);
+        toast.dismiss('logout-loading');
         toast.error('Logout failed. Please try again.');
       }
     } else {
@@ -497,6 +651,7 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
     <AuthContext.Provider value={authContextValue}>
       {initError && <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded fixed top-0 right-0 m-4 z-50">
         Authentication Error: {initError}
+        <button onClick={() => setInitError(null)} className="ml-2 font-bold">×</button>
       </div>}
       {children}
     </AuthContext.Provider>

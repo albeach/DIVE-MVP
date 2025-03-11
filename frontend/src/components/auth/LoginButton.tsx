@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/context/auth-context';
 import { User } from '@/types/user';
+import toast from 'react-hot-toast';
 
 interface LoginButtonProps {
   className?: string;
@@ -15,6 +16,8 @@ const LoginButton: React.FC<LoginButtonProps> = ({
   size = 'md',
   label = 'Sign In'
 }) => {
+  const [isLoading, setIsLoading] = useState(false);
+  
   // Default to unauthenticated state
   let isAuthenticated = false;
   let user: User | null = null;
@@ -51,15 +54,98 @@ const LoginButton: React.FC<LoginButtonProps> = ({
     ${variantClasses[variant]} 
     ${sizeClasses[size]} 
     ${className}
+    ${isLoading ? 'opacity-75 cursor-not-allowed' : ''}
   `;
 
-  // Handle auth action
-  const handleClick = () => {
-    if (isAuthenticated) {
-      logout();
-    } else {
-      login();
+  // Fallback direct login if normal login fails
+  const fallbackDirectLogin = () => {
+    toast.loading('Attempting direct login...', { id: 'direct-login' });
+    
+    // Store current path for redirect after login
+    const currentPath = window.location.pathname + window.location.search;
+    if (currentPath !== '/' && !currentPath.includes('/login') && !currentPath.includes('/auth/')) {
+      sessionStorage.setItem('auth_redirect', currentPath);
     }
+    
+    // Set redirect to documents for home page
+    if (currentPath === '/' || currentPath === '/login') {
+      sessionStorage.setItem('auth_redirect', '/documents');
+    }
+    
+    // Construct auth URL directly with our callback page - FIXED URL CONSTRUCTION
+    try {
+      const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
+      const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
+      const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
+      
+      if (!keycloakUrl || !realm || !clientId) {
+        throw new Error('Missing Keycloak configuration');
+      }
+      
+      // Use our dedicated callback page
+      const callbackUrl = `${window.location.origin}/auth/callback`;
+      const redirectUri = encodeURIComponent(callbackUrl);
+      
+      // Construct the URL correctly without adding /auth
+      // The NEXT_PUBLIC_KEYCLOAK_URL should already have the correct base path
+      const authUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid`;
+      
+      console.log('Redirecting to auth URL with callback:', authUrl);
+      window.location.href = authUrl;
+    } catch (error) {
+      console.error('Fallback login failed:', error);
+      toast.error('Login service unavailable. Please try again later.');
+    }
+  };
+
+  // Handle auth action
+  const handleClick = async () => {
+    if (isLoading) return;
+    
+    setIsLoading(true);
+    try {
+      if (isAuthenticated) {
+        await logout();
+      } else {
+        // Store current path for redirect after login
+        const currentPath = window.location.pathname + window.location.search;
+        if (currentPath !== '/' && !currentPath.includes('/login') && !currentPath.includes('/auth/')) {
+          sessionStorage.setItem('auth_redirect', currentPath);
+        }
+        
+        // Set redirect to documents for home page
+        if (currentPath === '/' || currentPath === '/login') {
+          sessionStorage.setItem('auth_redirect', '/documents');
+        }
+        
+        // Skip normal login and go directly to fallback for better reliability
+        fallbackDirectLogin();
+      }
+    } catch (error) {
+      console.error('Authentication action failed:', error);
+      
+      if (!isAuthenticated) {
+        fallbackDirectLogin();
+      }
+    } finally {
+      // In case the promises resolve before redirect
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 2000);
+    }
+  };
+
+  // Get display text
+  const getButtonText = () => {
+    if (isLoading) {
+      return isAuthenticated ? 'Signing Out...' : 'Signing In...';
+    }
+    
+    if (isAuthenticated && user) {
+      return user.givenName ? `Sign Out` : 'Sign Out';
+    }
+    
+    return label;
   };
 
   return (
@@ -67,8 +153,17 @@ const LoginButton: React.FC<LoginButtonProps> = ({
       onClick={handleClick} 
       className={buttonClasses}
       aria-label={isAuthenticated ? 'Sign Out' : 'Sign In'}
+      disabled={isLoading}
     >
-      {isAuthenticated && user ? `Sign Out ${user.givenName ? `(${user.givenName})` : ''}` : label}
+      {isLoading && (
+        <span className="inline-block mr-2">
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline-block" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+        </span>
+      )}
+      {getButtonText()}
     </button>
   );
 };
