@@ -74,9 +74,9 @@ const PUBLIC_ENDPOINTS = [
 
 // List of endpoints that require authentication
 const AUTH_REQUIRED_ENDPOINTS = [
-    '/api/auth',
-    '/api/user',
-    '/api/documents'
+    '/api/v1/auth',
+    '/api/v1/users',
+    '/documents'  // Keep this as /documents since it's appended to BASE_URL which already has /api/v1
 ];
 
 // List of status codes that can be retried

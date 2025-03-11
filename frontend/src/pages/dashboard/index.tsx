@@ -42,61 +42,223 @@ function Dashboard() {
           <p className="text-gray-500 mt-2">Welcome back, {user?.givenName || user?.username || 'User'}</p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {/* Documents Card */}
-          <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
-            <div className="px-6 py-5 bg-blue-50">
-              <h3 className="text-lg font-medium text-blue-800">Documents</h3>
+        {/* Main Application Section */}
+        <div className="mb-10">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Main Application</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Documents Card */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-blue-50">
+                <h3 className="text-lg font-medium text-blue-800">Documents</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Access and manage your secure documents
+                </p>
+                <Button 
+                  as={Link}
+                  href="/documents"
+                  variant="primary"
+                >
+                  View Documents
+                </Button>
+              </div>
             </div>
-            <div className="px-6 py-5">
-              <p className="text-gray-700 mb-4">
-                Access and manage your secure documents
-              </p>
-              <Button 
-                as={Link}
-                href="/documents"
-                variant="primary"
-              >
-                View Documents
-              </Button>
+
+            {/* Upload Card */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-green-50">
+                <h3 className="text-lg font-medium text-green-800">Upload</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Upload new documents to the system
+                </p>
+                <Button 
+                  as={Link}
+                  href="/documents/upload"
+                  variant="secondary"
+                >
+                  Upload Document
+                </Button>
+              </div>
+            </div>
+
+            {/* Profile Card */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-purple-50">
+                <h3 className="text-lg font-medium text-purple-800">Profile</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  View and update your profile information
+                </p>
+                <Button 
+                  as={Link}
+                  href="/profile"
+                  variant="tertiary"
+                >
+                  View Profile
+                </Button>
+              </div>
             </div>
           </div>
+        </div>
 
-          {/* Upload Card */}
-          <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
-            <div className="px-6 py-5 bg-green-50">
-              <h3 className="text-lg font-medium text-green-800">Upload</h3>
+        {/* Admin Dashboards Section */}
+        <div className="mb-10">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Admin Dashboards</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Grafana */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-orange-50">
+                <h3 className="text-lg font-medium text-orange-800">Grafana</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Visualize system metrics and performance
+                </p>
+                <a 
+                  href="https://grafana.dive25.local:8443"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Open Grafana
+                </a>
+              </div>
             </div>
-            <div className="px-6 py-5">
-              <p className="text-gray-700 mb-4">
-                Upload new documents to the system
-              </p>
-              <Button 
-                as={Link}
-                href="/documents/upload"
-                variant="secondary"
-              >
-                Upload Document
-              </Button>
+
+            {/* Prometheus */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-red-50">
+                <h3 className="text-lg font-medium text-red-800">Prometheus</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Monitor system metrics and alerts
+                </p>
+                <a 
+                  href="https://prometheus.dive25.local:8443"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Open Prometheus
+                </a>
+              </div>
+            </div>
+
+            {/* Kong Admin */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-cyan-50">
+                <h3 className="text-lg font-medium text-cyan-800">Kong Admin</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Manage API gateway and services
+                </p>
+                <a 
+                  href="https://kong.dive25.local:8443/konga"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Open Konga
+                </a>
+              </div>
             </div>
           </div>
+        </div>
 
-          {/* Profile Card */}
-          <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
-            <div className="px-6 py-5 bg-purple-50">
-              <h3 className="text-lg font-medium text-purple-800">Profile</h3>
+        {/* Database Management Section */}
+        <div className="mb-10">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Database Management</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* MongoDB Express */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-green-50">
+                <h3 className="text-lg font-medium text-green-800">MongoDB Express</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Manage MongoDB databases and collections
+                </p>
+                <a 
+                  href="https://mongo-express.dive25.local:8443"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Open MongoDB Express
+                </a>
+              </div>
             </div>
-            <div className="px-6 py-5">
-              <p className="text-gray-700 mb-4">
-                View and update your profile information
-              </p>
-              <Button 
-                as={Link}
-                href="/profile"
-                variant="tertiary"
-              >
-                View Profile
-              </Button>
+
+            {/* LDAP Admin */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-indigo-50">
+                <h3 className="text-lg font-medium text-indigo-800">LDAP Admin</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Manage LDAP directory users and groups
+                </p>
+                <a 
+                  href="https://phpldapadmin.dive25.local:8443"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Open phpLDAPadmin
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Authentication Section */}
+        <div className="mb-10">
+          <h2 className="text-xl font-semibold text-gray-800 mb-4">Authentication & Security</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {/* Keycloak Admin */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-blue-50">
+                <h3 className="text-lg font-medium text-blue-800">Keycloak Admin</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Manage users, roles, and authentication
+                </p>
+                <a 
+                  href="https://keycloak.dive25.local:8443/admin"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Open Keycloak Admin
+                </a>
+              </div>
+            </div>
+
+            {/* OPA Policy Admin */}
+            <div className="bg-white overflow-hidden shadow rounded-lg divide-y divide-gray-200">
+              <div className="px-6 py-5 bg-yellow-50">
+                <h3 className="text-lg font-medium text-yellow-800">OPA Policies</h3>
+              </div>
+              <div className="px-6 py-5">
+                <p className="text-gray-700 mb-4">
+                  Manage authorization policies
+                </p>
+                <a 
+                  href="https://opa.dive25.local:8443"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Access OPA
+                </a>
+              </div>
             </div>
           </div>
         </div>

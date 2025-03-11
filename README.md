@@ -28,6 +28,18 @@ Comprehensive documentation is available in the `docs` directory:
 - [User Guide](docs/user/guide.md) - Using the DIVE25 system
 - [URL Management](URL-MANAGEMENT.md) - How domains and URLs are centrally managed
 
+### Development Tools
+
+- **Document Generation**: Generate sample documents for testing with:
+  ```bash
+  # Generate 300 documents (default)
+  ./scripts/generate-documents.sh
+  
+  # Generate a specific number of documents
+  ./scripts/generate-documents.sh 100
+  ```
+  See [Document Generator README](scripts/README.md) for more details.
+
 ### Technical Documentation
 
 - [API Documentation](docs/technical/api.md) - RESTful API endpoints and usage

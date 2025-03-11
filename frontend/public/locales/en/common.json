@@ -25,5 +25,25 @@
         "loading": "Loading...",
         "error": "An error occurred",
         "success": "Operation successful"
-    }
+    },
+    "security": {
+        "classification": "Classification"
+    },
+    "backToDocuments": "Back to Documents",
+    "formLabels": {
+        "required": "Required"
+    },
+    "footer": {
+        "privacyPolicy": "Privacy Policy",
+        "termsOfService": "Terms of Service",
+        "contact": "Contact Us",
+        "aboutUs": "About Us",
+        "help": "Help Center",
+        "allRightsReserved": "All rights reserved",
+        "securityNotice": "UNCLASSIFIED network. Authorized use only. Usage may be monitored.",
+        "poweredBy": "Powered by",
+        "version": "Version",
+        "feedbackLink": "Submit Feedback"
+    },
+    "appName": "DIVE25"
 }

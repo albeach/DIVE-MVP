@@ -1,0 +1,15 @@
+{
+    "name": "dive25-document-generator",
+    "version": "1.0.0",
+    "description": "Script to generate sample documents for DIVE25 system",
+    "main": "generate-sample-documents.js",
+    "scripts": {
+        "generate": "node generate-sample-documents.js"
+    },
+    "dependencies": {
+        "dotenv": "^10.0.0",
+        "faker": "^5.5.3",
+        "mongoose": "^6.0.12",
+        "uuid": "^8.3.2"
+    }
+}

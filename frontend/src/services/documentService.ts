@@ -46,7 +46,7 @@ export async function fetchDocuments(filters: DocumentFilterParams): Promise<Doc
             queryParams.append('sort', JSON.stringify(filters.sort));
         }
 
-        const response = await apiClient.get(`/documents?${queryParams.toString()}`);
+        const response = await apiClient.get(`/api/v1/documents?${queryParams.toString()}`);
         logger.debug('Documents fetched successfully', response.data.pagination);
         return response.data;
     } catch (error: any) {
@@ -68,7 +68,7 @@ export async function fetchDocuments(filters: DocumentFilterParams): Promise<Doc
 export async function fetchDocumentById(id: string): Promise<Document> {
     try {
         logger.debug(`Fetching document with ID: ${id}`);
-        const response = await apiClient.get(`/documents/${id}`);
+        const response = await apiClient.get(`/api/v1/documents/${id}`);
         logger.debug(`Document ${id} fetched successfully`);
         return response.data.document;
     } catch (error: any) {
@@ -106,7 +106,7 @@ export async function uploadDocument(data: DocumentUploadData): Promise<Document
             policyIdentifier: data.policyIdentifier || 'NATO'
         }));
 
-        const response = await fileClient.post('/documents', formData);
+        const response = await fileClient.post('/api/v1/documents', formData);
 
         const duration = Date.now() - startTime;
         logger.info(`Document upload successful, took ${duration}ms`, {
@@ -137,7 +137,7 @@ export async function uploadDocument(data: DocumentUploadData): Promise<Document
 export async function deleteDocument(id: string): Promise<void> {
     try {
         logger.debug(`Deleting document with ID: ${id}`);
-        await apiClient.delete(`/documents/${id}`);
+        await apiClient.delete(`/api/v1/documents/${id}`);
         logger.info(`Document ${id} deleted successfully`);
     } catch (error: any) {
         logger.error(`Error deleting document ${id}`, error);
@@ -159,7 +159,7 @@ export async function deleteDocument(id: string): Promise<void> {
 export async function downloadDocument(id: string): Promise<Blob> {
     try {
         logger.debug(`Downloading document with ID: ${id}`);
-        const response = await fileClient.get(`/documents/${id}/download`, {
+        const response = await fileClient.get(`/api/v1/documents/${id}/download`, {
             responseType: 'blob'
         });
         logger.debug(`Document ${id} downloaded successfully`);
@@ -184,7 +184,7 @@ export async function downloadDocument(id: string): Promise<Blob> {
 export async function previewDocument(id: string): Promise<Blob> {
     try {
         logger.debug(`Previewing document with ID: ${id}`);
-        const response = await fileClient.get(`/documents/${id}/preview`, {
+        const response = await fileClient.get(`/api/v1/documents/${id}/preview`, {
             responseType: 'blob'
         });
         logger.debug(`Document ${id} preview generated successfully`);
