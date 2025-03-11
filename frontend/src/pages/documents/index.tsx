@@ -13,7 +13,7 @@ import { withAuth } from '@/components/hoc/withAuth';
 import { SecurityBanner } from '@/components/security/SecurityBanner';
 import { DocumentFilterParams } from '@/types/document';
 import Link from 'next/link';
-import { PlusIcon } from '@heroicons/react/24/outline';
+import { PlusIcon, ArrowPathIcon, DocumentIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
 
 function Documents() {
   const { t } = useTranslation(['common', 'documents']);
@@ -22,12 +22,14 @@ function Documents() {
     limit: 10,
     sort: { uploadDate: -1 }
   });
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const { 
     data, 
     isLoading, 
     isError, 
-    error 
+    error,
+    refetch
   } = useDocuments(filters);
 
   // Reset to first page when filters change (except pagination)
@@ -56,7 +58,20 @@ function Documents() {
       ...prevFilters,
       page: newPage
     }));
+    // Scroll to the top of the document list
+    const documentList = document.getElementById('document-list');
+    if (documentList) {
+      documentList.scrollIntoView({ behavior: 'smooth' });
+    }
   };
+
+  const handleRefresh = () => {
+    setRefreshKey(prev => prev + 1);
+    refetch();
+  };
+
+  const totalDocuments = data?.pagination?.total || 0;
+  const hasFilters = !!(filters.classification || filters.country || filters.fromDate || filters.toDate || filters.search);
 
   return (
     <>
@@ -66,55 +81,134 @@ function Documents() {
 
       <SecurityBanner />
 
-      <div className="px-4 sm:px-6 lg:px-8 py-6">
-        <div className="sm:flex sm:items-center sm:justify-between">
-          <h1 className="text-2xl font-bold text-gray-900">{t('documents:title')}</h1>
-          <Button
-            as={Link}
-            href="/documents/upload"
-            variant="primary"
-            className="mt-3 sm:mt-0"
-          >
-            <PlusIcon className="h-5 w-5 mr-2" />
-            {t('documents:upload')}
-          </Button>
-        </div>
-
-        <DocumentFilter 
-          filters={filters} 
-          onFilterChange={handleFilterChange} 
-        />
-
-        {isLoading ? (
-          <div className="flex justify-center my-12">
-            <Spinner size="lg" />
-          </div>
-        ) : isError ? (
-          <div className="rounded-md bg-red-50 p-4 my-6">
-            <div className="flex">
-              <div className="ml-3">
-                <h3 className="text-sm font-medium text-red-800">
-                  {t('errors.failedToLoadDocuments')}
-                </h3>
-                <div className="mt-2 text-sm text-red-700">
-                  <p>{error instanceof Error ? error.message : t('errors.unknownError')}</p>
-                </div>
+      <div className="min-h-screen bg-gray-50 pb-12">
+        <div className="bg-white shadow-sm border-b border-gray-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+            <div className="sm:flex sm:items-center sm:justify-between">
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">{t('documents:title')}</h1>
+                {totalDocuments > 0 && (
+                  <p className="mt-1 text-sm text-gray-500">
+                    {t('documents:totalDocuments', { count: totalDocuments })}
+                  </p>
+                )}
+              </div>
+              <div className="mt-4 sm:mt-0 flex space-x-3">
+                <Button
+                  onClick={handleRefresh}
+                  variant="secondary"
+                  className="rounded-md"
+                  disabled={isLoading}
+                >
+                  <ArrowPathIcon className={`h-5 w-5 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                  {t('common:actions.refresh')}
+                </Button>
+                <Button
+                  as={Link}
+                  href="/documents/upload"
+                  variant="primary"
+                  className="rounded-md"
+                >
+                  <PlusIcon className="h-5 w-5 mr-2" />
+                  {t('documents:upload')}
+                </Button>
               </div>
             </div>
           </div>
-        ) : data?.documents.length === 0 ? (
-          <div className="text-center my-12">
-            <p className="mt-1 text-gray-500">
-              {t('documents:noDocumentsFound')}
-            </p>
-          </div>
-        ) : (
-          <DocumentList
-            documents={data?.documents || []}
-            pagination={data?.pagination}
-            onPageChange={handlePageChange}
+        </div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <DocumentFilter 
+            filters={filters} 
+            onFilterChange={handleFilterChange} 
           />
-        )}
+
+          <div id="document-list" className="mt-6">
+            {isLoading ? (
+              <div className="bg-white rounded-lg shadow px-6 py-12 flex flex-col items-center justify-center">
+                <Spinner size="lg" />
+                <p className="mt-4 text-sm text-gray-500">{t('common:messages.loading')}</p>
+              </div>
+            ) : isError ? (
+              <div className="bg-white rounded-lg shadow px-6 py-12">
+                <div className="rounded-md bg-red-50 p-4">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <ExclamationCircleIcon className="h-5 w-5 text-red-400" aria-hidden="true" />
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-red-800">
+                        {t('documents:errorLoadingDocuments', 'Error loading documents')}
+                      </h3>
+                      <div className="mt-2 text-sm text-red-700">
+                        <p>{error instanceof Error ? error.message : t('common:messages.error')}</p>
+                      </div>
+                      <div className="mt-4">
+                        <Button
+                          onClick={handleRefresh}
+                          variant="primary"
+                          size="sm"
+                          className="rounded-md"
+                        >
+                          {t('common:actions.retry')}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : data?.documents.length === 0 ? (
+              <div className="bg-white rounded-lg shadow px-6 py-12 text-center">
+                <DocumentIcon className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">
+                  {hasFilters 
+                    ? t('documents:noDocumentsFoundFiltered', 'No documents match your filters') 
+                    : t('documents:noDocumentsFound')}
+                </h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  {hasFilters 
+                    ? t('documents:tryAdjustingFilters', 'Try adjusting your filters or uploading a new document.')
+                    : t('documents:getStartedUploading', 'Get started by uploading your first document.')}
+                </p>
+                <div className="mt-6">
+                  {hasFilters ? (
+                    <Button
+                      onClick={() => handleFilterChange({
+                        classification: undefined,
+                        country: undefined,
+                        fromDate: undefined,
+                        toDate: undefined,
+                        search: undefined
+                      })}
+                      variant="secondary"
+                      className="rounded-md"
+                    >
+                      {t('documents:clearAllFilters', 'Clear all filters')}
+                    </Button>
+                  ) : (
+                    <Button
+                      as={Link}
+                      href="/documents/upload"
+                      variant="primary"
+                      className="rounded-md"
+                    >
+                      <PlusIcon className="h-5 w-5 mr-2" />
+                      {t('documents:upload')}
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-lg shadow">
+                <DocumentList
+                  documents={data?.documents || []}
+                  pagination={data?.pagination}
+                  onPageChange={handlePageChange}
+                />
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </>
   );

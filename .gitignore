@@ -89,3 +89,9 @@ certs/
 frontend/.next/*
 frontend/node_modules/
 frontend/dist/
+frontend/.next/server/*
+frontend/.next/static/*
+frontend/.next/cache/*
+frontend/.next/trace/*
+frontend/.next/build-static-cache/*
+frontend/.next/build-static-cache/*

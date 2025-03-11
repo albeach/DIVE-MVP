@@ -18,13 +18,36 @@
         "create": "Create",
         "upload": "Upload",
         "download": "Download",
-        "search": "Search"
+        "search": "Search",
+        "refresh": "Refresh",
+        "retry": "Retry",
+        "view": "View",
+        "title": "Actions",
+        "filter": "Filter",
+        "apply": "Apply",
+        "clear": "Clear"
     },
     "messages": {
         "welcome": "Welcome to DIVE25",
         "loading": "Loading...",
         "error": "An error occurred",
-        "success": "Operation successful"
+        "success": "Operation successful",
+        "unknownError": "An unknown error occurred"
+    },
+    "pagination": {
+        "previous": "Previous",
+        "next": "Next",
+        "page": "Page {{page}}",
+        "of": "of {{total}}",
+        "showing": "Showing",
+        "to": "to",
+        "results": "results",
+        "aria": {
+            "goToPage": "Go to page {{page}}",
+            "currentPage": "Current page, page {{page}}",
+            "previousPage": "Go to previous page",
+            "nextPage": "Go to next page"
+        }
     },
     "security": {
         "classification": "Classification"
@@ -32,6 +55,11 @@
     "backToDocuments": "Back to Documents",
     "formLabels": {
         "required": "Required"
+    },
+    "errors": {
+        "failedToLoadDocuments": "Failed to load documents",
+        "unknownError": "An unknown error occurred",
+        "tryAgain": "Please try again later"
     },
     "footer": {
         "privacyPolicy": "Privacy Policy",
@@ -45,5 +73,6 @@
         "version": "Version",
         "feedbackLink": "Submit Feedback"
     },
-    "appName": "DIVE25"
+    "appName": "DIVE25",
+    "retry": "Retry"
 }

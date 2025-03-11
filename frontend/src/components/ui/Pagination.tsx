@@ -48,12 +48,13 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
   const pageNumbers = getPageNumbers();
   
   return (
-    <nav className="flex items-center justify-between border-t border-gray-200 px-4 sm:px-0">
+    <nav className="flex items-center justify-between border-t border-gray-200 px-4 sm:px-0" aria-label="Pagination">
       <div className="-mt-px w-0 flex-1 flex">
         <button
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage === 1}
           className="border-t-2 border-transparent pt-4 pr-1 inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label={t('pagination.aria.previousPage')}
         >
           <ChevronLeftIcon className="mr-3 h-5 w-5" aria-hidden="true" />
           {t('pagination.previous')}
@@ -67,9 +68,13 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
               onClick={() => onPageChange(page)}
               className={`${
                 page === currentPage
-                  ? 'border-dive25-500 text-dive25-600'
+                  ? 'border-indigo-500 text-indigo-600'
                   : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
               } border-t-2 pt-4 px-4 inline-flex items-center text-sm font-medium`}
+              aria-label={page === currentPage 
+                ? t('pagination.aria.currentPage', { page }) 
+                : t('pagination.aria.goToPage', { page })}
+              aria-current={page === currentPage ? 'page' : undefined}
             >
               {page}
             </button>
@@ -77,6 +82,7 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
             <span
               key={index}
               className="border-transparent text-gray-500 border-t-2 pt-4 px-4 inline-flex items-center text-sm font-medium"
+              aria-hidden="true"
             >
               {page}
             </span>
@@ -88,10 +94,16 @@ export function Pagination({ currentPage, totalPages, onPageChange }: Pagination
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage === totalPages}
           className="border-t-2 border-transparent pt-4 pl-1 inline-flex items-center text-sm font-medium text-gray-500 hover:text-gray-700 hover:border-gray-300 disabled:opacity-50 disabled:cursor-not-allowed"
+          aria-label={t('pagination.aria.nextPage')}
         >
           {t('pagination.next')}
           <ChevronRightIcon className="ml-3 h-5 w-5" aria-hidden="true" />
         </button>
+      </div>
+      <div className="md:hidden mt-2 flex justify-center items-center text-sm text-gray-500">
+        <span>
+          {t('pagination.page', { page: currentPage })} {t('pagination.of', { total: totalPages })}
+        </span>
       </div>
     </nav>
   );
