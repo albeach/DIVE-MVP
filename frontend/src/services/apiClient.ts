@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { API_CONFIG } from '@/lib/config';
 import { createLogger } from '@/utils/logger';
+import { toast } from 'react-hot-toast';
 
 // Create a logger for API client
 const logger = createLogger('ApiClient');
@@ -116,7 +117,54 @@ const requiresAuth = (url?: string): boolean => {
 // Helper to get the Keycloak token
 const getAuthToken = (): string | null => {
     const keycloakInstance = window.__keycloak;
-    return keycloakInstance?.token || null;
+
+    if (!keycloakInstance) {
+        logger.warn('Keycloak instance not available when requesting token');
+        return null;
+    }
+
+    if (!keycloakInstance.authenticated) {
+        logger.warn('Keycloak is not in authenticated state when requesting token');
+        return null;
+    }
+
+    // Check if token has expired or is about to expire
+    const tokenParsed = keycloakInstance.tokenParsed;
+    if (tokenParsed && tokenParsed.exp) {
+        const currentTime = Math.floor(Date.now() / 1000);
+        const tokenExp = tokenParsed.exp;
+        const timeToExpire = tokenExp - currentTime;
+
+        if (timeToExpire <= 0) {
+            logger.warn('Token has expired, attempting refresh');
+            // Don't return expired token - this prevents 401 errors from expired tokens
+            return null;
+        }
+
+        // If token is about to expire, log it but still return token
+        // The interceptor will handle refreshing if needed
+        if (timeToExpire < 60) {
+            logger.warn(`Token expiring soon (${timeToExpire}s), refresh needed`);
+        }
+    }
+
+    return keycloakInstance.token || null;
+};
+
+// Check if we need to refresh the token before making a request
+const ensureFreshToken = async (): Promise<boolean> => {
+    const keycloakInstance = window.__keycloak;
+    if (!keycloakInstance || !keycloakInstance.authenticated) {
+        return false;
+    }
+
+    try {
+        const refreshed = await keycloakInstance.updateToken(30);
+        return refreshed;
+    } catch (error) {
+        logger.error('Failed to refresh token:', error);
+        return false;
+    }
 };
 
 // Standardized error handler
@@ -217,41 +265,32 @@ const refreshAuthToken = async (): Promise<boolean> => {
     isRefreshing = true;
     logger.debug('Refreshing auth token');
 
-    refreshPromise = keycloakInstance.updateToken(TOKEN_REFRESH_TIMEOUT)
-        .then((refreshed: boolean) => {
-            logger.debug(`Token refresh ${refreshed ? 'complete' : 'not needed'}`);
-            isRefreshing = false;
-
+    const retryRefreshToken = async (retries: number, delay: number): Promise<boolean> => {
+        try {
+            const refreshed = await keycloakInstance.updateToken(TOKEN_REFRESH_TIMEOUT);
             if (refreshed && keycloakInstance.token) {
-                // Update tokens in storage
                 sessionStorage.setItem('kc_token', keycloakInstance.token);
                 if (keycloakInstance.refreshToken) {
                     sessionStorage.setItem('kc_refreshToken', keycloakInstance.refreshToken);
                 }
-
-                // Notify subscribers
                 onTokenRefreshed(keycloakInstance.token);
             }
-
-            return true; // Always return a boolean value
-        })
-        .catch((error: any) => {
-            logger.error('Token refresh failed', error);
-            isRefreshing = false;
-
-            if (keycloakInstance?.authenticated) {
-                // Store current path for redirect after login
-                sessionStorage.setItem('auth_redirect', window.location.pathname + window.location.search);
-
-                // Attempt to logout and redirect to login 
-                setTimeout(() => {
-                    keycloakInstance.login();
-                }, 500);
+            return true;
+        } catch (error) {
+            if (retries > 0) {
+                logger.warn(`Token refresh failed, retrying in ${delay}ms`, error);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return retryRefreshToken(retries - 1, delay * 2);
+            } else {
+                logger.error('Token refresh failed after retries', error);
+                toast.error('Session expired. Please log in again.');
+                keycloakInstance.login();
+                return false;
             }
+        }
+    };
 
-            return false;
-        });
-
+    refreshPromise = retryRefreshToken(MAX_RETRY_ATTEMPTS, RETRY_DELAY);
     return refreshPromise || Promise.resolve(false);
 };
 
@@ -274,13 +313,37 @@ apiClient.interceptors.request.use(
         // Auth paths that need authentication
         const needsAuth = requiresAuth(config.url);
 
+        // Try to refresh token if needed before making request 
+        if (needsAuth) {
+            await ensureFreshToken();
+        }
+
         // Get token from Keycloak if available
         const token = getAuthToken();
         if (token) {
             config.headers.set('Authorization', `Bearer ${token}`);
+
+            // Debug auth token info for document requests
+            if (config.url && config.url.includes('/documents')) {
+                const tokenInfo = {
+                    keycloakAvailable: !!window.__keycloak,
+                    authenticated: window.__keycloak?.authenticated,
+                    tokenLength: token.length,
+                    tokenStart: token.substring(0, 10) + '...',
+                    url: config.url
+                };
+                logger.debug('Auth debug - Document request with token:', tokenInfo);
+            }
         } else if (needsAuth) {
             // If auth is needed but not available, store the current location for after login
             sessionStorage.setItem('auth_redirect', window.location.pathname);
+            logger.warn('Auth token needed but not available for:', config.url);
+
+            // For document endpoints, we need to handle differently to avoid constant errors
+            if (config.url && config.url.includes('/documents')) {
+                // Create a custom error that will be caught in the response interceptor
+                throw new Error('Authentication required for document access');
+            }
         }
 
         logger.debug(`Making API request to ${config.url}`);
@@ -292,7 +355,7 @@ apiClient.interceptors.request.use(
     }
 );
 
-// Use the same interceptor for file client
+// Use the same interceptor for file client but with refreshed token handling
 fileClient.interceptors.request.use(
     async (config: InternalAxiosRequestConfig) => {
         const extendedConfig = config as ExtendedAxiosRequestConfig;
@@ -303,13 +366,21 @@ fileClient.interceptors.request.use(
         // Add performance tracking header
         config.headers.set('X-Request-Start', Date.now().toString());
 
+        // Try to refresh token before file operations (which are always authenticated)
+        await ensureFreshToken();
+
         // Get token from Keycloak if available
         const token = getAuthToken();
         if (token) {
             config.headers.set('Authorization', `Bearer ${token}`);
+            logger.debug(`File request to ${config.url} with valid token`);
+        } else {
+            // File operations always need authentication
+            sessionStorage.setItem('auth_redirect', window.location.pathname);
+            logger.warn('Auth token needed but not available for file operation:', config.url);
+            throw new Error('Authentication required for file operation');
         }
 
-        logger.debug(`Making file request to ${config.url}`);
         return config;
     },
     (error) => {
@@ -369,41 +440,24 @@ apiClient.interceptors.response.use(
 
         if (error.response?.status === 401 && originalRequest && !originalRequest._retry && keycloakInstance) {
             originalRequest._retry = true;
-            logger.debug('401 Unauthorized response, attempting token refresh');
-
-            // Check if Keycloak instance exists and is properly initialized
-            if (!keycloakInstance.authenticated) {
-                // Not authenticated - we need to log in
-                logger.warn('Keycloak not authenticated, redirecting to login');
-                sessionStorage.setItem('auth_redirect', window.location.pathname);
-
-                // Let the UI handle the redirect to login
-                return Promise.reject(apiError);
-            }
 
             try {
-                // Try to refresh the token
                 const refreshed = await refreshAuthToken();
 
                 if (refreshed) {
-                    // Update the request with the new token
                     originalRequest.headers.set('Authorization', `Bearer ${keycloakInstance.token}`);
-
-                    // Reset any retry count for the fresh token
                     originalRequest._retryCount = 0;
-
-                    // Retry the request
                     return axios(originalRequest);
                 } else {
-                    // Refresh failed, redirect to login
                     sessionStorage.setItem('auth_redirect', window.location.pathname);
+                    toast.error('Session expired. Redirecting to login...');
                     keycloakInstance.login();
                     return Promise.reject(apiError);
                 }
             } catch (refreshError) {
                 logger.error('Token refresh exception', refreshError);
-
-                // Session expired, redirect to login
+                toast.error('Unable to refresh session. Redirecting to login.');
+                sessionStorage.setItem('auth_redirect', window.location.pathname);
                 keycloakInstance.login();
                 return Promise.reject(apiError);
             }

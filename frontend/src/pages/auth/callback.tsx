@@ -30,14 +30,45 @@ export default function AuthCallback() {
         const urlParams = new URLSearchParams(window.location.search);
         const code = urlParams.get('code');
         const sessionState = urlParams.get('session_state');
+        const error = urlParams.get('error');
+        const errorDescription = urlParams.get('error_description');
         
-        logger.debug('Auth params from URL:', { code: !!code, sessionState: !!sessionState });
-        
-        if (!code) {
-          throw new Error('No authentication code found in URL');
+        logger.debug('Auth params from URL:', { 
+          code: !!code, 
+          sessionState: !!sessionState,
+          error: error,
+          errorDescription: errorDescription
+        });
+
+        // If there's an explicit error in the URL, handle it
+        if (error) {
+          throw new Error(`Keycloak error: ${error} - ${errorDescription || 'No description'}`);
         }
         
-        logger.debug('Initializing Keycloak with callback parameters');
+        // Handle case where no code is present but we might already be authenticated
+        if (!code) {
+          logger.debug('No authentication code found in URL, checking if already authenticated');
+          
+          // Check if we have a token in session storage
+          const existingToken = sessionStorage.getItem(SESSION_STORAGE_TOKEN_KEY);
+          if (existingToken) {
+            logger.debug('Token found in session storage, using existing authentication');
+            setAuthenticated(true);
+            
+            // Get redirect path from session or default to documents
+            const redirectPath = sessionStorage.getItem('auth_redirect') || '/documents';
+            sessionStorage.removeItem('auth_redirect');
+            
+            logger.debug('Using existing authentication, redirecting to:', redirectPath);
+            
+            setTimeout(() => {
+              router.push(redirectPath);
+            }, 1000);
+            return;
+          }
+        }
+        
+        logger.debug('Initializing Keycloak to handle authentication callback');
         
         // Get Keycloak instance
         const keycloakInstance = getKeycloak();
@@ -46,13 +77,14 @@ export default function AuthCallback() {
         const options: Keycloak.KeycloakInitOptions = {
           enableLogging: true,
           pkceMethod: 'S256',
-          onLoad: 'login-required' as Keycloak.KeycloakOnLoad,
+          onLoad: 'check-sso' as Keycloak.KeycloakOnLoad, // Changed from login-required to check-sso
           checkLoginIframe: false,
           flow: 'standard',
           responseMode: 'query'
         };
         
         // Initialize with login required to process the code
+        logger.debug('Attempting Keycloak initialization with options', options);
         const success = await keycloakInstance.init(options);
         logger.debug('Keycloak initialization result:', success);
         
@@ -82,9 +114,18 @@ export default function AuthCallback() {
           
           // Redirect to the intended page with a small delay
           setTimeout(() => {
-            window.location.href = redirectPath;
+            router.push(redirectPath);
           }, 1000);
         } else {
+          // If we don't have a code and initialization was not successful, try direct login
+          if (!code) {
+            logger.debug('No code and not authenticated, initiating login');
+            keycloakInstance.login({
+              redirectUri: window.location.origin + '/auth/callback'
+            });
+            return;
+          }
+          
           logger.error('Authentication failed after initialization');
           setError('Failed to complete authentication. Please try again.');
           setIsProcessing(false);

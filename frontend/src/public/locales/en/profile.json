@@ -16,5 +16,12 @@
     "active": "Active",
     "showTokenInfo": "Show Token Information",
     "hideTokenInfo": "Hide Token Information",
-    "tokenInfoWarning": "This information is sensitive and for debugging purposes only."
+    "tokenInfoWarning": "This information is sensitive and for debugging purposes only.",
+    "userDetails": "User Details",
+    "securityInformation": "Security Information",
+    "restrictedAccess": "Restricted Access",
+    "developerTools": "Developer Tools",
+    "noCaveatsAssigned": "No caveats assigned",
+    "noCommunitiesAssigned": "No communities assigned",
+    "noRolesAssigned": "No roles assigned"
 }

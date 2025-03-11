@@ -46,14 +46,42 @@ export async function fetchDocuments(filters: DocumentFilterParams): Promise<Doc
             queryParams.append('sort', JSON.stringify(filters.sort));
         }
 
-        const response = await apiClient.get(`/api/v1/documents?${queryParams.toString()}`);
+        const response = await apiClient.get(`/documents?${queryParams.toString()}`);
         logger.debug('Documents fetched successfully', response.data.pagination);
         return response.data;
     } catch (error: any) {
         logger.error('Error fetching documents', error);
         const apiError = error as ApiError;
 
-        // Throw a more specific error based on the type
+        // Handle 401 Unauthorized separately
+        if (apiError.type === ApiErrorType.UNAUTHORIZED) {
+            logger.warn('Authentication required for document access - redirecting to login');
+
+            // If we have a Keycloak instance, try to login
+            if (window.__keycloak) {
+                // Store the current page for redirect after login
+                sessionStorage.setItem('auth_redirect', window.location.pathname);
+
+                // Attempt to refresh token first
+                try {
+                    const refreshed = await window.__keycloak.updateToken(30);
+                    if (refreshed) {
+                        // If refreshed successfully, retry the request
+                        logger.info('Token refreshed successfully, retrying document fetch');
+                        return fetchDocuments(filters);
+                    }
+                } catch (refreshError) {
+                    logger.error('Token refresh failed', refreshError);
+                }
+
+                // If refresh failed or didn't happen, redirect to login
+                window.__keycloak.login();
+            }
+
+            throw new Error('Authentication required to view documents');
+        }
+
+        // Handle other error types
         if (apiError.type === ApiErrorType.FORBIDDEN) {
             throw new Error('You do not have permission to view these documents');
         }
@@ -68,7 +96,7 @@ export async function fetchDocuments(filters: DocumentFilterParams): Promise<Doc
 export async function fetchDocumentById(id: string): Promise<Document> {
     try {
         logger.debug(`Fetching document with ID: ${id}`);
-        const response = await apiClient.get(`/api/v1/documents/${id}`);
+        const response = await apiClient.get(`/documents/${id}`);
         logger.debug(`Document ${id} fetched successfully`);
         return response.data.document;
     } catch (error: any) {
@@ -106,7 +134,7 @@ export async function uploadDocument(data: DocumentUploadData): Promise<Document
             policyIdentifier: data.policyIdentifier || 'NATO'
         }));
 
-        const response = await fileClient.post('/api/v1/documents', formData);
+        const response = await fileClient.post('/documents', formData);
 
         const duration = Date.now() - startTime;
         logger.info(`Document upload successful, took ${duration}ms`, {
@@ -137,7 +165,7 @@ export async function uploadDocument(data: DocumentUploadData): Promise<Document
 export async function deleteDocument(id: string): Promise<void> {
     try {
         logger.debug(`Deleting document with ID: ${id}`);
-        await apiClient.delete(`/api/v1/documents/${id}`);
+        await apiClient.delete(`/documents/${id}`);
         logger.info(`Document ${id} deleted successfully`);
     } catch (error: any) {
         logger.error(`Error deleting document ${id}`, error);
@@ -159,7 +187,7 @@ export async function deleteDocument(id: string): Promise<void> {
 export async function downloadDocument(id: string): Promise<Blob> {
     try {
         logger.debug(`Downloading document with ID: ${id}`);
-        const response = await fileClient.get(`/api/v1/documents/${id}/download`, {
+        const response = await fileClient.get(`/documents/${id}/download`, {
             responseType: 'blob'
         });
         logger.debug(`Document ${id} downloaded successfully`);
@@ -184,7 +212,7 @@ export async function downloadDocument(id: string): Promise<Blob> {
 export async function previewDocument(id: string): Promise<Blob> {
     try {
         logger.debug(`Previewing document with ID: ${id}`);
-        const response = await fileClient.get(`/api/v1/documents/${id}/preview`, {
+        const response = await fileClient.get(`/documents/${id}/preview`, {
             responseType: 'blob'
         });
         logger.debug(`Document ${id} preview generated successfully`);

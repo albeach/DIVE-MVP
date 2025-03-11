@@ -43,7 +43,7 @@ app.use(helmet({
 app.use((req, res, next) => {
     // For Swagger UI compatibility
     res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, X-Request-Start');
     res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.header('Access-Control-Allow-Credentials', 'true');
 
@@ -67,7 +67,7 @@ app.use(cors({
         }
     },
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Request-Start'],
     credentials: true,
     maxAge: 86400 // 24 hours
 }));
@@ -84,15 +84,36 @@ setupPrometheusMetrics(app);
 // Add token expiration check middleware (must be before routes)
 app.use(tokenExpirationCheck);
 
-// Apply API routes
+// Add debug endpoint
+app.get('/api/v1/debug/auth', (req, res) => {
+    const authHeader = req.headers.authorization;
+    logger.info('Debug auth request received', {
+        authHeader: authHeader ? 'Present' : 'Missing',
+        authHeaderPrefix: authHeader ? authHeader.substring(0, 15) + '...' : 'N/A',
+        path: req.path,
+        method: req.method,
+        url: req.url,
+        origin: req.headers.origin,
+        referer: req.headers.referer
+    });
+
+    res.json({
+        auth: !!authHeader,
+        message: 'Auth debug endpoint',
+        timestamp: new Date().toISOString()
+    });
+});
+
+// Register routes - only use one approach for route registration
+// Using the combined router approach
 app.use('/api/v1', routes);
 
-// Register routes
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/v1/users', userRoutes);
-app.use('/api/v1/documents', documentRoutes);
-app.use('/health', healthRoutes);
-app.use('/api/v1/ldap', ldapRoutes);
+// These are redundant and might cause issues, commenting them out
+// app.use('/api/v1/auth', authRoutes);
+// app.use('/api/v1/users', userRoutes);
+// app.use('/api/v1/documents', documentRoutes);
+app.use('/health', healthRoutes);  // Keep this as it's not part of /api/v1
+// app.use('/api/v1/ldap', ldapRoutes);
 
 // Serve Swagger UI
 swagger.serve(app);

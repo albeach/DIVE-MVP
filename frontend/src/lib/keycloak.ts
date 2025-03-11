@@ -64,9 +64,7 @@ const keycloakInit = () => {
 
     // Override Keycloak's URL with our cleaned version if needed
     if (keycloak.authServerUrl && keycloak.authServerUrl.endsWith('/auth')) {
-        const cleanUrl = removeAuthPathFromUrl(keycloak.authServerUrl);
-        // We can't modify keycloak.authServerUrl directly, so log a warning
-        logger.warn(`Keycloak's authServerUrl contains '/auth': ${keycloak.authServerUrl}`);
+        logger.warn(`Keycloak's authServerUrl contains '/auth': ${keycloak.authServerUrl}. Please correct this in Keycloak configuration or environment variables.`);
     }
 
     // Set custom theme in login options

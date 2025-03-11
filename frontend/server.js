@@ -18,6 +18,16 @@ const hostname = process.env.HOSTNAME || '0.0.0.0';
 const sslCertPath = process.env.SSL_CERT_PATH || '/app/certs/tls.crt';
 const sslKeyPath = process.env.SSL_KEY_PATH || '/app/certs/tls.key';
 
+// Define the API proxy path based on environment variables
+const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'https://api.dive25.local:8443/api/v1';
+console.log(`Frontend API proxy set to: ${apiUrl}`);
+
+// Print debug info about the current environment
+console.log('Environment variables:');
+console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
+console.log(`NEXT_PUBLIC_KEYCLOAK_URL: ${process.env.NEXT_PUBLIC_KEYCLOAK_URL}`);
+console.log(`NEXT_PUBLIC_API_URL: ${apiUrl}`);
+
 app.prepare().then(() => {
     let server;
 

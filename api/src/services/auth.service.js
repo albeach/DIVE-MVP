@@ -59,13 +59,21 @@ const getPublicKey = (kid) => {
  */
 const verifyToken = async (token) => {
     try {
-        // Token format: Bearer <token>
-        const tokenParts = token.split(' ');
-        if (tokenParts.length !== 2 || tokenParts[0] !== 'Bearer') {
-            throw new ApiError('Invalid token format', 401);
+        let tokenValue = token;
+
+        // Handle case where token might still be in Bearer format
+        if (token.startsWith('Bearer ')) {
+            logger.debug('Token in Bearer format, extracting token');
+            const tokenParts = token.split(' ');
+            if (tokenParts.length !== 2) {
+                logger.warn('Invalid token format (Bearer prefix but incomplete)');
+                throw new ApiError('Invalid token format', 401);
+            }
+            tokenValue = tokenParts[1];
         }
 
-        const tokenValue = tokenParts[1];
+        // Debug token length
+        logger.debug(`Verifying token: length ${tokenValue.length}, starts with ${tokenValue.substring(0, 10)}...`);
 
         // Check if token is in cache
         const cachedResult = tokenCache.get(tokenValue);
@@ -81,10 +89,16 @@ const verifyToken = async (token) => {
         // Decode token without verification to extract header
         const decodedToken = jwt.decode(tokenValue, { complete: true });
         if (!decodedToken) {
+            logger.warn('Token decode failed - invalid format');
             const error = new ApiError('Invalid token', 401);
             tokenCache.set(tokenValue, error); // Cache the error too
             throw error;
         }
+
+        logger.debug('Token header decoded', {
+            kid: decodedToken.header.kid,
+            alg: decodedToken.header.alg
+        });
 
         // Get the public key from Keycloak
         const getKey = async (header, callback) => {
@@ -92,6 +106,7 @@ const verifyToken = async (token) => {
                 const signingKey = await getPublicKey(header.kid);
                 callback(null, signingKey);
             } catch (err) {
+                logger.error('Error getting public key', err);
                 callback(err);
             }
         };
