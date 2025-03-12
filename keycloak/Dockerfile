@@ -16,8 +16,8 @@ USER root
 # Copy themes
 COPY ./themes/dive25 /opt/keycloak/themes/dive25
 
-# Install curl for healthchecks and scripting
-RUN yum install -y curl hostname || dnf install -y curl hostname || microdnf install -y curl hostname || echo "Failed to install curl"
+# Note: This container does not include curl. The configure-keycloak.sh script now
+# uses the curl-tools container for all HTTP requests instead of requiring curl directly.
 
 # Ensure the theme's JavaScript directory exists
 RUN mkdir -p /opt/keycloak/themes/dive25/login/resources/js

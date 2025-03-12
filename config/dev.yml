@@ -1,0 +1,66 @@
+# DIVE25 Development Environment Configuration
+
+# Environment Settings
+environment: development
+base_domain: localhost
+use_https: false
+protocol: http
+
+# Domain Settings (subdomains for each service)
+domains:
+  frontend: frontend
+  api: api
+  keycloak: keycloak
+  kong: kong
+  grafana: grafana
+  mongodb_express: mongo-express
+  phpldapadmin: phpldapadmin
+  prometheus: prometheus
+  opa: opa
+  konga: konga
+  mongodb_exporter: mongodb-exporter
+  node_exporter: node-exporter
+
+# External Ports (exposed to host machine)
+# Development uses different ports to avoid conflicts with other services
+external_ports:
+  frontend: 3001
+  api: 3002
+  keycloak: 8080
+  kong_proxy: 8000
+  kong_proxy_https: 8443
+  kong_admin: 8001
+  kong_admin_https: 8444
+  grafana: 3100
+  mongodb_express: 8081
+  phpldapadmin: 8082
+  prometheus: 9090
+  opa: 8181
+  konga: 1337
+  mongodb_exporter: 9216
+  node_exporter: 9100
+
+# CORS Configuration
+cors:
+  allowed_origins:
+    - http://localhost:3001
+    - http://localhost:3002
+    - http://localhost:8080
+    - http://localhost:8000
+    - http://frontend.localhost:3001
+    - http://api.localhost:3002
+    - http://keycloak.localhost:8080
+
+# SSL/TLS Configuration (for development - self-signed)
+ssl:
+  cert_path: ./certs/dev-cert.pem
+  key_path: ./certs/dev-key.pem
+
+# Logging Configuration (more verbose for development)
+logging:
+  level: debug
+
+# Rate Limiting (more permissive for development)
+rate_limits:
+  per_minute: 300
+  per_hour: 15000 

@@ -45,34 +45,6 @@ services:
       - dive25-admin
       - dive25-data  # Needs access to MongoDB
 
-  # curl tools container for debugging and API interactions
-  curl-tools:
-    build:
-      context: ./tools
-      dockerfile: Dockerfile.curl
-    container_name: dive25-curl-tools
-    volumes:
-      - ./tools:/workdir
-      - keycloak_config_data:/keycloak-data
-    networks:
-      - dive25-service
-      - dive25-data
-      - dive25-admin
-      - dive25-public
-    environment:
-      - KEYCLOAK_URL=http://keycloak:8080
-      - KEYCLOAK_ADMIN=admin
-      - KEYCLOAK_ADMIN_PASSWORD=admin
-      - KEYCLOAK_REALM=dive25
-    tty: true
-    stdin_open: true
-    # Keep container running but don't auto-restart
-    restart: "no"
-    # Make this depend on other core services
-    depends_on:
-      keycloak:
-        condition: service_started
-
   # PostgreSQL for Keycloak
   postgres:
     image: postgres:15
@@ -190,19 +162,18 @@ services:
       - keycloak_data:/opt/keycloak/data
       - ./certs:/opt/keycloak/certs:ro
     ports:
-      - "8444:8443"  # External HTTPS access
+      - "8443:8443"  # External HTTPS access
     depends_on:
       postgres:
         condition: service_healthy
     networks:
       - dive25-service
-      - dive25-data  # Added data network for database connection
     healthcheck:
-      test: ["CMD", "/opt/keycloak/bin/kc.sh", "show-config"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
+      test: ["CMD", "curl", "-s", "--fail", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
 
   # Keycloak Configuration
   keycloak-config:
@@ -215,8 +186,6 @@ services:
     depends_on:
       keycloak:
         condition: service_healthy
-      curl-tools:
-        condition: service_started
     volumes:
       - ./keycloak/realm-export.json:/realm-export.json:ro
       - ./keycloak/identity-providers:/identity-providers:ro
@@ -235,7 +204,6 @@ services:
       - KEYCLOAK_CLIENT_ID_API=dive25-api
       - KEYCLOAK_CLIENT_SECRET=change-me-in-production
       - KEYCLOAK_CONTAINER=dive25-staging-keycloak
-      - CURL_TOOLS_CONTAINER=dive25-curl-tools
     networks:
       - dive25-service
     # Only restart in case of failure, not after successful completion
@@ -262,17 +230,24 @@ services:
 
   # Kong Migrations
   kong-migrations:
+    build:
+      context: ./kong
+      dockerfile: Dockerfile
     container_name: dive25-staging-kong-migrations
-    image: kong:latest
     command: kong migrations bootstrap
-    environment:
-      KONG_DATABASE: postgres
-      KONG_PG_HOST: kong-database
-      KONG_PG_USER: kong
-      KONG_PG_PASSWORD: kong_password
-      KONG_PG_DATABASE: kong
     depends_on:
       - kong-database
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: dive25-staging-kong-database
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      # Add environment variables for configuration template
+      BASE_DOMAIN: dive25.local
+      INTERNAL_FRONTEND_URL: http://frontend:3000
+      INTERNAL_API_URL: http://api:3000
+      INTERNAL_KEYCLOAK_URL: http://keycloak:8080
+      PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443
     networks:
       - dive25-data
     restart: on-failure
@@ -340,7 +315,28 @@ services:
     networks:
       - dive25-public
       - dive25-service
-      - dive25-data  # Added data network for database connection
+
+  # Optional: Kong Admin UI
+  konga:
+    image: pantsel/konga:latest
+    container_name: dive25-staging-konga
+    environment:
+      DB_ADAPTER: postgres
+      DB_HOST: dive25-staging-kong-database
+      DB_PORT: 5432
+      DB_USER: kong
+      DB_PASSWORD: kong_password
+      DB_DATABASE: konga
+      NODE_ENV: production
+    ports:
+      - "4439:1337"
+    depends_on:
+      - kong-database
+      - kong
+    networks:
+      - dive25-admin
+      - dive25-data  # Needs access to kong-database
+    restart: unless-stopped
 
   # Kong Configuration
   kong-config:
@@ -349,7 +345,7 @@ services:
       dockerfile: Dockerfile.config
     container_name: dive25-staging-kong-config
     environment:
-      KONG_ADMIN_URL: http://kong:8001
+      KONG_ADMIN_URL: http://null:8001
       KONG_ADMIN_TOKEN: change-me-in-production
       KEYCLOAK_URL: http://keycloak:8080
       KEYCLOAK_REALM: dive25
@@ -361,28 +357,28 @@ services:
       BASE_DOMAIN: dive25.local
       ENVIRONMENT: staging
     volumes:
-      - ./kong/setup-routes.sh:/app/setup-routes.sh:ro
+      - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
       - keycloak_config_data:/tmp/keycloak-config:ro
     depends_on:
       kong:
         condition: service_healthy
       keycloak:
         condition: service_healthy
-    # Simplified entrypoint that just runs our routes setup script
+    # Add an entrypoint that checks for the presence of the realm-ready file before proceeding
     entrypoint: >
       /bin/sh -c "
       echo 'Checking for Keycloak realm readiness...' &&
       for i in {1..60}; do
         if [ -f /tmp/keycloak-config/realm-ready ]; then
           echo 'Keycloak realm is ready, proceeding with Kong configuration.' &&
-          /app/setup-routes.sh;
+          /app/kong-configure-unified.sh;
           exit $$?;
         fi;
-        echo 'Waiting for Keycloak realm to be ready... ($$i/60)';
+        echo 'Waiting for Keycloak realm to be ready... ($/60)';
         sleep 5;
       done;
       echo 'Timeout waiting for Keycloak realm readiness. Proceeding anyway...';
-      /app/setup-routes.sh"
+      /app/kong-configure-unified.sh"
     networks:
       - dive25-admin
       - dive25-service
@@ -506,12 +502,11 @@ services:
       context: ./api
       dockerfile: Dockerfile
     container_name: dive25-staging-api
-    hostname: api
     restart: unless-stopped
     environment:
       NODE_ENV: staging
       PORT: 3000
-      MONGODB_URI: ${MONGODB_AUTH_URL}
+      MONGODB_URI: mongodb://mongodb:27017/dive25
       KEYCLOAK_AUTH_SERVER_URL: http://keycloak:8080/auth
       KEYCLOAK_REALM: dive25
       KEYCLOAK_CLIENT_ID: dive25-api
@@ -547,7 +542,6 @@ services:
       - openldap
     networks:
       - dive25-service
-      - dive25-data  # Added data network for MongoDB connection
     healthcheck:
       test: ["CMD", "wget", "--no-check-certificate", "-O", "-", "https://localhost:3000/health"]
       interval: 30s
@@ -567,12 +561,12 @@ services:
         NEXT_PUBLIC_FRONTEND_URL: https://frontend.dive25.local:3001
         NEXT_PUBLIC_GRAFANA_URL: https://grafana.dive25.local:4434
         NEXT_PUBLIC_PROMETHEUS_URL: https://prometheus.dive25.local:4437
+        NEXT_PUBLIC_KONGA_URL: https://konga.dive25.local:4439
         NEXT_PUBLIC_MONGODB_EXPRESS_URL: https://mongo-express.dive25.local:4435
         NEXT_PUBLIC_PHPLDAPADMIN_URL: https://phpldapadmin.dive25.local:4436
         NEXT_PUBLIC_KEYCLOAK_ADMIN_URL: https://keycloak.dive25.local:8443/admin
         NEXT_PUBLIC_OPA_URL: https://opa.dive25.local:4438
     container_name: dive25-staging-frontend
-    hostname: frontend
     environment:
       NODE_ENV: staging
       NEXT_PUBLIC_API_URL: https://api.dive25.local:3002/api/v1
@@ -582,6 +576,7 @@ services:
       NEXT_PUBLIC_FRONTEND_URL: https://frontend.dive25.local:3001
       NEXT_PUBLIC_GRAFANA_URL: https://grafana.dive25.local:4434
       NEXT_PUBLIC_PROMETHEUS_URL: https://prometheus.dive25.local:4437
+      NEXT_PUBLIC_KONGA_URL: https://konga.dive25.local:4439
       NEXT_PUBLIC_MONGODB_EXPRESS_URL: https://mongo-express.dive25.local:4435
       NEXT_PUBLIC_PHPLDAPADMIN_URL: https://phpldapadmin.dive25.local:4436
       NEXT_PUBLIC_KEYCLOAK_ADMIN_URL: https://keycloak.dive25.local:8443/admin

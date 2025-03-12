@@ -1,0 +1,64 @@
+# DIVE25 Staging Environment Configuration
+
+# Environment Settings
+environment: staging
+base_domain: dive25.local
+use_https: true
+protocol: https
+
+# Domain Settings (subdomains for each service)
+domains:
+  frontend: frontend
+  api: api
+  keycloak: keycloak
+  kong: kong
+  grafana: grafana
+  mongodb_express: mongo-express
+  phpldapadmin: phpldapadmin
+  prometheus: prometheus
+  opa: opa
+  konga: konga
+  mongodb_exporter: mongodb-exporter
+  node_exporter: node-exporter
+
+# External Ports (exposed to host machine)
+# Staging standardizes on 8443 for HTTPS via Kong
+external_ports:
+  frontend: 3001
+  api: 3002
+  keycloak: 8443
+  kong_proxy: 4433
+  kong_proxy_https: 8443
+  kong_admin: 9444
+  kong_admin_https: 9445
+  grafana: 4434
+  mongodb_express: 4435
+  phpldapadmin: 4436
+  prometheus: 4437
+  opa: 4438
+  konga: 4439
+  mongodb_exporter: 4440
+  node_exporter: 4441
+
+# CORS Configuration
+cors:
+  allowed_origins:
+    - https://frontend.dive25.local:3001
+    - https://api.dive25.local:3002
+    - https://keycloak.dive25.local:8443
+    - https://kong.dive25.local:8443
+    - https://dive25.local:8443
+
+# SSL/TLS Configuration (for staging)
+ssl:
+  cert_path: ./certs/staging-cert.pem
+  key_path: ./certs/staging-key.pem
+
+# Logging Configuration
+logging:
+  level: info
+
+# Rate Limiting (moderate for staging)
+rate_limits:
+  per_minute: 180
+  per_hour: 10000 

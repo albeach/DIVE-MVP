@@ -1,0 +1,26 @@
+# Alpine-based image with curl and other debugging tools
+FROM alpine:latest
+
+# Install utilities for debugging and interacting with services
+RUN apk add --no-cache \
+    curl \
+    wget \
+    jq \
+    vim \
+    bash \
+    httpie \
+    iputils \
+    bind-tools \
+    netcat-openbsd \
+    postgresql-client \
+    mysql-client \
+    openldap-clients
+
+# Add a script to test Keycloak health
+COPY ./check-keycloak.sh /usr/local/bin/check-keycloak
+RUN chmod +x /usr/local/bin/check-keycloak
+
+WORKDIR /workdir
+
+# Set Bash as the default shell
+ENTRYPOINT ["/bin/bash"] 

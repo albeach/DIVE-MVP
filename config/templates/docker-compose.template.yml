@@ -1,0 +1,644 @@
+services:
+
+  # Database Services
+  
+  mongodb:
+    image: mongo:6.0
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: dive25
+    volumes:
+      - mongo_data:/data/db
+      - ./mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./mongodb/mongod.conf:/etc/mongod.conf:ro
+    networks:
+      - ${NETWORKS_DATA_NAME}
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # MongoDB Express for MongoDB administration
+  mongo-express:
+    image: mongo-express:latest
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-mongo-express
+    restart: unless-stopped
+    ports:
+      - "${MONGODB_EXPRESS_PORT}:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_ROOT_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_ROOT_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-mongodb:27017/admin?authSource=admin
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-admin_password}
+      ME_CONFIG_SITE_COOKIESECRET: cookiesecret
+      ME_CONFIG_SITE_SESSIONSECRET: sessionsecret
+      ME_CONFIG_OPTIONS_EDITORTHEME: ambiance
+    depends_on:
+      - mongodb
+    networks:
+      - ${NETWORKS_ADMIN_NAME}
+      - ${NETWORKS_DATA_NAME}  # Needs access to MongoDB
+
+  # PostgreSQL for Keycloak
+  postgres:
+    image: postgres:15
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - ${NETWORKS_DATA_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # Kong PostgreSQL Database
+  kong-database:
+    image: postgres:13
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-kong-database
+    environment:
+      POSTGRES_USER: ${KONG_PG_USER}
+      POSTGRES_DB: ${KONG_PG_DATABASE}
+      POSTGRES_PASSWORD: ${KONG_PG_PASSWORD}
+    volumes:
+      - kong_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${KONG_PG_USER}"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - ${NETWORKS_DATA_NAME}
+
+  # OpenLDAP Directory Service
+  openldap:
+    image: osixia/openldap:latest
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-openldap
+    restart: unless-stopped
+    environment:
+      LDAP_ORGANISATION: "${LDAP_ORGANISATION}"
+      LDAP_DOMAIN: "${LDAP_DOMAIN}"
+      LDAP_BASE_DN: ${LDAP_SEARCH_BASE}
+      LDAP_ADMIN_PASSWORD: ${LDAP_ADMIN_PASSWORD}
+      LDAP_CONFIG_PASSWORD: ${LDAP_CONFIG_PASSWORD}
+      LDAP_READONLY_USER: "true"
+      LDAP_READONLY_USER_USERNAME: "readonly"
+      LDAP_READONLY_USER_PASSWORD: ${LDAP_READONLY_PASSWORD}
+      LDAP_TLS: "false"
+      LDAP_SKIP_DEFAULT_BOOTSTRAP: "false"
+      LDAP_REPLICATION: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+      - ./openldap/bootstrap:/container/service/slapd/assets/config/bootstrap
+    networks:
+      - ${NETWORKS_DATA_NAME}
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:389", "-D", "${LDAP_BIND_DN}", "-w", "${LDAP_ADMIN_PASSWORD}", "-b", "${LDAP_SEARCH_BASE}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Infrastructure Services
+
+  # Keycloak Identity Provider
+  keycloak:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-keycloak
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-postgres
+      KC_DB_URL_PORT: 5432
+      KC_DB_URL_DATABASE: ${POSTGRES_DB}
+      KC_DB_USERNAME: ${POSTGRES_USER}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_FEATURES: admin-api,impersonation,import-realm
+      # CSP settings
+      KC_SPI_CONTENT_SECURITY_POLICY_ENABLED: "true"
+      KC_PROXY: edge
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_PORT: 8443
+      # Use consistent domain/URL configuration
+      KC_HOSTNAME: "${KEYCLOAK_DOMAIN}.${BASE_DOMAIN}"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "${USE_HTTPS}"
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_SUPPRESS_LOGOUT_CONFIRMATION_SCREEN: "true"
+      KC_SPI_EVENTS_LISTENER: "jboss-logging,admin-event-listener"
+      KC_HTTP_CORS: "true"
+      KC_HTTP_CORS_ALLOWED_ORIGINS: "${CORS_ALLOWED_ORIGINS}"
+      KC_HTTP_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_OVERRIDE_WELL_KNOWN: "true"
+      KC_SPI_HOSTNAME_DEFAULT_FRONTEND_URL: "${PUBLIC_KEYCLOAK_URL}"
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI: "true"
+      # Force port 8443 for all Keycloak URLs
+      KC_HOSTNAME_PORT: "8443"
+      KC_HOSTNAME_PORT_HTTPS: "8443"
+      # Additional settings to ensure consistent port usage
+      KC_SPI_HOSTNAME_DEFAULT_HOSTNAME: "${KEYCLOAK_DOMAIN}.${BASE_DOMAIN}"
+      KC_SPI_HOSTNAME_DEFAULT_HOSTNAME_PORT: "8443"
+      KC_SPI_HOSTNAME_DEFAULT_ADMIN_URL: "${PUBLIC_KEYCLOAK_URL}"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./certs:/opt/keycloak/certs:ro
+    ports:
+      - "${KEYCLOAK_PORT}:8443"  # External HTTPS access
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ${NETWORKS_SERVICE_NAME}
+    healthcheck:
+      test: ["CMD", "curl", "-s", "--fail", "http://localhost:8080/health/ready"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 120s
+
+  # Keycloak Configuration
+  keycloak-config:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile.config
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-keycloak-config
+    # This container is designed to exit after successful configuration
+    # It will exit with code 0 when complete - this is expected behavior
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./keycloak/realm-export.json:/realm-export.json:ro
+      - ./keycloak/identity-providers:/identity-providers:ro
+      - ./keycloak/test-users:/test-users:ro
+      - ./keycloak/clients:/clients:ro
+      - keycloak_config_data:/tmp/keycloak-config
+    environment:
+      - KEYCLOAK_URL=${INTERNAL_KEYCLOAK_URL}
+      - KEYCLOAK_ADMIN=${KEYCLOAK_ADMIN}
+      - KEYCLOAK_ADMIN_PASSWORD=${KEYCLOAK_ADMIN_PASSWORD}
+      - PUBLIC_KEYCLOAK_URL=${PUBLIC_KEYCLOAK_URL}
+      - PUBLIC_FRONTEND_URL=${PUBLIC_FRONTEND_URL}
+      - PUBLIC_API_URL=${PUBLIC_API_URL}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM}
+      - KEYCLOAK_CLIENT_ID_FRONTEND=${KEYCLOAK_CLIENT_ID_FRONTEND}
+      - KEYCLOAK_CLIENT_ID_API=${KEYCLOAK_CLIENT_ID_API}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET}
+      - KEYCLOAK_CONTAINER=${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-keycloak
+    networks:
+      - ${NETWORKS_SERVICE_NAME}
+    # Only restart in case of failure, not after successful completion
+    restart: no
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/keycloak-config/realm-ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # OPA Policy Agent
+  opa:
+    build:
+      context: ./opa
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-opa
+    restart: unless-stopped
+    volumes:
+      - ./opa/policies:/opt/opa/policies:ro
+      - opa_data:/data
+    networks:
+      - ${NETWORKS_SERVICE_NAME}
+
+  # Kong Migrations
+  kong-migrations:
+    build:
+      context: ./kong
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-kong-migrations
+    command: kong migrations bootstrap
+    depends_on:
+      - kong-database
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-kong-database
+      KONG_PG_USER: ${KONG_PG_USER}
+      KONG_PG_PASSWORD: ${KONG_PG_PASSWORD}
+      # Add environment variables for configuration template
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      INTERNAL_FRONTEND_URL: ${INTERNAL_FRONTEND_URL}
+      INTERNAL_API_URL: ${INTERNAL_API_URL}
+      INTERNAL_KEYCLOAK_URL: ${INTERNAL_KEYCLOAK_URL}
+      PUBLIC_KEYCLOAK_URL: ${PUBLIC_KEYCLOAK_URL}
+    networks:
+      - ${NETWORKS_DATA_NAME}
+    restart: on-failure
+
+  # Kong API Gateway
+  kong:
+    build:
+      context: ./kong
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-kong
+    depends_on:
+      - kong-database
+      - kong-migrations
+      - keycloak
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-kong-database
+      KONG_PG_USER: ${KONG_PG_USER}
+      KONG_PG_PASSWORD: ${KONG_PG_PASSWORD}
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:${INTERNAL_KONG_ADMIN_PORT}, 0.0.0.0:${INTERNAL_KONG_ADMIN_HTTPS_PORT} ssl
+      KONG_PROXY_LISTEN: 0.0.0.0:${INTERNAL_KONG_PROXY_PORT}, 0.0.0.0:${INTERNAL_KONG_HTTPS_PORT} ssl
+      # Add environment variables for configuration template
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      INTERNAL_FRONTEND_URL: ${INTERNAL_FRONTEND_URL}
+      INTERNAL_API_URL: ${INTERNAL_API_URL}
+      INTERNAL_KEYCLOAK_URL: ${INTERNAL_KEYCLOAK_URL}
+      INTERNAL_KEYCLOAK_AUTH_URL: ${INTERNAL_KEYCLOAK_AUTH_URL}
+      PUBLIC_KEYCLOAK_URL: ${PUBLIC_KEYCLOAK_URL}
+      PUBLIC_KEYCLOAK_AUTH_URL: ${PUBLIC_KEYCLOAK_AUTH_URL}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID_FRONTEND}
+      KEYCLOAK_CLIENT_ID_API: ${KEYCLOAK_CLIENT_ID_API}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      SESSION_SECRET: ${SESSION_SECRET}
+      # Additional configuration
+      KONG_PLUGINS: bundled,ldap-auth,oidc-auth
+      KONG_SSL_CERT: /etc/kong/certs/dive25-cert.pem
+      KONG_SSL_CERT_KEY: /etc/kong/certs/dive25-key.pem
+      KONG_NGINX_HTTP_RESOLVER: 1.1.1.1 8.8.8.8
+      KONG_NGINX_HTTP_LUA_SHARED_DICT: sessions 10m
+      KONG_MEM_CACHE_SIZE: 128m
+      KONG_NGINX_WORKER_PROCESSES: 2
+      KONG_LOG_LEVEL: ${LOG_LEVEL}
+    volumes:
+      - ./certs:/etc/kong/certs:ro
+      - ./kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
+      - ./kong/certs:/usr/local/kong/certs:ro
+      - ./kong/plugins:/usr/local/kong/plugins:ro
+      - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
+    ports:
+      - "${KONG_PROXY_PORT}:${INTERNAL_KONG_PROXY_PORT}"
+      - "${KONG_HTTPS_PORT}:${INTERNAL_KONG_HTTPS_PORT}"
+      - "${KONG_ADMIN_PORT}:${INTERNAL_KONG_ADMIN_PORT}"
+      - "${KONG_ADMIN_HTTPS_PORT}:${INTERNAL_KONG_ADMIN_HTTPS_PORT}"
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+    restart: unless-stopped
+    networks:
+      - ${NETWORKS_PUBLIC_NAME}
+      - ${NETWORKS_SERVICE_NAME}
+
+  # Optional: Kong Admin UI
+  konga:
+    image: pantsel/konga:latest
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-konga
+    environment:
+      DB_ADAPTER: postgres
+      DB_HOST: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-kong-database
+      DB_PORT: 5432
+      DB_USER: ${KONG_PG_USER}
+      DB_PASSWORD: ${KONG_PG_PASSWORD}
+      DB_DATABASE: konga
+      NODE_ENV: production
+    ports:
+      - "${KONGA_PORT}:1337"
+    depends_on:
+      - kong-database
+      - kong
+    networks:
+      - ${NETWORKS_ADMIN_NAME}
+      - ${NETWORKS_DATA_NAME}  # Needs access to kong-database
+    restart: unless-stopped
+
+  # Kong Configuration
+  kong-config:
+    build:
+      context: ./kong
+      dockerfile: Dockerfile.config
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-kong-config
+    environment:
+      KONG_ADMIN_URL: ${INTERNAL_KONG_ADMIN_URL}
+      KONG_ADMIN_TOKEN: ${KONG_ADMIN_TOKEN}
+      KEYCLOAK_URL: ${INTERNAL_KEYCLOAK_URL}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID_FRONTEND}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      INTERNAL_FRONTEND_URL: ${INTERNAL_FRONTEND_URL}
+      INTERNAL_API_URL: ${INTERNAL_API_URL}
+      INTERNAL_KEYCLOAK_URL: ${INTERNAL_KEYCLOAK_URL}
+      BASE_DOMAIN: ${BASE_DOMAIN}
+      ENVIRONMENT: ${ENVIRONMENT}
+    volumes:
+      - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
+      - keycloak_config_data:/tmp/keycloak-config:ro
+    depends_on:
+      kong:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    # Add an entrypoint that checks for the presence of the realm-ready file before proceeding
+    entrypoint: >
+      /bin/sh -c "
+      echo 'Checking for Keycloak realm readiness...' &&
+      for i in {1..60}; do
+        if [ -f /tmp/keycloak-config/realm-ready ]; then
+          echo 'Keycloak realm is ready, proceeding with Kong configuration.' &&
+          /app/kong-configure-unified.sh;
+          exit $$?;
+        fi;
+        echo 'Waiting for Keycloak realm to be ready... ($$i/60)';
+        sleep 5;
+      done;
+      echo 'Timeout waiting for Keycloak realm readiness. Proceeding anyway...';
+      /app/kong-configure-unified.sh"
+    networks:
+      - ${NETWORKS_ADMIN_NAME}
+      - ${NETWORKS_SERVICE_NAME}
+    restart: on-failure:3
+
+  # Monitoring Services
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    ports:
+      - "${PROMETHEUS_PORT}:9090"
+    networks:
+      - ${NETWORKS_ADMIN_NAME}
+      - ${NETWORKS_SERVICE_NAME}  # Needs access to monitoring targets
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "${PUBLIC_GRAFANA_URL}"
+      GF_AUTH_PROXY_ENABLED: "true"
+      GF_AUTH_PROXY_HEADER_NAME: "X-WEBAUTH-USER"
+      GF_AUTH_PROXY_HEADER_PROPERTY: "username"
+      GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "${GRAFANA_PORT}:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - ${NETWORKS_ADMIN_NAME}
+      - ${NETWORKS_SERVICE_NAME}  # Needs access to Prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # MongoDB Exporter for Prometheus
+  mongodb-exporter:
+    image: percona/mongodb_exporter:0.32.0
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-mongodb-exporter
+    restart: unless-stopped
+    environment:
+      MONGODB_URI: ${INTERNAL_MONGODB_URL}/admin?directConnection=true
+    ports:
+      - "${MONGODB_EXPORTER_PORT}:9216"
+    depends_on:
+      - mongodb
+    networks:
+      - ${NETWORKS_DATA_NAME}  # Access to MongoDB
+      - ${NETWORKS_ADMIN_NAME}  # Access for Prometheus to scrape metrics
+
+  # Node Exporter for Host Metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "${NODE_EXPORTER_PORT}:9100"
+    networks:
+      - ${NETWORKS_ADMIN_NAME}  # Only needs to be accessible by Prometheus
+
+  # LDAP Admin UI
+  phpldapadmin:
+    image: osixia/phpldapadmin:latest
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-phpldapadmin
+    restart: unless-stopped
+    environment:
+      PHPLDAPADMIN_LDAP_HOSTS: "${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-openldap"
+      PHPLDAPADMIN_HTTPS: "false"
+    ports:
+      - "${PHPLDAPADMIN_PORT}:80"
+    depends_on:
+      - openldap
+    networks:
+      - ${NETWORKS_ADMIN_NAME}
+      - ${NETWORKS_DATA_NAME}  # Needs access to OpenLDAP
+
+  # Application Services
+
+  # Backend API
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: ${ENVIRONMENT}
+      PORT: ${INTERNAL_API_PORT}
+      MONGODB_URI: ${INTERNAL_MONGODB_URL}/dive25
+      KEYCLOAK_AUTH_SERVER_URL: ${INTERNAL_KEYCLOAK_AUTH_URL}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID_API}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
+      PUBLIC_KEYCLOAK_URL: ${PUBLIC_KEYCLOAK_URL}
+      PUBLIC_KEYCLOAK_AUTH_URL: ${PUBLIC_KEYCLOAK_AUTH_URL}
+      OPA_URL: ${INTERNAL_OPA_URL}/v1/data
+      OPA_POLICY_PATH: dive25/document_access/allow
+      LDAP_URL: ${INTERNAL_OPENLDAP_URL}
+      LDAP_BIND_DN: ${LDAP_BIND_DN}
+      LDAP_BIND_CREDENTIALS: ${LDAP_ADMIN_PASSWORD}
+      LDAP_SEARCH_BASE: ${LDAP_SEARCH_BASE}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      PUBLIC_API_URL: ${PUBLIC_API_URL}
+      PUBLIC_FRONTEND_URL: ${PUBLIC_FRONTEND_URL}
+      STORAGE_PATH: /app/storage
+      TEMP_STORAGE_PATH: /app/temp
+      JWT_SECRET: ${JWT_SECRET}
+      LOG_LEVEL: ${LOG_LEVEL}
+      # Add HTTPS configuration
+      USE_HTTPS: ${USE_HTTPS}
+      SSL_CERT_PATH: /app/certs/tls.crt
+      SSL_KEY_PATH: /app/certs/tls.key
+    volumes:
+      - api_storage:/app/storage
+      - api_temp:/app/temp
+      - api_logs:/app/logs
+      - ./certs:/app/certs:ro
+    depends_on:
+      - mongodb
+      - keycloak
+      - opa
+      - openldap
+    networks:
+      - ${NETWORKS_SERVICE_NAME}
+    healthcheck:
+      test: ["CMD", "wget", "--no-check-certificate", "-O", "-", "https://localhost:${INTERNAL_API_PORT}/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL}/api/v1
+        NEXT_PUBLIC_KEYCLOAK_URL: ${PUBLIC_KEYCLOAK_AUTH_URL}
+        NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID_FRONTEND}
+        NEXT_PUBLIC_FRONTEND_URL: ${PUBLIC_FRONTEND_URL}
+        NEXT_PUBLIC_GRAFANA_URL: ${PUBLIC_GRAFANA_URL}
+        NEXT_PUBLIC_PROMETHEUS_URL: ${PUBLIC_PROMETHEUS_URL}
+        NEXT_PUBLIC_KONGA_URL: ${PUBLIC_KONGA_URL}
+        NEXT_PUBLIC_MONGODB_EXPRESS_URL: ${PUBLIC_MONGODB_EXPRESS_URL}
+        NEXT_PUBLIC_PHPLDAPADMIN_URL: ${PUBLIC_PHPLDAPADMIN_URL}
+        NEXT_PUBLIC_KEYCLOAK_ADMIN_URL: ${PUBLIC_KEYCLOAK_URL}/admin
+        NEXT_PUBLIC_OPA_URL: ${PUBLIC_OPA_URL}
+    container_name: ${PROJECT_CONTAINER_PREFIX}-${ENVIRONMENT}-frontend
+    environment:
+      NODE_ENV: ${ENVIRONMENT}
+      NEXT_PUBLIC_API_URL: ${PUBLIC_API_URL}/api/v1
+      NEXT_PUBLIC_KEYCLOAK_URL: ${PUBLIC_KEYCLOAK_AUTH_URL}
+      NEXT_PUBLIC_KEYCLOAK_REALM: ${KEYCLOAK_REALM}
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID_FRONTEND}
+      NEXT_PUBLIC_FRONTEND_URL: ${PUBLIC_FRONTEND_URL}
+      NEXT_PUBLIC_GRAFANA_URL: ${PUBLIC_GRAFANA_URL}
+      NEXT_PUBLIC_PROMETHEUS_URL: ${PUBLIC_PROMETHEUS_URL}
+      NEXT_PUBLIC_KONGA_URL: ${PUBLIC_KONGA_URL}
+      NEXT_PUBLIC_MONGODB_EXPRESS_URL: ${PUBLIC_MONGODB_EXPRESS_URL}
+      NEXT_PUBLIC_PHPLDAPADMIN_URL: ${PUBLIC_PHPLDAPADMIN_URL}
+      NEXT_PUBLIC_KEYCLOAK_ADMIN_URL: ${PUBLIC_KEYCLOAK_URL}/admin
+      NEXT_PUBLIC_OPA_URL: ${PUBLIC_OPA_URL}
+      USE_HTTPS: ${USE_HTTPS}
+      SSL_CERT_PATH: /app/certs/tls.crt
+      SSL_KEY_PATH: /app/certs/tls.key
+      HOSTNAME: 0.0.0.0
+    volumes:
+      - ./certs:/app/certs:ro
+    depends_on:
+      - api
+      - keycloak
+    networks:
+      - ${NETWORKS_SERVICE_NAME}
+    healthcheck:
+      test: curl -f http://localhost:${INTERNAL_FRONTEND_PORT} || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  # Public-facing network for edge services
+  ${NETWORKS_PUBLIC_NAME}:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${NETWORKS_PUBLIC_SUBNET}
+  
+  # Service network for internal application services
+  ${NETWORKS_SERVICE_NAME}:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${NETWORKS_SERVICE_SUBNET}
+  
+  # Data network for database services
+  ${NETWORKS_DATA_NAME}:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${NETWORKS_DATA_SUBNET}
+  
+  # Admin network for management services
+  ${NETWORKS_ADMIN_NAME}:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${NETWORKS_ADMIN_SUBNET}
+
+volumes:
+  mongo_data:
+  postgres_data:
+  ldap_data:
+  ldap_config:
+  prometheus_data:
+  grafana_data:
+  keycloak_data:
+  api_storage:
+  api_temp:
+  api_logs:
+  opa_data:
+  kong_data:
+  keycloak_config_data: 

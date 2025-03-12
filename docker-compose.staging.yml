@@ -129,11 +129,11 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/auth/"]
-      interval: 60s
-      timeout: 20s
-      retries: 3
-      start_period: 120s
+      test: ["CMD", "curl", "-s", "--fail", "http://localhost:8080/health/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
 
   # Kong Database
   kong-database:
@@ -322,7 +322,7 @@ services:
       NODE_ENV: staging
       PORT: 8080
       API_URL: http://api:3000
-      NEXT_PUBLIC_KEYCLOAK_URL: "http://localhost:8082/auth"
+      NEXT_PUBLIC_KEYCLOAK_URL: "http://localhost:8443/auth"
       NEXT_PUBLIC_KEYCLOAK_REALM: "dive25"
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: "dive25-frontend"
     ports:

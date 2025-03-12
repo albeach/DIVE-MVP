@@ -78,6 +78,12 @@ const LoginButton: React.FC<LoginButtonProps> = ({
       const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
       const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
       
+      // Add debug logging
+      console.log('DIVE25-DEBUG: Raw Keycloak URL from env:', keycloakUrl);
+      console.log('DIVE25-DEBUG: Realm:', realm);
+      console.log('DIVE25-DEBUG: Client ID:', clientId);
+      console.log('DIVE25-DEBUG: Window origin:', window.location.origin);
+      
       if (!keycloakUrl || !realm || !clientId) {
         throw new Error('Missing Keycloak configuration');
       }
@@ -86,14 +92,22 @@ const LoginButton: React.FC<LoginButtonProps> = ({
       const callbackUrl = `${window.location.origin}/auth/callback`;
       const redirectUri = encodeURIComponent(callbackUrl);
       
+      console.log('DIVE25-DEBUG: Callback URL:', callbackUrl);
+      console.log('DIVE25-DEBUG: Encoded redirect URI:', redirectUri);
+      
       // Construct the URL correctly without adding /auth
       // The NEXT_PUBLIC_KEYCLOAK_URL should already have the correct base path
       const authUrl = `${keycloakUrl}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid`;
       
-      console.log('Redirecting to auth URL with callback:', authUrl);
-      window.location.href = authUrl;
+      console.log('DIVE25-DEBUG: Final auth URL:', authUrl);
+      
+      // Add a small delay to ensure logs are visible before redirect
+      setTimeout(() => {
+        console.log('DIVE25-DEBUG: Redirecting to Keycloak now...');
+        window.location.href = authUrl;
+      }, 500);
     } catch (error) {
-      console.error('Fallback login failed:', error);
+      console.error('DIVE25-DEBUG: Fallback login failed:', error);
       toast.error('Login service unavailable. Please try again later.');
     }
   };

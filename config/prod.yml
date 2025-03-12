@@ -1,0 +1,64 @@
+# DIVE25 Production Environment Configuration
+
+# Environment Settings
+environment: production
+base_domain: dive25.com
+use_https: true
+protocol: https
+
+# Domain Settings (subdomains for each service)
+domains:
+  frontend: app
+  api: api
+  keycloak: auth
+  kong: gateway
+  grafana: grafana
+  mongodb_express: mongo-admin
+  phpldapadmin: ldap-admin
+  prometheus: metrics
+  opa: policies
+  konga: kong-admin
+  mongodb_exporter: mongo-metrics
+  node_exporter: node-metrics
+
+# External Ports (exposed to host machine)
+# Production standardizes on default HTTPS (443) via Kong
+external_ports:
+  frontend: 443
+  api: 443
+  keycloak: 443
+  kong_proxy: 80
+  kong_proxy_https: 443  # Main HTTPS port
+  kong_admin: 8444
+  kong_admin_https: 8444
+  grafana: 443
+  mongodb_express: 443
+  phpldapadmin: 443
+  prometheus: 443
+  opa: 443
+  konga: 443
+  mongodb_exporter: 443
+  node_exporter: 443
+
+# CORS Configuration
+cors:
+  allowed_origins:
+    - https://app.dive25.com
+    - https://api.dive25.com
+    - https://auth.dive25.com
+    - https://gateway.dive25.com
+    - https://dive25.com
+
+# SSL/TLS Configuration (for production)
+ssl:
+  cert_path: ./certs/prod-cert.pem
+  key_path: ./certs/prod-key.pem
+
+# Logging Configuration
+logging:
+  level: warn
+
+# Rate Limiting (stricter for production)
+rate_limits:
+  per_minute: 120
+  per_hour: 6000 

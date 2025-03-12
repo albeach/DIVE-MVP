@@ -1,0 +1,164 @@
+# DIVE25 Base Configuration
+# Common settings across all environments
+
+# Project Settings
+# DIVE25 Staging Environment Configuration
+project:
+  name: dive25
+  container_prefix: dive25
+# Database Credentials
+databases:
+  mongodb:
+    root_username: admin
+    root_password: admin_password
+    app_username: dive25_app
+    app_password: app_password
+  postgres:
+    username: keycloak
+    password: keycloak
+    database: keycloak
+  kong_db:
+    username: kong
+    password: kong_password
+    database: kong
+# Authentication Settings
+auth:
+  keycloak:
+    admin_username: admin
+    admin_password: admin
+    realm: dive25
+    client_id_frontend: dive25-frontend
+    client_id_api: dive25-api
+    client_secret: change-me-in-production
+    auth_path: /auth
+  jwt:
+    secret: change-me-in-production
+  session:
+    secret: your_session_secret
+# LDAP Configuration
+ldap:
+  admin_password: admin_password
+  config_password: config_password
+  readonly_password: readonly_password
+  bind_dn: cn=admin,dc=dive25,dc=local
+  search_base: dc=dive25,dc=local
+  domain: dive25.local
+  organisation: DIVE25
+# Admin Tool Credentials
+admin:
+  grafana:
+    username: admin
+    password: admin
+  mongodb_express:
+    username: admin
+    password: admin_password
+# Internal Port Assignments (used within containers)
+internal_ports:
+  # Application Services (3000-3999)
+  frontend: 3000
+  api: 3000
+  # Infrastructure Services (8000-8999)
+  keycloak: 8080
+  keycloak_https: 8443
+  kong_proxy: 8000
+  kong_proxy_https: 8443
+  kong_admin: 8001
+  kong_admin_https: 8444
+  opa: 8181
+  # Database Services (5000-5999)
+  mongodb: 27017
+  postgres: 5432
+  # Admin/Monitoring Services (9000-9999)
+  grafana: 3000
+  prometheus: 9090
+  phpldapadmin: 80
+  konga: 1337
+  mongodb_exporter: 9216
+  node_exporter: 9100
+# Service Names (for internal container communication)
+services:
+  frontend: frontend
+  api: api
+  keycloak: keycloak
+  kong: kong
+  mongodb: mongodb
+  postgres: postgres
+  opa: opa
+  openldap: openldap
+  grafana: grafana
+  prometheus: prometheus
+  phpldapadmin: phpldapadmin
+  mongodb_exporter: mongodb-exporter
+  node_exporter: node-exporter
+  kong_database: kong-database
+  konga: konga
+# Network Configuration
+networks:
+  public:
+    name: dive25-public
+    subnet: 172.30.0.0/24
+  service:
+    name: dive25-service
+    subnet: 172.30.1.0/24
+  data:
+    name: dive25-data
+    subnet: 172.30.2.0/24
+  admin:
+    name: dive25-admin
+    subnet: 172.30.3.0/24
+# Logging Configuration
+logging:
+  level: info
+# Environment Settings
+environment: staging
+base_domain: dive25.local
+use_https: true
+protocol: https
+# Domain Settings (subdomains for each service)
+domains:
+  frontend: frontend
+  api: api
+  keycloak: keycloak
+  kong: kong
+  grafana: grafana
+  mongodb_express: mongo-express
+  phpldapadmin: phpldapadmin
+  prometheus: prometheus
+  opa: opa
+  konga: konga
+  mongodb_exporter: mongodb-exporter
+  node_exporter: node-exporter
+# External Ports (exposed to host machine)
+# Staging standardizes on 8443 for HTTPS via Kong
+external_ports:
+  frontend: 3001
+  api: 3002
+  keycloak: 8443
+  kong_proxy: 4433
+  kong_proxy_https: 8443
+  kong_admin: 9444
+  kong_admin_https: 9445
+  grafana: 4434
+  mongodb_express: 4435
+  phpldapadmin: 4436
+  prometheus: 4437
+  opa: 4438
+  konga: 4439
+  mongodb_exporter: 4440
+  node_exporter: 4441
+# CORS Configuration
+cors:
+  allowed_origins:
+    - https://frontend.dive25.local:3001
+    - https://api.dive25.local:3002
+    - https://keycloak.dive25.local:8443
+    - https://kong.dive25.local:8443
+    - https://dive25.local:8443
+# SSL/TLS Configuration (for staging)
+ssl:
+  cert_path: ./certs/staging-cert.pem
+  key_path: ./certs/staging-key.pem
+# Rate Limiting (moderate for staging)
+rate_limits:
+  per_minute: 180
+  per_hour: 10000

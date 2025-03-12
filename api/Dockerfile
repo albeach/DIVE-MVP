@@ -15,6 +15,9 @@ FROM node:18-alpine AS runner
 # Set environment to production
 ENV NODE_ENV=production
 
+# Install curl for health checks and debugging
+RUN apk add --no-cache curl
+
 # Create app directory
 WORKDIR /app
 
@@ -39,7 +42,7 @@ EXPOSE 3000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-  CMD wget -q -O - http://localhost:3000/health || exit 1
+  CMD curl -f http://localhost:3000/health || exit 1
 
 # Start the application
 CMD ["node", "src/app.js"]
