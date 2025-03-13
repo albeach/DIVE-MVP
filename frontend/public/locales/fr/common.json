@@ -1,14 +1,34 @@
 {
     "app": {
         "name": "DIVE25",
-        "description": "Moteur d'Intelligence et de Vérification Documentaire"
+        "description": "Expérience de Vérification d'Interopérabilité Numérique"
     },
     "navigation": {
         "home": "Accueil",
         "dashboard": "Tableau de bord",
         "documents": "Documents",
+        "profile": "Votre Profil",
         "settings": "Paramètres",
-        "logout": "Déconnexion"
+        "logout": "Déconnexion",
+        "toggle_menu": "Basculer le menu"
+    },
+    "session": {
+        "expires_in": "Session expire dans",
+        "refresh": "Rafraîchir la session",
+        "expired": "Session expirée",
+        "about_to_expire": "Votre session est sur le point d'expirer"
+    },
+    "auth": {
+        "sign_in": "Connexion",
+        "sign_out": "Déconnexion",
+        "get_started": "Commencer",
+        "login_with": "Se connecter avec {{provider}}",
+        "or_sign_in_with": "Ou se connecter avec",
+        "create_account": "Créer un compte",
+        "forgot_password": "Mot de passe oublié?",
+        "remember_me": "Se souvenir de moi",
+        "dont_have_account": "Vous n'avez pas de compte?",
+        "already_have_account": "Vous avez déjà un compte?"
     },
     "actions": {
         "save": "Enregistrer",
@@ -18,12 +38,93 @@
         "create": "Créer",
         "upload": "Télécharger",
         "download": "Télécharger",
-        "search": "Rechercher"
+        "search": "Rechercher",
+        "refresh": "Rafraîchir",
+        "retry": "Réessayer",
+        "view": "Voir",
+        "title": "Actions",
+        "filter": "Filtrer",
+        "apply": "Appliquer",
+        "clear": "Effacer"
     },
     "messages": {
         "welcome": "Bienvenue sur DIVE25",
         "loading": "Chargement...",
         "error": "Une erreur est survenue",
-        "success": "Opération réussie"
-    }
+        "success": "Opération réussie",
+        "unknownError": "Une erreur inconnue s'est produite"
+    },
+    "pagination": {
+        "previous": "Précédent",
+        "next": "Suivant",
+        "page": "Page {{page}}",
+        "of": "sur {{total}}",
+        "showing": "Affichage",
+        "to": "à",
+        "results": "résultats",
+        "aria": {
+            "goToPage": "Aller à la page {{page}}",
+            "currentPage": "Page actuelle, page {{page}}",
+            "previousPage": "Aller à la page précédente",
+            "nextPage": "Aller à la page suivante"
+        }
+    },
+    "pages": {
+        "home": {
+            "title": "Accueil",
+            "description": "Partage sécurisé de documents entre organisations",
+            "hero": {
+                "subtitle": "Accès sécurisé et contrôlé aux documents entre les organisations avec des systèmes avancés d'authentification et d'autorisation.",
+                "document_cta": "Voir les Documents",
+                "learn_more": "En Savoir Plus"
+            },
+            "features": {
+                "title": "Fonctionnalités Clés",
+                "feature1": {
+                    "title": "Authentification Sécurisée",
+                    "description": "Sécurité de niveau entreprise avec authentification multi-facteurs et systèmes de vérification d'identité."
+                },
+                "feature2": {
+                    "title": "Contrôle des Documents",
+                    "description": "Contrôles d'accès précis avec audit détaillé et suivi des interactions avec les documents."
+                },
+                "feature3": {
+                    "title": "Partage Inter-Organisations",
+                    "description": "Collaboration transparente avec les partenaires tout en maintenant des contrôles de sécurité et d'accès appropriés."
+                }
+            },
+            "cta": {
+                "title": "Prêt à commencer?",
+                "description": "Connectez-vous pour accéder au référentiel de documents sécurisé avec des fonctionnalités de sécurité avancées.",
+                "security_note": "Ce système nécessite une authentification et une autorisation appropriée pour accéder aux documents sensibles. Toutes les tentatives d'accès sont enregistrées et surveillées pour des raisons de sécurité.",
+                "need_help": "Besoin d'aide? Accédez aux outils de diagnostic"
+            }
+        }
+    },
+    "security": {
+        "classification": "Classification"
+    },
+    "backToDocuments": "Retour aux Documents",
+    "formLabels": {
+        "required": "Obligatoire"
+    },
+    "errors": {
+        "failedToLoadDocuments": "Échec du chargement des documents",
+        "unknownError": "Une erreur inconnue s'est produite",
+        "tryAgain": "Veuillez réessayer plus tard"
+    },
+    "footer": {
+        "privacyPolicy": "Politique de Confidentialité",
+        "termsOfService": "Conditions d'Utilisation",
+        "contact": "Contactez-Nous",
+        "aboutUs": "À Propos",
+        "help": "Centre d'Aide",
+        "allRightsReserved": "Tous droits réservés",
+        "securityNotice": "Réseau NON CLASSIFIÉ. Utilisation autorisée uniquement. L'utilisation peut être surveillée.",
+        "poweredBy": "Propulsé par",
+        "version": "Version",
+        "feedbackLink": "Soumettre des Commentaires"
+    },
+    "appName": "DIVE25",
+    "retry": "Réessayer"
 }

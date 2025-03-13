@@ -1,6 +1,6 @@
 # DIVE25 Keycloak Theme
 
-A custom Keycloak theme for the DIVE25 (Document Intelligence for Verification and Exchange) platform. This theme provides a consistent, branded experience across all Keycloak interfaces.
+A custom Keycloak theme for the DIVE25 (Digital Interoperability Verification Experiment) platform. This theme provides a consistent, branded experience across all Keycloak interfaces.
 
 ## Overview
 

@@ -1,13 +1,95 @@
 /* frontend/src/styles/globals.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Base typography */
 @layer base {
+    :root {
+        --background: 120 30% 99%;
+        --foreground: 138 50% 4%;
+
+        --card: 0 0% 100%;
+        --card-foreground: 138 50% 4%;
+
+        --popover: 0 0% 100%;
+        --popover-foreground: 138 50% 4%;
+
+        --primary: 138 50% 15%;
+        --primary-foreground: 120 10% 98%;
+
+        --secondary: 120 40% 93%;
+        --secondary-foreground: 138 50% 15%;
+
+        --muted: 120 20% 96%;
+        --muted-foreground: 138 10% 40%;
+
+        --accent: 120 40% 93%;
+        --accent-foreground: 138 50% 15%;
+
+        --destructive: 0 85% 60%;
+        --destructive-foreground: 120 10% 98%;
+
+        --border: 138 20% 85%;
+        --input: 138 20% 80%;
+        --ring: 138 50% 15%;
+
+        --radius: 0.5rem;
+    }
+
+    .dark {
+        --background: 138 50% 4%;
+        --foreground: 120 10% 98%;
+
+        --card: 138 50% 3%;
+        --card-foreground: 120 10% 98%;
+
+        --popover: 138 50% 3%;
+        --popover-foreground: 120 10% 98%;
+
+        --primary: 120 40% 93%;
+        --primary-foreground: 138 50% 4%;
+
+        --secondary: 138 40% 15%;
+        --secondary-foreground: 120 10% 98%;
+
+        --muted: 138 40% 15%;
+        --muted-foreground: 138 30% 70%;
+
+        --accent: 138 40% 15%;
+        --accent-foreground: 120 10% 98%;
+
+        --destructive: 0 85% 60%;
+        --destructive-foreground: 120 10% 98%;
+
+        --border: 138 40% 25%;
+        --input: 138 40% 25%;
+        --ring: 120, 30%, 80%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
     html {
+        font-size: 16px;
         @apply text-gray-900;
         font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    }
+
+    body {
+        @apply bg-background text-foreground text-base;
+        font-feature-settings: "rlig" 1, "calt" 1;
+        letter-spacing: -0.01em;
+        line-height: 1.6;
+    }
+
+    /* Improve focus outlines for better accessibility */
+    *:focus-visible {
+        @apply outline-none ring-2 ring-primary ring-opacity-70;
     }
 
     h1,
@@ -16,12 +98,109 @@
     h4,
     h5,
     h6 {
-        @apply font-medium tracking-tight;
+        @apply font-medium text-primary-900 tracking-tight;
+        line-height: 1.2;
     }
+
+    h1 {
+        @apply text-3xl md:text-4xl font-bold;
+        letter-spacing: -0.02em;
+    }
+
+    h2 {
+        @apply text-2xl md:text-3xl font-semibold;
+        letter-spacing: -0.015em;
+    }
+
+    h3 {
+        @apply text-xl md:text-2xl font-semibold;
+        letter-spacing: -0.01em;
+    }
+
+    p {
+        @apply mb-4;
+    }
+
+    a {
+        @apply text-primary-600 hover:text-primary-800 transition-colors duration-200;
+    }
+}
+
+@layer components {
+    .form-input {
+        @apply px-3 py-2 bg-white border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent placeholder-gray-400 w-full;
+    }
+
+    .btn {
+        @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background disabled:opacity-50 disabled:pointer-events-none;
+    }
+
+    .btn-primary {
+        @apply bg-primary-600 text-white hover:bg-primary-700;
+    }
+
+    .btn-secondary {
+        @apply bg-white text-primary-800 border border-primary-300 hover:bg-gray-50;
+    }
+
+    .btn-destructive {
+        @apply bg-destructive text-destructive-foreground hover:bg-destructive/90;
+    }
+
+    .btn-outline {
+        @apply border border-primary-300 text-primary-700 hover:bg-primary-50;
+    }
+
+    .btn-ghost {
+        @apply text-primary-700 hover:bg-primary-50;
+    }
+
+    .btn-link {
+        @apply underline-offset-4 hover:underline text-primary-600;
+    }
+
+    .btn-sm {
+        @apply h-9 px-3 rounded-md text-sm;
+    }
+
+    .btn-md {
+        @apply h-10 py-2 px-4 text-base;
+    }
+
+    .btn-lg {
+        @apply h-12 px-8 rounded-md text-base;
+    }
+
+    .btn-icon {
+        @apply h-10 w-10;
+    }
+}
+
+/* For WebKit browsers */
+::-webkit-scrollbar {
+    @apply w-2 h-2;
+}
+
+::-webkit-scrollbar-track {
+    @apply bg-gray-100 rounded-full;
+}
+
+::-webkit-scrollbar-thumb {
+    @apply bg-primary-400 rounded-full hover:bg-primary-500 transition-colors duration-200;
+}
+
+/* For Firefox */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #54ab56 #f3f4f6;
+}
+
+/* Base typography */
+@layer base {
 
     /* Handle focus outlines */
     :focus {
-        @apply outline-none ring-2 ring-offset-2 ring-dive25-500;
+        @apply outline-none ring-2 ring-offset-2 ring-primary-500;
     }
 
     /* Make sure focus outlines are only visible when using keyboard navigation */
@@ -30,7 +209,7 @@
     }
 
     :focus-visible {
-        @apply outline-none ring-2 ring-offset-2 ring-dive25-500;
+        @apply outline-none ring-2 ring-offset-2 ring-primary-500;
     }
 }
 

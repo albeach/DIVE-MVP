@@ -63,7 +63,7 @@ if [[ "$USE_DOCKER" == "true" ]]; then
     echo '{
   "app": {
     "name": "DIVE25",
-    "description": "Document Intelligence and Verification Engine"
+    "description": "Digital Interoperability Verification Experiment"
   },
   "navigation": {
     "home": "Home",

@@ -94,7 +94,7 @@
                 <div class="col-md-12">
                     <div style="text-align: center;">
                         <h2>About DIVE25</h2>
-                        <p>DIVE25 (Document Intelligence for Verification and Exchange) is a secure system for controlled access to sensitive documents across organizational boundaries. The platform ensures proper authentication, authorization, and auditing of all document access.</p>
+                        <p>DIVE25 (Digital Interoperability Verification Experiment) is a secure system for controlled access to sensitive documents across organizational boundaries. The platform ensures proper authentication, authorization, and auditing of all document access.</p>
                     </div>
                 </div>
             </div>

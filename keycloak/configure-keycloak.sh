@@ -216,7 +216,7 @@ create_realm() {
   fi
   
   # Create realm JSON - keep it minimal to avoid validation errors
-  local REALM_JSON="{\"realm\":\"${KEYCLOAK_REALM}\",\"enabled\":true,\"displayName\":\"DIVE25 Document Access System\"}"
+  local REALM_JSON="{\"realm\":\"${KEYCLOAK_REALM}\",\"enabled\":true,\"displayName\":\"DIVE25 - Digital Interoperability Verification Experiment\"}"
   
   # Debug output
   echo "Creating realm with JSON: $REALM_JSON"
@@ -431,7 +431,7 @@ configure_realm_settings() {
   fi
   
   # Create a simplified version with only the fields we want to update
-  local UPDATE_DATA="{\"id\":\"${KEYCLOAK_REALM}\",\"realm\":\"${KEYCLOAK_REALM}\",\"browserSecurityHeaders\":{\"contentSecurityPolicy\":\"frame-src *; frame-ancestors *; object-src 'none'\"},\"attributes\":{\"frontendUrl\":\"${PUBLIC_KEYCLOAK_URL}\",\"hostname-url\":\"${PUBLIC_KEYCLOAK_URL}\",\"hostname-admin-url\":\"${PUBLIC_KEYCLOAK_URL}\"}}"
+  local UPDATE_DATA="{\"id\":\"${KEYCLOAK_REALM}\",\"realm\":\"${KEYCLOAK_REALM}\",\"loginTheme\":\"dive25\",\"accountTheme\":\"dive25\",\"adminTheme\":\"dive25\",\"emailTheme\":\"dive25\",\"browserSecurityHeaders\":{\"contentSecurityPolicy\":\"frame-src *; frame-ancestors *; object-src 'none'\"},\"attributes\":{\"frontendUrl\":\"${PUBLIC_KEYCLOAK_URL}\",\"hostname-url\":\"${PUBLIC_KEYCLOAK_URL}\",\"hostname-admin-url\":\"${PUBLIC_KEYCLOAK_URL}\"}}"
   
   # Debug output
   echo "Updating realm with JSON: $UPDATE_DATA"

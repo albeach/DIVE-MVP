@@ -49,6 +49,12 @@ function App({ Component, pageProps }: AppProps) {
     '/404',
     '/500',
   ].includes(router.pathname);
+  
+  // Check if we're on the landing page
+  const isLandingPage = router.pathname === '/';
+  
+  // Only auto-initialize auth if not on landing page
+  const shouldAutoInitialize = !isLandingPage;
 
   if (!isClient) {
     return null;
@@ -56,8 +62,8 @@ function App({ Component, pageProps }: AppProps) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Always use AuthProvider for all routes */}
-      <AuthProvider autoInitialize={true}>
+      {/* Use AuthProvider with conditional auto-initialization */}
+      <AuthProvider autoInitialize={shouldAutoInitialize}>
         <Layout isPublicRoute={isPublicRoute}>
           <Component {...pageProps} />
         </Layout>

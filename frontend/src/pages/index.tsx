@@ -1,147 +1,189 @@
 // frontend/src/pages/index.tsx
 import React from 'react';
-import Link from 'next/link';
-import Head from 'next/head';
-import { GetStaticProps } from 'next';
-import { useAuth } from '@/context/auth-context';
-import { Button } from '@/components/ui/Button';
+import { NextPage } from 'next';
 import { useRouter } from 'next/router';
+import Head from 'next/head';
+import Link from 'next/link';
+import Image from 'next/image';
 import { useTranslation } from 'next-i18next';
 import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
 
-// Custom debugging login URL
-const directLogin = () => {
-  const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
-  const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
-  const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
-  
-  // Make sure we don't have /auth in the URL
-  const baseUrl = keycloakUrl?.endsWith('/auth') 
-    ? keycloakUrl.slice(0, -5) 
-    : keycloakUrl;
-  
-  const callbackUrl = `${window.location.origin}/auth/callback`;
-  const redirectUri = encodeURIComponent(callbackUrl);
-  
-  const loginUrl = `${baseUrl}/realms/${realm}/protocol/openid-connect/auth?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code&scope=openid`;
-  
-  console.log('Direct login URL:', loginUrl);
-  window.location.href = loginUrl;
-};
+import { Button } from '@/components/ui/Button';
+import LoginButton from '@/components/auth/LoginButton';
+import { Card } from '@/components/ui/Card';
+import { useAuth } from '@/context/auth-context';
 
-export default function Home() {
+const HomePage: NextPage = () => {
   const router = useRouter();
   const { t } = useTranslation('common');
   
-  // Default to unauthenticated state
+  // Safe auth usage with fallback for landing page
   let isAuthenticated = false;
-  let login = () => {
-    console.warn('Auth context not available, using fallback login function');
-    // Redirect to the login page instead of calling an API endpoint
-    router.push('/login');
-  };
-  
-  // Try to use auth context, but fall back to unauthenticated state if not available
   try {
-    const auth = useAuth();
-    isAuthenticated = auth.isAuthenticated;
-    login = auth.login;
+    const { isAuthenticated: authState } = useAuth();
+    isAuthenticated = authState;
   } catch (error) {
-    console.warn('Auth context not available in Home page, using fallback auth state');
+    console.warn('Auth context not available on landing page');
   }
 
   return (
-    <>
+    <div className="min-h-screen bg-white">
       <Head>
-        <title>{t('app.name')} - {t('messages.welcome')}</title>
-        <meta name="description" content={t('app.description')} />
+        <title>{t('app.name')} | {t('pages.home.title')}</title>
+        <meta name="description" content={t('pages.home.description')} />
       </Head>
 
-      <div className="flex flex-col items-center justify-center min-h-screen-navbar py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl w-full space-y-8 text-center">
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight text-blue-800 sm:text-5xl md:text-6xl">
-              <span className="block">{t('app.name')}</span>
-              <span className="block text-blue-600">{t('app.description')}</span>
-            </h1>
-            <p className="mt-6 text-xl text-gray-600 max-w-2xl mx-auto">
-              {t('app.description')}
-            </p>
-          </div>
-
-          <div className="mt-10">
-            {isAuthenticated ? (
-              <div className="space-y-4">
-                <p className="text-lg text-gray-600">
-                  {t('messages.welcome')}
-                </p>
-                <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 justify-center">
-                  <Button 
-                    as={Link}
-                    href="/documents"
+      <main>
+        {/* Hero Section */}
+        <section className="bg-gradient-to-b from-primary-900 via-primary-800 to-primary-700 text-white">
+          <div className="container mx-auto px-4 py-16 md:py-24 lg:py-32">
+            <div className="max-w-4xl mx-auto text-center">
+              <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold text-white mb-6 tracking-tight">
+                {t('app.name')}
+              </h1>
+              <p className="text-xl md:text-2xl text-primary-50 mb-8 leading-relaxed">
+                {t('pages.home.hero.subtitle')}
+              </p>
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+                {isAuthenticated ? (
+                  <Button
                     variant="primary"
                     size="lg"
+                    className="bg-white text-primary-800 hover:bg-primary-50 shadow-md"
+                    onClick={() => router.push('/documents')}
                   >
-                    {t('navigation.documents')}
+                    <span className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      {t('pages.home.hero.document_cta')}
+                    </span>
                   </Button>
-                  <Button 
-                    as={Link}
-                    href="/documents/upload"
-                    variant="secondary"
-                    size="lg"
-                  >
-                    {t('actions.upload')}
-                  </Button>
-                </div>
+                ) : (
+                  <>
+                    <LoginButton
+                      variant="primary"
+                      size="lg"
+                      className="bg-white text-primary-800 hover:bg-primary-50 shadow-md"
+                      label={t('auth.sign_in')}
+                    />
+                    <Button
+                      variant="secondary"
+                      size="lg"
+                      className="bg-transparent border-2 border-white text-white hover:bg-primary-800/20 hover:border-primary-50"
+                      onClick={() => router.push('/about')}
+                    >
+                      {t('pages.home.hero.learn_more')}
+                    </Button>
+                  </>
+                )}
               </div>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-lg text-gray-600">
-                  Sign in to access the secure document repository
+            </div>
+          </div>
+        </section>
+
+        {/* Features Section */}
+        <section className="py-16 bg-primary-50">
+          <div className="container mx-auto px-4">
+            <h2 className="text-3xl md:text-4xl font-bold text-center text-primary-900 mb-12">
+              {t('pages.home.features.title')}
+            </h2>
+            
+            <div className="grid md:grid-cols-3 gap-8">
+              {/* Feature 1 */}
+              <Card className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
+                <div className="text-primary-600 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <h3 className="text-xl font-semibold mb-2 text-primary-900">
+                  {t('pages.home.features.feature1.title')}
+                </h3>
+                <p className="text-gray-600 text-base">
+                  {t('pages.home.features.feature1.description')}
                 </p>
-                <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4 justify-center">
-                  <Button 
-                    onClick={login}
-                    variant="primary"
-                    size="lg"
-                  >
-                    Sign In
-                  </Button>
-                  
-                  <Button 
-                    onClick={directLogin}
-                    variant="secondary"
-                    size="lg"
-                  >
-                    Direct Sign In
-                  </Button>
+              </Card>
+              
+              {/* Feature 2 */}
+              <Card className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
+                <div className="text-primary-600 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
                 </div>
-                
-                {/* Debug section */}
-                <div className="mt-6">
-                  <Link href="/debug" className="text-sm text-blue-600 hover:underline">
-                    Auth Diagnostic Tools
-                  </Link>
+                <h3 className="text-xl font-semibold mb-2 text-primary-900">
+                  {t('pages.home.features.feature2.title')}
+                </h3>
+                <p className="text-gray-600 text-base">
+                  {t('pages.home.features.feature2.description')}
+                </p>
+              </Card>
+              
+              {/* Feature 3 */}
+              <Card className="bg-white p-6 rounded-lg shadow-md hover:shadow-lg transition-shadow duration-300">
+                <div className="text-primary-600 mb-4">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                  </svg>
                 </div>
+                <h3 className="text-xl font-semibold mb-2 text-primary-900">
+                  {t('pages.home.features.feature3.title')}
+                </h3>
+                <p className="text-gray-600 text-base">
+                  {t('pages.home.features.feature3.description')}
+                </p>
+              </Card>
+            </div>
+          </div>
+        </section>
+        
+        {/* CTA Section */}
+        <section className="py-16 bg-white border-t border-gray-100">
+          <div className="container mx-auto px-4 text-center">
+            <h2 className="text-3xl font-bold text-primary-900 mb-6">
+              {t('pages.home.cta.title')}
+            </h2>
+            <p className="text-xl text-gray-700 max-w-2xl mx-auto mb-8">
+              {t('pages.home.cta.description')}
+            </p>
+            
+            {!isAuthenticated && (
+              <div className="mb-8">
+                <LoginButton
+                  variant="primary"
+                  size="lg"
+                  className="bg-primary-600 hover:bg-primary-700 text-white shadow-md"
+                  label={t('auth.get_started')}
+                />
               </div>
             )}
-          </div>
-
-          <div className="mt-12 border-t border-gray-200 pt-8">
-            <p className="text-base text-gray-500">
-              This system requires authentication and proper clearance to access documents.
+            
+            <p className="text-sm text-gray-500">
+              {t('pages.home.cta.security_note')}
             </p>
+            
+            <div className="mt-12">
+              <Link href="/diagnostics" className="text-primary-600 hover:text-primary-800 text-base inline-flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {t('pages.home.cta.need_help')}
+              </Link>
+            </div>
           </div>
-        </div>
-      </div>
-    </>
+        </section>
+      </main>
+    </div>
   );
-}
+};
 
-export const getStaticProps: GetStaticProps = async ({ locale }) => {
+export async function getStaticProps({ locale }: { locale: string }) {
   return {
     props: {
-      ...(await serverSideTranslations(locale || 'en', ['common'])),
+      ...(await serverSideTranslations(locale, ['common'])),
     },
   };
-};
+}
+
+export default HomePage;
