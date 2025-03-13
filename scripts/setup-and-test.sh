@@ -352,12 +352,87 @@ elif [ $? -ne 0 ]; then
   fi
 fi
 
+# Configure OpenLDAP with initial data
+print_step "Configuring OpenLDAP with initial data"
+echo "Setting up LDAP directory structure, security groups, and users..."
+
+# Get container name for OpenLDAP
+OPENLDAP_CONTAINER=$(get_container_name "openldap")
+echo "Using OpenLDAP container: $OPENLDAP_CONTAINER"
+
+# Wait for OpenLDAP to be healthy
+echo "Waiting for OpenLDAP to be ready..."
+LDAP_MAX_RETRIES=10
+LDAP_RETRY_INTERVAL=5
+LDAP_RETRY_COUNT=0
+
+while [ $LDAP_RETRY_COUNT -lt $LDAP_MAX_RETRIES ]; do
+  if docker exec -it $OPENLDAP_CONTAINER ldapsearch -x -H ldap://localhost:389 -D "cn=admin,dc=dive25,dc=local" -w admin_password -b "dc=dive25,dc=local" > /dev/null 2>&1; then
+    echo "✅ OpenLDAP is ready!"
+    break
+  fi
+  
+  echo "OpenLDAP not ready yet, retrying in $LDAP_RETRY_INTERVAL seconds... (attempt $((LDAP_RETRY_COUNT+1))/$LDAP_MAX_RETRIES)"
+  sleep $LDAP_RETRY_INTERVAL
+  LDAP_RETRY_COUNT=$((LDAP_RETRY_COUNT+1))
+done
+
+if [ $LDAP_RETRY_COUNT -eq $LDAP_MAX_RETRIES ]; then
+  echo "⚠️ OpenLDAP did not respond after $LDAP_MAX_RETRIES attempts. Continuing anyway, but LDAP may not be properly configured."
+else
+  # Execute the OpenLDAP bootstrap setup script
+  echo "Running OpenLDAP bootstrap setup..."
+  docker exec -it $OPENLDAP_CONTAINER bash /container/service/slapd/assets/config/bootstrap/setup.sh
+  
+  if [ $? -eq 0 ]; then
+    echo "✅ OpenLDAP bootstrap completed successfully!"
+  else
+    echo "⚠️ OpenLDAP bootstrap encountered issues. Check the logs for details."
+  fi
+fi
+
 # Print note about keycloak-config behavior
 echo
 echo "NOTE: The keycloak-config container is designed to exit with code 0 after successful configuration."
 echo "      This is normal behavior and does not indicate a problem with your deployment."
 echo "      You may see it listed as 'exited (0)' in docker-compose ps output."
 echo
+
+# Wait for Keycloak to be available
+wait_for_service "Keycloak" "https://keycloak.${BASE_DOMAIN}:8443/admin/" 300
+
+# Once Keycloak is ready, configure LDAP federation
+if [ $? -eq 0 ]; then
+  print_step "Configuring Keycloak LDAP federation"
+  echo "Setting up LDAP user federation in Keycloak..."
+  
+  # Get container name for Keycloak
+  KEYCLOAK_CONTAINER=$(get_container_name "keycloak")
+  echo "Using Keycloak container: $KEYCLOAK_CONTAINER"
+  
+  # Get container name for OpenLDAP
+  OPENLDAP_CONTAINER=$(get_container_name "openldap")
+  
+  # Execute the LDAP federation script inside the Keycloak container
+  echo "Running LDAP federation configuration script..."
+  
+  # Copy the script to the container
+  docker cp "${PROJECT_ROOT}/keycloak/configure-ldap-federation.sh" "$KEYCLOAK_CONTAINER:/tmp/configure-ldap-federation.sh"
+  
+  # Get LDAP password from environment or docker-compose file
+  LDAP_ADMIN_PASSWORD=$(grep "LDAP_ADMIN_PASSWORD" .env | cut -d '=' -f2 || echo "admin_password")
+  
+  # Make the script executable and run it
+  docker exec -it $KEYCLOAK_CONTAINER bash -c "chmod +x /tmp/configure-ldap-federation.sh && KEYCLOAK_URL=http://localhost:8080 LDAP_HOST=$OPENLDAP_CONTAINER LDAP_BIND_CREDENTIAL=$LDAP_ADMIN_PASSWORD /tmp/configure-ldap-federation.sh"
+  
+  if [ $? -eq 0 ]; then
+    echo "✅ Keycloak LDAP federation configured successfully!"
+  else
+    echo "⚠️ Keycloak LDAP federation configuration encountered issues. Check the logs for details."
+  fi
+else
+  echo "⚠️ Keycloak is not available. Skipping LDAP federation configuration."
+fi
 
 # Function to wait for service availability with improved reliability
 wait_for_service() {
@@ -1191,13 +1266,6 @@ if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
       fi
     fi
   fi
-fi
-
-# Check if master timeout has been reached
-CURRENT_TIME=$(date +%s)
-ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
-if [ $ELAPSED_TIME -ge $MASTER_TIMEOUT ]; then
-  echo "WARNING: Master timeout reached after ${ELAPSED_TIME}s. Continuing with setup anyway."
 fi
 
 # Check if the frontend service is running

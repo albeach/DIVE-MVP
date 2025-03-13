@@ -1,0 +1,1 @@
+{"name":"username","providerId":"user-attribute-ldap-mapper","providerType":"org.keycloak.storage.ldap.mappers.LDAPStorageMapper","parentId":"f41e60a8-f9f2-44b5-b5be-076d3ced183f","config":{"is.mandatory.in.ldap":["true"],"read.only":["true"],"always.read.value.from.ldap":["true"],"user.model.attribute":["username"],"ldap.attribute":["uid"]}}
