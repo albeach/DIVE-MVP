@@ -132,6 +132,124 @@ get_container_name() {
   echo "${project_prefix}-${service_name}"
 }
 
+# Function to wait for service availability with improved reliability
+wait_for_service() {
+  local service_name=$1
+  local url=$2
+  local timeout=$3
+  local counter=0
+  
+  echo "Waiting for $service_name to be ready..."
+  
+  # First check if the Docker container is running
+  local service_name_lower=$(echo "$service_name" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')
+  local container_name=$(get_container_name "$service_name_lower")
+  
+  # Check if container exists
+  if ! docker ps -a | grep -q "$container_name"; then
+    echo "INFO: Container $container_name does not exist, trying alternate naming formats..."
+    # Try alternate container name formats
+    local alt_formats=("dive25-$service_name_lower" "dive25_$service_name_lower" "$service_name_lower")
+    local found=false
+    
+    for format in "${alt_formats[@]}"; do
+      if docker ps -a | grep -q "$format"; then
+        container_name="$format"
+        echo "Found container with name: $container_name"
+        found=true
+        break
+      fi
+    done
+    
+    if ! $found; then
+      echo "WARNING: Could not find container for $service_name. Container health check will be skipped."
+      # Continue with URL check if provided
+    fi
+  fi
+  
+  # Check if container is running (if found)
+  if docker ps -a | grep -q "$container_name"; then
+    if ! docker ps | grep -q "$container_name"; then
+      echo "Container $container_name exists but is not running."
+      echo "Container status: $(docker inspect --format '{{.State.Status}}' "$container_name")"
+      return 1
+    else
+      echo "✅ Container $container_name is running."
+    fi
+  fi
+  
+  # Skip URL checks if requested or URL is empty
+  if [ "$SKIP_URL_CHECKS" = "true" ] || [ -z "$url" ]; then
+    echo "Skipping URL availability check for $service_name."
+    return 0
+  fi
+  
+  # Determine if we should use curl or wget
+  local http_tool=""
+  if command -v curl >/dev/null 2>&1; then
+    http_tool="curl"
+  elif command -v wget >/dev/null 2>&1; then
+    http_tool="wget"
+  else
+    echo "Neither curl nor wget found. Skipping URL availability check."
+    return 0
+  fi
+  
+  # Function to check URL availability
+  check_url() {
+    local url=$1
+    local tool=$2
+    
+    if [ "$tool" = "curl" ]; then
+      # Using curl with safe options
+      if curl -sSL --max-time 5 --retry 0 --head "$url" >/dev/null 2>&1; then
+        return 0
+      else
+        return 1
+      fi
+    elif [ "$tool" = "wget" ]; then
+      # Using wget with safe options
+      if wget --timeout=5 --tries=1 --spider "$url" >/dev/null 2>&1; then
+        return 0
+      else
+        return 1
+      fi
+    else
+      return 1
+    fi
+  }
+  
+  # Try to connect to the URL
+  echo "Checking if $service_name is accessible at $url"
+  local start_time=$(date +%s)
+  
+  while true; do
+    if check_url "$url" "$http_tool"; then
+      echo "✅ $service_name is accessible at $url"
+      return 0
+    fi
+    
+    counter=$((counter + 1))
+    
+    # Check if we've exceeded the timeout
+    local current_time=$(date +%s)
+    local elapsed_time=$((current_time - start_time))
+    
+    if [ $elapsed_time -ge $timeout ]; then
+      echo "Timeout waiting for $service_name to be accessible at $url after ${elapsed_time}s"
+      return 1
+    fi
+    
+    # Print progress every 10 attempts
+    if [ $((counter % 5)) -eq 0 ]; then
+      echo "Still waiting for $service_name... (${elapsed_time}s elapsed)"
+    fi
+    
+    # Sleep for a shorter interval to be more responsive
+    sleep 2
+  done
+}
+
 # Print header
 print_header() {
   echo "=================================================="

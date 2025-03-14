@@ -267,6 +267,97 @@ configure_frontend_routes() {
   echo "✅ Frontend routes configured successfully"
 }
 
+# Configure Grafana routes
+configure_grafana_routes() {
+  echo "Configuring Grafana routes..."
+  
+  # Create Grafana service
+  create_or_update_service "grafana-service" "http://grafana:3000"
+  
+  # Create Grafana routes
+  create_or_update_route "grafana-domain-route" "grafana-service" "grafana.${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ Grafana routes configured successfully"
+}
+
+# Configure Mongo Express routes
+configure_mongo_express_routes() {
+  echo "Configuring Mongo Express routes..."
+  
+  # Create Mongo Express service
+  create_or_update_service "mongo-express-service" "http://mongo-express:8081"
+  
+  # Create Mongo Express routes
+  create_or_update_route "mongo-express-domain-route" "mongo-express-service" "mongo-express.${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ Mongo Express routes configured successfully"
+}
+
+# Configure PHPLDAPAdmin routes
+configure_phpldapadmin_routes() {
+  echo "Configuring PHPLDAPAdmin routes..."
+  
+  # Create PHPLDAPAdmin service
+  create_or_update_service "phpldapadmin-service" "http://phpldapadmin:80"
+  
+  # Create PHPLDAPAdmin routes
+  create_or_update_route "phpldapadmin-domain-route" "phpldapadmin-service" "phpldapadmin.${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ PHPLDAPAdmin routes configured successfully"
+}
+
+# Configure MongoDB Exporter routes
+configure_mongodb_exporter_routes() {
+  echo "Configuring MongoDB Exporter routes..."
+  
+  # Create MongoDB Exporter service
+  create_or_update_service "mongodb-exporter-service" "http://mongodb-exporter:9216"
+  
+  # Create MongoDB Exporter routes
+  create_or_update_route "mongodb-exporter-domain-route" "mongodb-exporter-service" "mongodb-exporter.${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ MongoDB Exporter routes configured successfully"
+}
+
+# Configure Prometheus routes
+configure_prometheus_routes() {
+  echo "Configuring Prometheus routes..."
+  
+  # Create Prometheus service
+  create_or_update_service "prometheus-service" "http://prometheus:9090"
+  
+  # Create Prometheus routes
+  create_or_update_route "prometheus-domain-route" "prometheus-service" "prometheus.${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ Prometheus routes configured successfully"
+}
+
+# Configure OPA routes
+configure_opa_routes() {
+  echo "Configuring OPA routes..."
+  
+  # Create OPA service
+  create_or_update_service "opa-service" "http://opa:8181"
+  
+  # Create OPA routes
+  create_or_update_route "opa-domain-route" "opa-service" "opa.${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ OPA routes configured successfully"
+}
+
+# Configure Node Exporter routes
+configure_node_exporter_routes() {
+  echo "Configuring Node Exporter routes..."
+  
+  # Create Node Exporter service
+  create_or_update_service "node-exporter-service" "http://node-exporter:9100"
+  
+  # Create Node Exporter routes
+  create_or_update_route "node-exporter-domain-route" "node-exporter-service" "node-exporter.${BASE_DOMAIN}" "/" true false
+  
+  echo "✅ Node Exporter routes configured successfully"
+}
+
 # Function to check Kong status
 check_kong_status() {
   echo -e "${BLUE}Checking Kong status...${NC}"
@@ -344,6 +435,155 @@ troubleshoot() {
   echo -e "4. Check the Kong container logs for detailed error messages"
 }
 
+# Function to reset Kong's DNS cache
+reset_kong_dns() {
+  echo -e "${BLUE}Resetting Kong DNS resolution...${NC}"
+  
+  # Try direct API call first
+  local result=$(curl -s -X POST "$KONG_ADMIN_URL/cache/dns")
+  
+  if [[ $result == *"empty cache"* ]] || [[ $result == *"emptied"* ]]; then
+    echo -e "${GREEN}✅ DNS cache successfully reset via API${NC}"
+    return 0
+  fi
+  
+  # If API call failed, try direct container command
+  echo "API call failed, trying direct container command..."
+  
+  # Check if the container exists and is running
+  if docker ps | grep -q "$KONG_CONTAINER"; then
+    docker exec -it "$KONG_CONTAINER" kong reload
+    if [ $? -eq 0 ]; then
+      echo -e "${GREEN}✅ Kong reloaded and DNS cache reset${NC}"
+      return 0
+    else
+      echo -e "${RED}❌ Failed to reload Kong${NC}"
+      return 1
+    fi
+  else
+    echo -e "${RED}❌ Kong container not found or not running${NC}"
+    return 1
+  fi
+}
+
+# Function to set up SSL certificates for Kong
+setup_ssl() {
+  echo -e "${BLUE}Setting up SSL certificates for Kong...${NC}"
+  
+  # First check if SSL is already configured
+  local ssl_status=$(curl -s "$KONG_ADMIN_URL/certificates" | grep -c '"total":0')
+  
+  if [ "$ssl_status" = "0" ]; then
+    echo -e "${GREEN}✅ SSL certificates already configured${NC}"
+    return 0
+  fi
+  
+  # Check for certificate files
+  local cert_files_count=$(find /ssl -name "*.crt" 2>/dev/null | wc -l)
+  local key_files_count=$(find /ssl -name "*.key" 2>/dev/null | wc -l)
+  
+  if [ "$cert_files_count" -eq 0 ] || [ "$key_files_count" -eq 0 ]; then
+    echo -e "${YELLOW}⚠️ No certificate files found in /ssl directory${NC}"
+    echo -e "${YELLOW}⚠️ Using self-signed certificates${NC}"
+    
+    # Create directory for certs if it doesn't exist
+    mkdir -p /tmp/kong-ssl
+    
+    # Generate self-signed certificate
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout /tmp/kong-ssl/kong-default.key \
+      -out /tmp/kong-ssl/kong-default.crt \
+      -subj "/CN=*.${BASE_DOMAIN}/O=DIVE25/C=US" || {
+        echo -e "${RED}❌ Failed to generate self-signed certificate${NC}"
+        return 1
+      }
+    
+    # Upload certificate to Kong
+    curl -s -X POST "$KONG_ADMIN_URL/certificates" \
+      -F "cert=@/tmp/kong-ssl/kong-default.crt" \
+      -F "key=@/tmp/kong-ssl/kong-default.key" \
+      -F "snis[]=${BASE_DOMAIN}" \
+      -F "snis[]=*.${BASE_DOMAIN}" > /dev/null || {
+        echo -e "${RED}❌ Failed to upload self-signed certificate to Kong${NC}"
+        return 1
+      }
+  else
+    # Use existing certificates
+    echo -e "${BLUE}Using existing certificates from /ssl directory${NC}"
+    
+    # Find certificate and key files
+    local cert_file=$(find /ssl -name "*.crt" -o -name "*.pem" | head -n 1)
+    local key_file=$(find /ssl -name "*.key" | head -n 1)
+    
+    # Upload certificate to Kong
+    curl -s -X POST "$KONG_ADMIN_URL/certificates" \
+      -F "cert=@$cert_file" \
+      -F "key=@$key_file" \
+      -F "snis[]=${BASE_DOMAIN}" \
+      -F "snis[]=*.${BASE_DOMAIN}" > /dev/null || {
+        echo -e "${RED}❌ Failed to upload certificate to Kong${NC}"
+        return 1
+      }
+  fi
+  
+  echo -e "${GREEN}✅ SSL certificates configured successfully${NC}"
+  return 0
+}
+
+# Function to configure Kong port 8443
+configure_port_8443() {
+  echo -e "${BLUE}Configuring Kong port 8443...${NC}"
+  
+  # Configure routes for frontend, API, and Keycloak
+  configure_frontend_routes
+  configure_api_routes
+  configure_keycloak_routes
+  
+  # Configure additional service routes
+  configure_grafana_routes
+  configure_mongo_express_routes
+  configure_phpldapadmin_routes
+  configure_mongodb_exporter_routes
+  configure_prometheus_routes
+  configure_opa_routes
+  configure_node_exporter_routes
+  
+  echo -e "${GREEN}✅ Port 8443 configured successfully${NC}"
+  return 0
+}
+
+# Function to configure OIDC authentication with Keycloak
+configure_oidc() {
+  echo -e "${BLUE}Configuring OIDC authentication with Keycloak...${NC}"
+  
+  # Check if the plugin exists
+  local plugin_exists=$(curl -s "$KONG_ADMIN_URL/plugins" | grep -c "oidc")
+  
+  if [ "$plugin_exists" -gt 0 ]; then
+    echo -e "${GREEN}✅ OIDC plugin already configured${NC}"
+    return 0
+  fi
+  
+  # Configure OIDC plugin for Kong
+  curl -s -X POST "$KONG_ADMIN_URL/plugins" \
+    -d "name=oidc" \
+    -d "config.client_id=${KEYCLOAK_CLIENT_ID_FRONTEND}" \
+    -d "config.client_secret=${KEYCLOAK_CLIENT_SECRET}" \
+    -d "config.discovery=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" \
+    -d "config.introspection_endpoint=${INTERNAL_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect" \
+    -d "config.bearer_only=no" \
+    -d "config.realm=${KEYCLOAK_REALM}" \
+    -d "config.redirect_uri_path=/callback" \
+    -d "config.logout_path=/logout" \
+    -d "config.redirect_after_logout_uri=/" > /dev/null || {
+      echo -e "${RED}❌ Failed to configure OIDC plugin${NC}"
+      return 1
+    }
+  
+  echo -e "${GREEN}✅ OIDC authentication configured successfully${NC}"
+  return 0
+}
+
 # Usage information
 show_help() {
   echo -e "${BLUE}DIVE25 - Unified Kong Gateway Configuration Script${NC}"
@@ -418,7 +658,7 @@ run_all() {
   echo -e "${BLUE}Verifying essential services and routes...${NC}"
   
   # Check if frontend route exists
-  FRONTEND_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "frontend-route") | .id')
+  FRONTEND_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "frontend-domain-route") | .id')
   if [ -z "$FRONTEND_ROUTE" ] || [ "$FRONTEND_ROUTE" == "null" ]; then
     echo -e "${RED}❌ Frontend route is missing! Try accessing http://localhost:4433/frontend manually.${NC}"
   else
@@ -426,17 +666,59 @@ run_all() {
   fi
   
   # Check if API route exists
-  API_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "api-route") | .id')
+  API_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "api-domain-route") | .id')
   if [ -z "$API_ROUTE" ] || [ "$API_ROUTE" == "null" ]; then
     echo -e "${RED}❌ API route is missing! Try accessing http://localhost:4433/api manually.${NC}"
   else
     echo -e "${GREEN}✅ API route exists${NC}"
   fi
   
+  # Check if Grafana route exists
+  GRAFANA_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "grafana-domain-route") | .id')
+  if [ -z "$GRAFANA_ROUTE" ] || [ "$GRAFANA_ROUTE" == "null" ]; then
+    echo -e "${RED}❌ Grafana route is missing! Try accessing http://localhost:4433/grafana manually.${NC}"
+  else
+    echo -e "${GREEN}✅ Grafana route exists${NC}"
+  fi
+  
+  # Check if Mongo Express route exists
+  MONGO_EXPRESS_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "mongo-express-domain-route") | .id')
+  if [ -z "$MONGO_EXPRESS_ROUTE" ] || [ "$MONGO_EXPRESS_ROUTE" == "null" ]; then
+    echo -e "${RED}❌ Mongo Express route is missing!${NC}"
+  else
+    echo -e "${GREEN}✅ Mongo Express route exists${NC}"
+  fi
+  
   # Provide final instructions
   echo -e "${BLUE}Configuration complete. You can now access:${NC}"
   echo -e "  Frontend: ${GREEN}http://localhost:4433/frontend${NC} or ${GREEN}https://localhost:8443/frontend${NC}"
   echo -e "  API: ${GREEN}http://localhost:4433/api${NC} or ${GREEN}https://localhost:8443/api${NC}"
+  echo -e "  Grafana: ${GREEN}http://localhost:4433/grafana${NC} or ${GREEN}https://localhost:8443/grafana${NC}"
+  echo -e "  Mongo Express: ${GREEN}http://localhost:4433/mongo-express${NC} or ${GREEN}https://localhost:8443/mongo-express${NC}"
+  echo -e "  PHPLDAPAdmin: ${GREEN}http://localhost:4433/phpldapadmin${NC} or ${GREEN}https://localhost:8443/phpldapadmin${NC}"
+  echo -e "  Prometheus: ${GREEN}http://localhost:4433/prometheus${NC} or ${GREEN}https://localhost:8443/prometheus${NC}"
+  echo -e "  OPA: ${GREEN}http://localhost:4433/opa${NC} or ${GREEN}https://localhost:8443/opa${NC}"
+  echo -e "  Node Exporter: ${GREEN}http://localhost:4433/node-exporter${NC} or ${GREEN}https://localhost:8443/node-exporter${NC}"
+  echo -e "  MongoDB Exporter: ${GREEN}http://localhost:4433/mongodb-exporter${NC} or ${GREEN}https://localhost:8443/mongodb-exporter${NC}"
+  
+  # Add summary of all HTTPS services on port 8443
+  echo -e "\n${BLUE}===========================================================${NC}"
+  echo -e "${BLUE}SUMMARY OF ALL HTTPS SERVICES ON PORT 8443${NC}"
+  echo -e "${BLUE}===========================================================${NC}"
+  echo -e "The following services are accessible via HTTPS on port 8443:"
+  echo -e "  1. ${GREEN}Frontend${NC}: https://frontend.${BASE_DOMAIN}:8443"
+  echo -e "  2. ${GREEN}API${NC}: https://api.${BASE_DOMAIN}:8443"
+  echo -e "  3. ${GREEN}Keycloak${NC}: https://keycloak.${BASE_DOMAIN}:8443"
+  echo -e "  4. ${GREEN}Grafana${NC}: https://grafana.${BASE_DOMAIN}:8443"
+  echo -e "  5. ${GREEN}Mongo Express${NC}: https://mongo-express.${BASE_DOMAIN}:8443"
+  echo -e "  6. ${GREEN}PHPLDAPAdmin${NC}: https://phpldapadmin.${BASE_DOMAIN}:8443"
+  echo -e "  7. ${GREEN}Prometheus${NC}: https://prometheus.${BASE_DOMAIN}:8443"
+  echo -e "  8. ${GREEN}OPA${NC}: https://opa.${BASE_DOMAIN}:8443"
+  echo -e "  9. ${GREEN}Node Exporter${NC}: https://node-exporter.${BASE_DOMAIN}:8443"
+  echo -e " 10. ${GREEN}MongoDB Exporter${NC}: https://mongodb-exporter.${BASE_DOMAIN}:8443"
+  echo -e "\nYou can also access these services via HTTP on port 4433:"
+  echo -e "  Example: http://localhost:4433/grafana"
+  echo -e "${BLUE}===========================================================${NC}"
   
   return 0
 }

@@ -1,0 +1,290 @@
+_format_version: "3.0"
+_transform: true
+
+# Standardized Kong Configuration for DIVE25
+# Generated for development environment
+
+services:
+  # Frontend Service
+  - name: frontend-service
+    url: http://frontend:3000
+    tags:
+      - core
+      - frontend
+      - public
+    connect_timeout: 60000
+    read_timeout: 60000
+    write_timeout: 60000
+    retries: 2
+    routes:
+      # Route based on frontend domain
+      - name: frontend-domain-route
+        hosts:
+          - "frontend.localhost"
+        protocols:
+          - http
+          - https
+        paths:
+          - "/"
+        strip_path: false
+        preserve_host: true
+        https_redirect_status_code: 301
+      # Route for auth callbacks
+      - name: frontend-auth-routes
+        hosts:
+          - "frontend.localhost"
+        protocols:
+          - http
+          - https
+        paths:
+          - /callback
+          - /logout
+          - /error
+          - /login
+        strip_path: false
+        preserve_host: true
+        https_redirect_status_code: 301
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3001,http://localhost:3002,http://localhost:8080,http://localhost:8000,http://frontend.localhost:3001,http://api.localhost:3002,http://keycloak.localhost:8080"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Authorization
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - X-Auth-Token
+          exposed_headers:
+            - X-Auth-Token
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+
+  # API Service
+  - name: api-service
+    url: http://api:3000
+    tags:
+      - core
+      - backend
+      - api
+    connect_timeout: 60000
+    read_timeout: 60000
+    write_timeout: 60000
+    retries: 2
+    routes:
+      # Route based on API domain
+      - name: api-domain-route
+        hosts:
+          - "api.localhost"
+        protocols:
+          - http
+          - https
+        strip_path: false
+        preserve_host: true
+        https_redirect_status_code: 301
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3001,http://localhost:3002,http://localhost:8080,http://localhost:8000,http://frontend.localhost:3001,http://api.localhost:3002,http://keycloak.localhost:8080"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - OPTIONS
+          headers:
+            - Accept
+            - Accept-Version
+            - Authorization
+            - Content-Length
+            - Content-MD5
+            - Content-Type
+            - Date
+            - X-Auth-Token
+          exposed_headers:
+            - X-Auth-Token
+          credentials: true
+          max_age: 3600
+          preflight_continue: false
+      # Add rate limiting to API
+      - name: rate-limiting
+        config:
+          minute: ${rate_limits.per_minute}
+          hour: ${rate_limits.per_hour}
+          policy: local
+          fault_tolerant: true
+          hide_client_headers: false
+          redis_timeout: 2000
+          redis_database: 0
+          redis_port: 6379
+
+  # Keycloak Service
+  - name: keycloak-service
+    url: http://keycloak:8080
+    tags:
+      - auth
+      - keycloak
+    connect_timeout: 60000
+    read_timeout: 60000
+    write_timeout: 60000
+    retries: 2
+    routes:
+      # Route based on Keycloak domain
+      - name: keycloak-domain-route
+        hosts:
+          - "keycloak.localhost"
+        protocols:
+          - http
+          - https
+        strip_path: false
+        preserve_host: true
+        https_redirect_status_code: 301
+    plugins:
+      - name: cors
+        config:
+          origins:
+            - "http://localhost:3001,http://localhost:3002,http://localhost:8080,http://localhost:8000,http://frontend.localhost:3001,http://api.localhost:3002,http://keycloak.localhost:8080"
+          methods:
+            - GET
+            - POST
+            - PUT
+            - DELETE
+            - OPTIONS
+          credentials: true
+          max_age: 3600
+      - name: response-transformer
+        config:
+          add:
+            headers:
+              - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
+              - "X-XSS-Protection:1; mode=block"
+              - "X-Content-Type-Options:nosniff"
+              - "X-Frame-Options:SAMEORIGIN"
+              - "Content-Security-Policy:frame-ancestors 'self'"
+
+  # Grafana Service (Admin)
+  - name: grafana-service
+    url: http://grafana:3000
+    tags:
+      - monitoring
+      - admin
+    connect_timeout: 60000
+    read_timeout: 60000
+    write_timeout: 60000
+    retries: 2
+    routes:
+      # Route based on Grafana domain
+      - name: grafana-domain-route
+        hosts:
+          - "grafana.localhost"
+        protocols:
+          - http
+          - https
+        strip_path: false
+        preserve_host: true
+        https_redirect_status_code: 301
+    plugins:
+      - name: oidc-auth
+        config:
+          client_id: dive25-frontend
+          client_secret: change-me-in-production
+          discovery: http://keycloak.localhost:8080/realms/dive25/.well-known/openid-configuration
+          introspection_endpoint: http://keycloak.localhost:8080/realms/dive25/protocol/openid-connect/token/introspect
+          bearer_only: false
+          realm: dive25
+          redirect_uri_path: /callback
+          logout_path: /logout
+          redirect_after_logout_uri: /
+          ssl_verify: false
+          session_secret: your_session_secret
+          token_endpoint_auth_method: client_secret_post
+          refresh_tokens: true
+          encrypt_session_cookie: true
+          use_pkce: true
+          auth_methods:
+            - authorization_code
+          response_type: code
+          unauth_action: auth
+          # Only allow authenticated access
+          anonymous: false
+
+  # Prometheus Service (Admin)
+  - name: prometheus-service
+    url: http://prometheus:9090
+    tags:
+      - monitoring
+      - admin
+    connect_timeout: 60000
+    read_timeout: 60000
+    write_timeout: 60000
+    retries: 2
+    routes:
+      # Route based on Prometheus domain
+      - name: prometheus-domain-route
+        hosts:
+          - "prometheus.localhost"
+        protocols:
+          - http
+          - https
+        strip_path: false
+        preserve_host: true
+        https_redirect_status_code: 301
+    plugins:
+      - name: oidc-auth
+        config:
+          client_id: dive25-frontend
+          client_secret: change-me-in-production
+          discovery: http://keycloak.localhost:8080/realms/dive25/.well-known/openid-configuration
+          introspection_endpoint: http://keycloak.localhost:8080/realms/dive25/protocol/openid-connect/token/introspect
+          bearer_only: false
+          realm: dive25
+          redirect_uri_path: /callback
+          logout_path: /logout
+          redirect_after_logout_uri: /
+          ssl_verify: false
+          session_secret: your_session_secret
+          token_endpoint_auth_method: client_secret_post
+          refresh_tokens: true
+          encrypt_session_cookie: true
+          use_pkce: true
+          auth_methods:
+            - authorization_code
+          response_type: code
+          unauth_action: auth
+          # Only allow authenticated access
+          anonymous: false
+
+# Global plugins applied to all routes
+plugins:
+  # Security headers for all services
+  - name: response-transformer
+    config:
+      add:
+        headers:
+          - "X-Frame-Options:SAMEORIGIN"
+          - "X-XSS-Protection:1; mode=block"
+          - "X-Content-Type-Options:nosniff"
+          - "Referrer-Policy:strict-origin-when-cross-origin"
+
+  # Request ID for tracing
+  - name: correlation-id
+    config:
+      header_name: X-Request-ID
+      generator: uuid
+      echo_downstream: true
+
+  # Request size limits
+  - name: request-size-limiting
+    config:
+      allowed_payload_size: 10 
