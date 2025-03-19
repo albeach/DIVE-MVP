@@ -80,6 +80,7 @@ const evaluateAccessPolicy = async (input) => {
  * @returns {Promise<{allowed: boolean, explanation: string}>} Access result with explanation
  */
 const checkDocumentAccess = async (user, document) => {
+    // Remove the testing bypass and use the proper implementation
     const input = {
         user: {
             uniqueId: user.uniqueId,

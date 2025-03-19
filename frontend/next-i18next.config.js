@@ -7,5 +7,5 @@ module.exports = {
     },
     ns: ['common', 'profile', 'documents'],
     defaultNS: 'common',
-    localePath: typeof window === 'undefined' ? './public/locales' : '/public/locales'
+    localePath: './public/locales'
 };
