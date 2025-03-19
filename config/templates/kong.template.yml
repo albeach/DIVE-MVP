@@ -33,6 +33,7 @@ services:
       - name: frontend-auth-routes
         hosts:
           - "${FRONTEND_DOMAIN}.${BASE_DOMAIN}"
+          - "${BASE_DOMAIN}"
         protocols:
           - http
           - https
@@ -44,6 +45,8 @@ services:
         strip_path: false
         preserve_host: true
         https_redirect_status_code: 301
+        # Higher priority than the root route
+        priority: 100
     plugins:
       - name: cors
         config:
@@ -128,6 +131,24 @@ services:
           redis_timeout: 2000
           redis_database: 0
           redis_port: 6379
+      # Add OIDC plugin to verify tokens and pass user info to the API
+      - name: oidc-auth
+        config:
+          client_id: ${KEYCLOAK_CLIENT_ID_FRONTEND}
+          client_secret: ${KEYCLOAK_CLIENT_SECRET}
+          discovery: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration
+          introspection_endpoint: ${PUBLIC_KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token/introspect
+          bearer_only: true
+          realm: ${KEYCLOAK_REALM}
+          ssl_verify: ${USE_HTTPS:-true}
+          token_endpoint_auth_method: client_secret_post
+          # Pass user info to the backend in a header
+          pass_user_info_in_header: true
+          user_info_header_name: X-UserInfo
+          # Enable introspection for better token validation
+          use_introspection: true
+          # Only allow authenticated access
+          anonymous: false
 
   # Keycloak Service
   - name: keycloak-service
@@ -166,12 +187,7 @@ services:
       - name: response-transformer
         config:
           add:
-            headers:
-              - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
-              - "X-XSS-Protection:1; mode=block"
-              - "X-Content-Type-Options:nosniff"
-              - "X-Frame-Options:SAMEORIGIN"
-              - "Content-Security-Policy:frame-ancestors 'self'"
+            headers: ${KEYCLOAK_SECURITY_HEADERS}
 
   # Grafana Service (Admin)
   - name: grafana-service

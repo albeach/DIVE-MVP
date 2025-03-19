@@ -1,4 +1,5 @@
 {
+    "id": "dive25",
     "realm": "dive25",
     "displayName": "DIVE25 Document Access System",
     "displayNameHtml": "<div class=\"kc-logo-text\"><span>DIVE25 Document Access System</span></div>",
@@ -43,7 +44,7 @@
         "xContentTypeOptions": "nosniff",
         "xRobotsTag": "none",
         "xFrameOptions": "SAMEORIGIN",
-        "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+        "contentSecurityPolicy": "frame-src 'self' https://dive25.local:8443 https://frontend.dive25.local:8443; frame-ancestors 'self' https://dive25.local:8443 https://frontend.dive25.local:8443; object-src 'none';",
         "xXSSProtection": "1; mode=block",
         "strictTransportSecurity": "max-age=31536000; includeSubDomains"
     },
@@ -142,6 +143,9 @@
     "clientAuthenticationFlow": "clients",
     "dockerAuthenticationFlow": "docker auth",
     "attributes": {
+        "frontendUrl": "https://frontend.dive25.local:3001",
+        "requireSsl": "external",
+        "userProfileEnabled": "true",
         "cibaBackchannelTokenDeliveryMode": "poll",
         "cibaExpiresIn": "120",
         "cibaAuthRequestedUserHint": "login_hint",
@@ -160,12 +164,20 @@
     "roles": {
         "realm": [
             {
+                "id": "admin-role",
                 "name": "admin",
-                "description": "Administrator role"
+                "description": "Administrator role",
+                "composite": false,
+                "clientRole": false,
+                "containerId": "dive25"
             },
             {
+                "id": "user-role",
                 "name": "user",
-                "description": "User role"
+                "description": "Regular user role",
+                "composite": false,
+                "clientRole": false,
+                "containerId": "dive25"
             },
             {
                 "name": "offline_access",
@@ -181,7 +193,8 @@
                 "clientRole": false,
                 "containerId": "dive25"
             }
-        ]
+        ],
+        "client": {}
     },
     "clients": [
         {
@@ -190,13 +203,12 @@
             "redirectUris": [
                 "https://frontend.dive25.local:8443/*",
                 "http://localhost:3000/*",
-                "http://localhost:3001/*",
-                "https://dive25.local/callback"
+                "https://dive25.local:8443/*"
             ],
             "webOrigins": [
-                "https://frontend.dive25.local:8443",
                 "http://localhost:3000",
-                "http://localhost:3001"
+                "https://frontend.dive25.local:8443",
+                "https://dive25.local:8443"
             ],
             "publicClient": true,
             "protocol": "openid-connect",
@@ -215,5 +227,165 @@
             "directAccessGrantsEnabled": false,
             "fullScopeAllowed": true
         }
-    ]
+    ],
+    "clientScopes": [
+        {
+            "id": "web-origins",
+            "name": "web-origins",
+            "description": "OpenID Connect scope for add web origins to the access token",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "false"
+            }
+        },
+        {
+            "id": "roles",
+            "name": "roles",
+            "description": "OpenID Connect scope for add user roles to the access token",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "false"
+            }
+        },
+        {
+            "id": "profile",
+            "name": "profile",
+            "description": "OpenID Connect built-in scope: profile",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "id": "email",
+            "name": "email",
+            "description": "OpenID Connect built-in scope: email",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "id": "address",
+            "name": "address",
+            "description": "OpenID Connect built-in scope: address",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "id": "phone",
+            "name": "phone",
+            "description": "OpenID Connect built-in scope: phone",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "id": "offline_access",
+            "name": "offline_access",
+            "description": "OpenID Connect scope for offline access",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "true"
+            }
+        },
+        {
+            "id": "microprofile-jwt",
+            "name": "microprofile-jwt",
+            "description": "Microprofile JWT scope",
+            "protocol": "openid-connect",
+            "attributes": {
+                "include.in.token.scope": "true",
+                "display.on.consent.screen": "false"
+            }
+        }
+    ],
+    "defaultDefaultClientScopes": [
+        "web-origins",
+        "roles",
+        "profile",
+        "email"
+    ],
+    "defaultOptionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+    ],
+    "components": {
+        "org.keycloak.services.clientregistration.policy.ClientRegistrationPolicy": [
+            {
+                "name": "Allowed Client Scopes",
+                "providerId": "allowed-client-templates",
+                "subComponents": {},
+                "config": {
+                    "allow-default-scopes": [
+                        "true"
+                    ],
+                    "allowed-client-scopes": [
+                        "web-origins",
+                        "roles",
+                        "profile",
+                        "email",
+                        "address",
+                        "phone",
+                        "offline_access",
+                        "microprofile-jwt"
+                    ]
+                }
+            },
+            {
+                "name": "Allowed Protocol Mappers",
+                "providerId": "allowed-protocol-mappers",
+                "subComponents": {},
+                "config": {
+                    "allowed-protocol-mapper-types": [
+                        "oidc-usermodel-property-mapper",
+                        "oidc-usermodel-attribute-mapper",
+                        "oidc-full-name-mapper",
+                        "oidc-sha256-pairwise-sub-mapper",
+                        "oidc-sha256-pairwise-sub-mapper"
+                    ]
+                }
+            },
+            {
+                "name": "Trusted Hosts",
+                "providerId": "trusted-hosts",
+                "subComponents": {},
+                "config": {
+                    "host-sending-registration-request-must-match": [
+                        "true"
+                    ],
+                    "client-uris-must-match": [
+                        "true"
+                    ],
+                    "redirect-uris-must-match": [
+                        "true"
+                    ],
+                    "verify-token-signature": [
+                        "false"
+                    ]
+                }
+            }
+        ]
+    },
+    "identityProviders": [],
+    "identityProviderMappers": [],
+    "clientTemplates": [],
+    "clientProfiles": {
+        "profiles": []
+    },
+    "clientPolicies": {
+        "policies": []
+    }
 }

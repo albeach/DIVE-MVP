@@ -204,6 +204,14 @@ generate_env_file() {
   echo "CORS_ALLOWED_ORIGINS=$CORS_ORIGINS" >> "$ENV_OUTPUT"
   echo "" >> "$ENV_OUTPUT"
   
+  # Generate security headers configuration
+  echo "# Security Headers Configuration" >> "$ENV_OUTPUT"
+  KEYCLOAK_HEADERS=$(yq eval '.security.headers.keycloak.add | join(",")' "$CONFIG_FILE")
+  echo "KEYCLOAK_SECURITY_HEADERS=$KEYCLOAK_HEADERS" >> "$ENV_OUTPUT"
+  GLOBAL_HEADERS=$(yq eval '.security.headers.global.add | join(",")' "$CONFIG_FILE")
+  echo "GLOBAL_SECURITY_HEADERS=$GLOBAL_HEADERS" >> "$ENV_OUTPUT"
+  echo "" >> "$ENV_OUTPUT"
+  
   # SSL configuration
   echo "# SSL/TLS certificates paths" >> "$ENV_OUTPUT"
   echo "SSL_CERT_PATH=$(yq eval '.ssl.cert_path' "$CONFIG_FILE")" >> "$ENV_OUTPUT"

@@ -21,7 +21,7 @@ if ! curl -s http://kong:8001/services/api-service | grep -q 'id'; then
   echo "Creating API service..."
   curl -s -X POST http://kong:8001/services \
     -d "name=api-service" \
-    -d "url=http://api:3000" \
+    -d "url=https://api:3000" \
     -d "connect_timeout=60000" \
     -d "read_timeout=60000" \
     -d "write_timeout=60000" \

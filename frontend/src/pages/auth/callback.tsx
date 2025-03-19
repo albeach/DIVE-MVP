@@ -1,189 +1,94 @@
-import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
-import { Spinner } from '@/components/ui/Spinner';
-import { createLogger } from '@/utils/logger';
-import { getKeycloak } from '@/lib/keycloak';
-import Keycloak from 'keycloak-js';
+import { useEffect, useState } from 'react';
+import { useAuth } from '@/context/auth-context';
 import toast from 'react-hot-toast';
+import { Spinner } from '@/components/ui/Spinner';
+import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
 
-// Create a logger for the callback page
-const logger = createLogger('AuthCallback');
-
-// Session storage keys
-const SESSION_STORAGE_TOKEN_KEY = 'kc_token';
-const SESSION_STORAGE_REFRESH_TOKEN_KEY = 'kc_refreshToken';
-
+// Callback page for handling authentication redirects
 export default function AuthCallback() {
   const router = useRouter();
+  const { keycloak, isAuthenticated } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(true);
-  const [authenticated, setAuthenticated] = useState(false);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const processCallback = async () => {
-      try {
-        logger.debug('Processing authentication callback...');
-        
-        // Extract code from URL if present
-        const urlParams = new URLSearchParams(window.location.search);
-        const code = urlParams.get('code');
-        const sessionState = urlParams.get('session_state');
-        const error = urlParams.get('error');
-        const errorDescription = urlParams.get('error_description');
-        
-        logger.debug('Auth params from URL:', { 
-          code: !!code, 
-          sessionState: !!sessionState,
-          error: error,
-          errorDescription: errorDescription
-        });
-
-        // If there's an explicit error in the URL, handle it
-        if (error) {
-          throw new Error(`Keycloak error: ${error} - ${errorDescription || 'No description'}`);
-        }
-        
-        // Handle case where no code is present but we might already be authenticated
-        if (!code) {
-          logger.debug('No authentication code found in URL, checking if already authenticated');
+    // Only process if we have authentication parameters in the URL
+    if (router.isReady && router.query.code) {
+      setIsProcessing(true);
+      
+      // We don't need to do additional processing since Keycloak integration 
+      // is handled by the AuthContext automatically
+      
+      // After a short delay to allow authentication to complete, redirect to home
+      const timer = setTimeout(() => {
+        if (isAuthenticated) {
+          // Get redirect path from session storage or default to documents
+          const redirectPath = typeof window !== 'undefined' 
+            ? sessionStorage.getItem('auth_redirect') || '/documents'
+            : '/documents';
           
-          // Check if we have a token in session storage
-          const existingToken = sessionStorage.getItem(SESSION_STORAGE_TOKEN_KEY);
-          if (existingToken) {
-            logger.debug('Token found in session storage, using existing authentication');
-            setAuthenticated(true);
-            
-            // Get redirect path from session or default to documents
-            const redirectPath = sessionStorage.getItem('auth_redirect') || '/documents';
-            sessionStorage.removeItem('auth_redirect');
-            
-            logger.debug('Using existing authentication, redirecting to:', redirectPath);
-            
-            setTimeout(() => {
-              router.push(redirectPath);
-            }, 1000);
-            return;
-          }
-        }
-        
-        logger.debug('Initializing Keycloak to handle authentication callback');
-        
-        // Get Keycloak instance
-        const keycloakInstance = getKeycloak();
-        
-        // Set options for processing the callback - with proper types
-        const options: Keycloak.KeycloakInitOptions = {
-          enableLogging: true,
-          pkceMethod: 'S256',
-          onLoad: 'check-sso' as Keycloak.KeycloakOnLoad, // Changed from login-required to check-sso
-          checkLoginIframe: false,
-          flow: 'standard',
-          responseMode: 'query'
-        };
-        
-        // Initialize with login required to process the code
-        logger.debug('Attempting Keycloak initialization with options', options);
-        const success = await keycloakInstance.init(options);
-        logger.debug('Keycloak initialization result:', success);
-        
-        if (success && keycloakInstance.authenticated) {
-          logger.debug('Successfully authenticated!');
-          setAuthenticated(true);
-          
-          // Store tokens in sessionStorage
-          if (keycloakInstance.token) {
-            sessionStorage.setItem(SESSION_STORAGE_TOKEN_KEY, keycloakInstance.token);
-            logger.debug('Token stored in session storage');
-          }
-          
-          if (keycloakInstance.refreshToken) {
-            sessionStorage.setItem(SESSION_STORAGE_REFRESH_TOKEN_KEY, keycloakInstance.refreshToken);
-            logger.debug('Refresh token stored in session storage');
-          }
-          
-          // Store keycloak globally
-          window.__keycloak = keycloakInstance;
-          
-          // Get redirect path from session or default to documents
-          const redirectPath = sessionStorage.getItem('auth_redirect') || '/documents';
+          // Clear redirect path
           sessionStorage.removeItem('auth_redirect');
           
-          logger.debug('Authentication successful, redirecting to:', redirectPath);
+          // Success message
+          toast.success('Authentication successful!');
           
-          // Redirect to the intended page with a small delay
-          setTimeout(() => {
-            router.push(redirectPath);
-          }, 1000);
+          // Redirect to the target page
+          router.push(redirectPath);
         } else {
-          // If we don't have a code and initialization was not successful, try direct login
-          if (!code) {
-            logger.debug('No code and not authenticated, initiating login');
-            keycloakInstance.login({
-              redirectUri: window.location.origin + '/auth/callback'
-            });
-            return;
-          }
-          
-          logger.error('Authentication failed after initialization');
-          setError('Failed to complete authentication. Please try again.');
+          // If not authenticated after delay, show error
+          setError('Authentication failed. Please try again.');
           setIsProcessing(false);
-          
-          // Redirect to home after a delay
-          setTimeout(() => {
-            router.push('/');
-          }, 3000);
         }
-      } catch (err) {
-        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
-        logger.error('Error processing callback:', errorMessage);
-        setError(`Authentication error: ${errorMessage}`);
-        setIsProcessing(false);
-        
-        toast.error('Authentication failed. Please try again later.');
-        
-        // Redirect to home after a delay
-        setTimeout(() => {
-          router.push('/');
-        }, 3000);
-      }
-    };
+      }, 2000);
+      
+      return () => clearTimeout(timer);
+    } else if (router.isReady) {
+      // No authentication code in URL, redirect to login
+      setError('No authentication code provided. Please try logging in again.');
+      setIsProcessing(false);
+    }
+  }, [router, isAuthenticated]);
 
-    // Process the callback
-    processCallback();
-  }, [router]);
+  // Show loading state while processing
+  if (isProcessing) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <Spinner size="lg" />
+        <p className="mt-4 text-lg text-gray-600">Completing authentication...</p>
+      </div>
+    );
+  }
 
-  return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100">
-      <div className="w-full max-w-md p-8 space-y-8 bg-white rounded-lg shadow-md">
-        <div className="text-center">
-          <h2 className="mt-6 text-3xl font-extrabold text-gray-900">
-            {isProcessing ? 'Completing Login' : (authenticated ? 'Login Successful' : 'Login Failed')}
-          </h2>
-          
-          {isProcessing && (
-            <div className="mt-8 flex flex-col items-center justify-center">
-              <Spinner size="lg" />
-              <p className="mt-4 text-gray-600">
-                Processing your authentication...
+  // Show error state if authentication failed
+  if (error) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center">
+        <div className="bg-red-50 border-l-4 border-red-500 p-4 mb-6 max-w-lg">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-red-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="ml-3">
+              <p className="text-sm text-red-700">
+                {error}
               </p>
             </div>
-          )}
-          
-          {authenticated && (
-            <div className="mt-4 p-3 bg-green-100 text-green-700 rounded-md">
-              Successfully authenticated! Redirecting...
-            </div>
-          )}
-          
-          {error && (
-            <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-md">
-              {error}
-            </div>
-          )}
+          </div>
         </div>
+        <Button variant="primary" onClick={() => router.push('/login')}>
+          Try Again
+        </Button>
+        <Link href="/" className="mt-4 text-blue-600 hover:text-blue-800">
+          Return to Home
+        </Link>
       </div>
-    </div>
-  );
+    );
+  }
+
+  return null;
 }

@@ -86,22 +86,212 @@ app.use(tokenExpirationCheck);
 
 // Add debug endpoint
 app.get('/api/v1/debug/auth', (req, res) => {
-    const authHeader = req.headers.authorization;
-    logger.info('Debug auth request received', {
-        authHeader: authHeader ? 'Present' : 'Missing',
-        authHeaderPrefix: authHeader ? authHeader.substring(0, 15) + '...' : 'N/A',
-        path: req.path,
-        method: req.method,
-        url: req.url,
-        origin: req.headers.origin,
-        referer: req.headers.referer
+    logger.info('Debug auth request received');
+    res.status(200).json({ message: 'Debug auth endpoint', success: true });
+});
+
+// Add a new debug endpoint to log all headers and token information
+app.get('/api/v1/debug/token-info', (req, res) => {
+    const token = req.headers.authorization;
+    const allHeaders = req.headers;
+
+    logger.info('Token debug request received', {
+        headers: allHeaders,
+        token: token
     });
 
-    res.json({
-        auth: !!authHeader,
-        message: 'Auth debug endpoint',
-        timestamp: new Date().toISOString()
+    // Try to decode the token if present
+    let decodedToken = null;
+    if (token && token.startsWith('Bearer ')) {
+        try {
+            const jwt = require('jsonwebtoken');
+            decodedToken = jwt.decode(token.substring(7));
+        } catch (error) {
+            logger.error('Error decoding token:', error);
+        }
+    }
+
+    res.status(200).json({
+        message: 'Token debug information',
+        headers: allHeaders,
+        token: token,
+        decodedToken: decodedToken
     });
+});
+
+// Add user creation debug endpoint
+app.get('/api/v1/create-test-user', async (req, res) => {
+    try {
+        const { User } = require('./models/user.model');
+
+        // Create a test user that matches the Keycloak user
+        const testUser = await User.findOneAndUpdate(
+            { uniqueId: '9ef2bfa0-4410-45d2-adea-ed4368df4727' }, // This should match the Keycloak user's sub
+            {
+                username: 'testuser',
+                email: 'testuser@example.com',
+                givenName: 'Test',
+                surname: 'User',
+                organization: 'DIVE25',
+                countryOfAffiliation: 'US',
+                clearance: 'UNCLASSIFIED',
+                caveats: [],
+                coi: [],
+                lastLogin: new Date(),
+                roles: ['user']
+            },
+            { upsert: true, new: true }
+        );
+
+        logger.info('Test user created or updated:', {
+            userId: testUser.uniqueId,
+            username: testUser.username
+        });
+
+        return res.json({
+            success: true,
+            message: 'Test user created or updated',
+            user: testUser
+        });
+    } catch (error) {
+        logger.error('Error creating test user:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error creating test user',
+            error: error.message
+        });
+    }
+});
+
+// Add detailed token debug endpoint
+app.get('/api/token-debug', (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader) {
+            return res.status(400).json({
+                message: 'No authorization header provided',
+                headers: Object.keys(req.headers)
+            });
+        }
+
+        // Extract token from Bearer format
+        const token = authHeader.startsWith('Bearer ') ? authHeader.substring(7) : authHeader;
+
+        // Decode token without verification
+        const jwt = require('jsonwebtoken');
+        const decodedToken = jwt.decode(token);
+
+        // Get Kong headers
+        const userInfoHeader = req.headers['x-userinfo'] || req.headers['x-user-info'];
+        let userInfo = null;
+
+        if (userInfoHeader) {
+            try {
+                userInfo = JSON.parse(Buffer.from(userInfoHeader, 'base64').toString('utf-8'));
+            } catch (e) {
+                userInfo = { error: 'Failed to parse user info header', message: e.message };
+            }
+        }
+
+        return res.json({
+            message: 'Token debug information',
+            tokenDecoded: decodedToken,
+            kongHeaders: {
+                userInfo: userInfo,
+                authConsumer: req.headers['x-consumer-id'],
+                authUsername: req.headers['x-consumer-username'],
+                customId: req.headers['x-consumer-custom-id'],
+            },
+            allHeaders: req.headers
+        });
+    } catch (error) {
+        return res.status(500).json({
+            message: 'Error processing token',
+            error: error.message,
+            stack: error.stack
+        });
+    }
+});
+
+// Add a public endpoint to test user retrieval without authentication
+app.get('/api/v1/public/test-user', async (req, res) => {
+    try {
+        const { User } = require('./models/user.model');
+        const user = await User.findOne({ username: 'testuser' });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: 'Test user not found'
+            });
+        }
+
+        return res.json({
+            success: true,
+            message: 'Test user retrieved successfully',
+            user: {
+                id: user._id,
+                uniqueId: user.uniqueId,
+                username: user.username,
+                email: user.email,
+                givenName: user.givenName,
+                surname: user.surname,
+                organization: user.organization,
+                roles: user.roles
+            }
+        });
+    } catch (error) {
+        logger.error('Error retrieving test user:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error retrieving test user',
+            error: error.message
+        });
+    }
+});
+
+// Add a public endpoint to create a test user
+app.get('/api/v1/public/create-test-user', async (req, res) => {
+    try {
+        const { User } = require('./models/user.model');
+
+        // Create a test user that matches the Keycloak user
+        const testUser = await User.findOneAndUpdate(
+            { uniqueId: '9ef2bfa0-4410-45d2-adea-ed4368df4727' }, // This should match the Keycloak user's sub
+            {
+                username: 'testuser',
+                email: 'testuser@example.com',
+                givenName: 'Test',
+                surname: 'User',
+                organization: 'DIVE25',
+                countryOfAffiliation: 'US',
+                clearance: 'UNCLASSIFIED',
+                caveats: [],
+                coi: [],
+                lastLogin: new Date(),
+                roles: ['user']
+            },
+            { upsert: true, new: true }
+        );
+
+        logger.info('Test user created or updated:', {
+            userId: testUser.uniqueId,
+            username: testUser.username
+        });
+
+        return res.json({
+            success: true,
+            message: 'Test user created or updated',
+            user: testUser
+        });
+    } catch (error) {
+        logger.error('Error creating test user:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Error creating test user',
+            error: error.message
+        });
+    }
 });
 
 // Register routes - only use one approach for route registration

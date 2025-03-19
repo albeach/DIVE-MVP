@@ -245,10 +245,10 @@ configure_api_routes() {
   echo "Configuring API routes..."
   
   # Create API service
-  create_or_update_service "api-service" "$INTERNAL_API_URL"
+  create_or_update_service "api-service" "https://api:3000"
   
   # Create API routes
-  create_or_update_route "api-domain-route" "api-service" "api.${BASE_DOMAIN}" "/" true false
+  create_or_update_route "api-v1-route" "api-service" "api.${BASE_DOMAIN}" "/api/v1" false true
   
   echo "✅ API routes configured successfully"
 }
@@ -666,7 +666,7 @@ run_all() {
   fi
   
   # Check if API route exists
-  API_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "api-domain-route") | .id')
+  API_ROUTE=$(curl -s $KONG_ADMIN_URL/routes | jq -r '.data[] | select(.name == "api-v1-route") | .id')
   if [ -z "$API_ROUTE" ] || [ "$API_ROUTE" == "null" ]; then
     echo -e "${RED}❌ API route is missing! Try accessing http://localhost:4433/api manually.${NC}"
   else

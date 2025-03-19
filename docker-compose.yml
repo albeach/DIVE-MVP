@@ -167,6 +167,9 @@ services:
       KC_PROXY: edge
       KC_HTTP_ENABLED: "true"
       KC_HTTPS_PORT: 8443
+      # Content Security Policy
+      KC_SPI_CONTENT_SECURITY_POLICY_FRAME_SRC: "'self' https://dive25.local:8443 https://*.dive25.local:8443"
+      KC_SPI_CONTENT_SECURITY_POLICY_FRAME_ANCESTORS: "'self' https://dive25.local:8443 https://*.dive25.local:8443"
       # Use consistent domain/URL configuration
       KC_HOSTNAME: "keycloak.dive25.local"
       KC_HOSTNAME_STRICT: "false"
@@ -186,9 +189,15 @@ services:
       KC_SPI_HOSTNAME_DEFAULT_HOSTNAME: "keycloak.dive25.local"
       KC_SPI_HOSTNAME_DEFAULT_HOSTNAME_PORT: "8443"
       KC_SPI_HOSTNAME_DEFAULT_ADMIN_URL: "https://keycloak.dive25.local:8443"
+      # Keycloak 21+ theme settings
+      KC_SPI_THEME_DEFAULT: "dive25"
+      KC_SPI_THEME_STATIC_MAX_AGE: "86400"
+      KC_SPI_THEME_CACHE_THEMES: "false"
+      KC_SPI_THEME_CACHE_TEMPLATES: "false"
     volumes:
       - keycloak_data:/opt/keycloak/data
       - ./certs:/opt/keycloak/certs:ro
+      - ./keycloak/themes:/opt/keycloak/themes:ro
     ports:
       - "8444:8443"  # External HTTPS access
     depends_on:
@@ -301,7 +310,7 @@ services:
       # Add environment variables for configuration template
       BASE_DOMAIN: dive25.local
       INTERNAL_FRONTEND_URL: http://frontend:3000
-      INTERNAL_API_URL: http://api:3000
+      INTERNAL_API_URL: https://api:3000
       INTERNAL_KEYCLOAK_URL: http://keycloak:8080
       INTERNAL_KEYCLOAK_AUTH_URL: http://keycloak:8080/auth
       PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443
@@ -320,10 +329,13 @@ services:
       KONG_MEM_CACHE_SIZE: 128m
       KONG_NGINX_WORKER_PROCESSES: 2
       KONG_LOG_LEVEL: info
+      # Trust mkcert CA certificates
+      KONG_LUA_SSL_TRUSTED_CERTIFICATE: /etc/kong/ssl/ca-certificates.crt
+      KONG_LUA_SSL_VERIFY_DEPTH: 2
     volumes:
       - ./certs:/etc/kong/certs:ro
+      - ./kong/ssl:/etc/kong/ssl:ro
       - ./kong/kong.yml:/usr/local/kong/declarative/kong.yml:ro
-      - ./kong/certs:/usr/local/kong/certs:ro
       - ./kong/plugins:/usr/local/kong/plugins:ro
       - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
     ports:
@@ -356,7 +368,7 @@ services:
       KEYCLOAK_CLIENT_ID: dive25-frontend
       KEYCLOAK_CLIENT_SECRET: change-me-in-production
       INTERNAL_FRONTEND_URL: http://frontend:3000
-      INTERNAL_API_URL: http://api:3000
+      INTERNAL_API_URL: https://api:3000
       INTERNAL_KEYCLOAK_URL: http://keycloak:8080
       BASE_DOMAIN: dive25.local
       ENVIRONMENT: staging
@@ -524,9 +536,9 @@ services:
       LDAP_BIND_DN: cn=admin,dc=dive25,dc=local
       LDAP_BIND_CREDENTIALS: admin_password
       LDAP_SEARCH_BASE: dc=dive25,dc=local
-      CORS_ALLOWED_ORIGINS: https://frontend.dive25.local:3001,https://api.dive25.local:3002,https://keycloak.dive25.local:8443,https://kong.dive25.local:8443,https://dive25.local:8443
-      PUBLIC_API_URL: https://api.dive25.local:3002
-      PUBLIC_FRONTEND_URL: https://frontend.dive25.local:3001
+      CORS_ALLOWED_ORIGINS: https://frontend.dive25.local:8443,https://api.dive25.local:8443,https://keycloak.dive25.local:8443,https://kong.dive25.local:8443,https://dive25.local:8443
+      PUBLIC_API_URL: https://api.dive25.local:8443
+      PUBLIC_FRONTEND_URL: https://frontend.dive25.local:8443
       STORAGE_PATH: /app/storage
       TEMP_STORAGE_PATH: /app/temp
       JWT_SECRET: change-me-in-production
@@ -560,32 +572,34 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: https://api.dive25.local:3002/api/v1
-        NEXT_PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443/auth
+        NEXT_PUBLIC_API_URL: https://api.dive25.local:8443/api/v1
+        NEXT_PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443
         NEXT_PUBLIC_KEYCLOAK_REALM: dive25
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: dive25-frontend
-        NEXT_PUBLIC_FRONTEND_URL: https://frontend.dive25.local:3001
+        NEXT_PUBLIC_FRONTEND_URL: https://frontend.dive25.local:8443
         NEXT_PUBLIC_GRAFANA_URL: https://grafana.dive25.local:4434
         NEXT_PUBLIC_PROMETHEUS_URL: https://prometheus.dive25.local:4437
         NEXT_PUBLIC_MONGODB_EXPRESS_URL: https://mongo-express.dive25.local:4435
         NEXT_PUBLIC_PHPLDAPADMIN_URL: https://phpldapadmin.dive25.local:4436
         NEXT_PUBLIC_KEYCLOAK_ADMIN_URL: https://keycloak.dive25.local:8443/admin
         NEXT_PUBLIC_OPA_URL: https://opa.dive25.local:4438
+        NEXT_PUBLIC_KONG_URL: https://dive25.local:8443
     container_name: dive25-staging-frontend
     hostname: frontend
     environment:
       NODE_ENV: staging
-      NEXT_PUBLIC_API_URL: https://api.dive25.local:3002/api/v1
-      NEXT_PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443/auth
+      NEXT_PUBLIC_API_URL: https://api.dive25.local:8443/api/v1
+      NEXT_PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443
       NEXT_PUBLIC_KEYCLOAK_REALM: dive25
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: dive25-frontend
-      NEXT_PUBLIC_FRONTEND_URL: https://frontend.dive25.local:3001
+      NEXT_PUBLIC_FRONTEND_URL: https://frontend.dive25.local:8443
       NEXT_PUBLIC_GRAFANA_URL: https://grafana.dive25.local:4434
       NEXT_PUBLIC_PROMETHEUS_URL: https://prometheus.dive25.local:4437
       NEXT_PUBLIC_MONGODB_EXPRESS_URL: https://mongo-express.dive25.local:4435
       NEXT_PUBLIC_PHPLDAPADMIN_URL: https://phpldapadmin.dive25.local:4436
       NEXT_PUBLIC_KEYCLOAK_ADMIN_URL: https://keycloak.dive25.local:8443/admin
       NEXT_PUBLIC_OPA_URL: https://opa.dive25.local:4438
+      NEXT_PUBLIC_KONG_URL: https://dive25.local:8443
       USE_HTTPS: true
       SSL_CERT_PATH: /app/certs/tls.crt
       SSL_KEY_PATH: /app/certs/tls.key

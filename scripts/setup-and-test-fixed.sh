@@ -552,52 +552,205 @@ EOF"
   fi
 fi
 
+# Function to check if mkcert is installed
+check_mkcert_installed() {
+  if ! command -v mkcert &> /dev/null; then
+    error "mkcert is not installed. Please install it first."
+    info "Installation instructions: https://github.com/FiloSottile/mkcert#installation"
+    exit 1
+  fi
+}
+
+# Function to check certificate expiration (returns 0 if cert is valid, 1 if expired or will expire soon)
+check_certificate_expiration() {
+  local cert_path=$1
+  local days_threshold=${2:-30}  # Default to 30 days threshold
+  
+  if [ ! -f "$cert_path" ]; then
+    return 1
+  fi
+  
+  # Get expiration date in seconds since epoch
+  local expiry_date=$(openssl x509 -enddate -noout -in "$cert_path" | sed -e 's/notAfter=//')
+  local expiry_seconds=$(date -j -f "%b %d %H:%M:%S %Y %Z" "$expiry_date" +%s 2>/dev/null)
+  
+  if [ $? -ne 0 ]; then
+    # Try alternative date format for Linux
+    expiry_seconds=$(date -d "$expiry_date" +%s 2>/dev/null)
+    if [ $? -ne 0 ]; then
+      warning "Could not parse certificate expiration date. Assuming certificate needs renewal."
+      return 1
+    fi
+  fi
+  
+  local current_seconds=$(date +%s)
+  local threshold_seconds=$((days_threshold * 86400))
+  
+  # Check if certificate is expired or will expire soon
+  if [ $((expiry_seconds - current_seconds)) -lt $threshold_seconds ]; then
+    return 1
+  fi
+  
+  return 0
+}
+
+# Function to check if certificate is issued by mkcert
+is_mkcert_certificate() {
+  local cert_path=$1
+  
+  if [ ! -f "$cert_path" ]; then
+    return 1
+  fi
+  
+  # Check if certificate issuer contains "mkcert"
+  if openssl x509 -issuer -noout -in "$cert_path" | grep -i "mkcert" > /dev/null; then
+    return 0
+  fi
+  
+  return 1
+}
+
+# Function to generate certificates using mkcert
+generate_mkcert_certificates() {
+  local cert_path=$1
+  local key_path=$2
+  local domains=("${@:3}")
+  
+  check_mkcert_installed
+  
+  local cert_dir=$(dirname "$cert_path")
+  if [ ! -d "$cert_dir" ]; then
+    mkdir -p "$cert_dir"
+    info "Created directory: $cert_dir"
+  fi
+  
+  show_progress "Generating certificates using mkcert..."
+  
+  # Create domain list for mkcert
+  local domain_list=""
+  for domain in "${domains[@]}"; do
+    domain_list="$domain_list $domain"
+  done
+  
+  # Generate certificate
+  mkcert -cert-file "$cert_path" -key-file "$key_path" $domain_list
+  
+  if [ $? -eq 0 ]; then
+    success "Certificates generated successfully at:\n  - $cert_path\n  - $key_path"
+    
+    # Create symbolic links for compatibility
+    ln -sf $(basename "$cert_path") "$cert_dir/dive25-cert.pem"
+    ln -sf $(basename "$key_path") "$cert_dir/dive25-key.pem"
+    ln -sf "dive25-cert.pem" "$cert_dir/tls.crt"
+    ln -sf "dive25-key.pem" "$cert_dir/tls.key"
+    
+    # Copy mkcert root CA to Kong's trusted certs
+    copy_mkcert_ca_to_kong
+    
+    return 0
+  else
+    error "Failed to generate certificates"
+    return 1
+  fi
+}
+
+# Function to copy mkcert root CA to Kong's trusted certs
+copy_mkcert_ca_to_kong() {
+  local kong_certs_dir="./kong/ssl"
+  local ca_cert_path="$kong_certs_dir/ca-certificates.crt"
+  local mkcert_root_ca=""
+  
+  # Find mkcert root CA location based on OS
+  if [ "$(uname)" == "Darwin" ]; then
+    mkcert_root_ca="$HOME/Library/Application Support/mkcert/rootCA.pem"
+  elif [ "$(uname)" == "Linux" ]; then
+    mkcert_root_ca="$HOME/.local/share/mkcert/rootCA.pem"
+  else
+    warning "Unknown OS, can't determine mkcert root CA location"
+    return 1
+  fi
+  
+  if [ ! -f "$mkcert_root_ca" ]; then
+    warning "mkcert root CA not found at $mkcert_root_ca"
+    return 1
+  fi
+  
+  # Ensure Kong certs directory exists
+  if [ ! -d "$kong_certs_dir" ]; then
+    mkdir -p "$kong_certs_dir"
+  fi
+  
+  # Create combined CA certificate file
+  if [ -f "$ca_cert_path" ]; then
+    # Check if mkcert CA is already in the file
+    if grep -q "mkcert development CA" "$ca_cert_path"; then
+      info "mkcert root CA already in Kong's trusted certificates"
+    else
+      show_progress "Adding mkcert root CA to Kong's trusted certificates..."
+      cat "$mkcert_root_ca" >> "$ca_cert_path"
+      success "Added mkcert root CA to Kong's trusted certificates"
+    fi
+  else
+    show_progress "Creating Kong's trusted certificates with mkcert root CA..."
+    cp "$mkcert_root_ca" "$ca_cert_path"
+    success "Created Kong's trusted certificates with mkcert root CA"
+  fi
+  
+  return 0
+}
+
 # Check if SSL certificates exist
 print_step "Checking SSL Certificates"
 SSL_CERT_PATH=$(grep "SSL_CERT_PATH=" .env | cut -d '=' -f2)
 SSL_KEY_PATH=$(grep "SSL_KEY_PATH=" .env | cut -d '=' -f2)
 
-if [ "$USE_HTTPS" = "true" ] && ([ ! -f "$SSL_CERT_PATH" ] || [ ! -f "$SSL_KEY_PATH" ]); then
-  warning "SSL certificates not found at: \n  - $SSL_CERT_PATH\n  - $SSL_KEY_PATH"
-  warning "HTTPS is enabled but certificates are missing."
-  
-  # Print a highly visible input request marker
-  echo -e "\n${BOLD}${WHITE}========== USER INPUT REQUIRED ===========${RESET}"
-  
-  # Display the prompt separately to avoid it being read as part of the input
-  echo -en "${BOLD}${CYAN}>>> SSL Certificate Configuration:${RESET} ${BOLD}Would you like to generate self-signed certificates? (y/n)${RESET} "
+NEED_NEW_CERTS=false
 
-  # Read user input directly
-  read GENERATE_CERTS
-
-  # Use default if empty
-  if [ -z "$GENERATE_CERTS" ]; then
-    GENERATE_CERTS="n"
-  fi
-
-  if [[ $GENERATE_CERTS == "y" || $GENERATE_CERTS == "Y" ]]; then
-    CERT_DIR=$(dirname "$SSL_CERT_PATH")
-    if [ ! -d "$CERT_DIR" ]; then
-      mkdir -p "$CERT_DIR"
-      info "Created directory: $CERT_DIR"
-    fi
-    
-    show_progress "Generating self-signed certificates..."
-    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-      -keyout "$SSL_KEY_PATH" \
-      -out "$SSL_CERT_PATH" \
-      -subj "/CN=*.$BASE_DOMAIN/O=DIVE25/C=US"
-    
-    success "Self-signed certificates generated at:\n  - $SSL_CERT_PATH\n  - $SSL_KEY_PATH"
+if [ "$USE_HTTPS" = "true" ]; then
+  if [ ! -f "$SSL_CERT_PATH" ] || [ ! -f "$SSL_KEY_PATH" ]; then
+    warning "SSL certificates not found at: \n  - $SSL_CERT_PATH\n  - $SSL_KEY_PATH"
+    NEED_NEW_CERTS=true
+  elif ! is_mkcert_certificate "$SSL_CERT_PATH"; then
+    warning "Existing certificates are not generated by mkcert."
+    warning "For consistency, we should replace them with mkcert certificates."
+    NEED_NEW_CERTS=true
+  elif ! check_certificate_expiration "$SSL_CERT_PATH" 30; then
+    warning "SSL certificate is expired or will expire within 30 days."
+    NEED_NEW_CERTS=true
   else
-    warning "Please provide SSL certificates before continuing if using HTTPS."
+    success "SSL certificates are valid and generated by mkcert"
+    # Even for valid certificates, we should ensure Kong trusts the mkcert root CA
+    copy_mkcert_ca_to_kong
+  fi
+  
+  if [ "$NEED_NEW_CERTS" = true ]; then
+    # Print a highly visible input request marker
+    echo -e "\n${BOLD}${WHITE}========== USER INPUT REQUIRED ===========${RESET}"
+    
+    # Display the prompt separately to avoid it being read as part of the input
+    echo -en "${BOLD}${CYAN}>>> SSL Certificate Configuration:${RESET} ${BOLD}Would you like to generate certificates using mkcert? (y/n)${RESET} "
+
+    # Read user input directly
+    read GENERATE_CERTS
+
+    # Use default if empty
+    if [ -z "$GENERATE_CERTS" ]; then
+      GENERATE_CERTS="y"  # Default to yes for better user experience
+    fi
+
+    if [[ $GENERATE_CERTS == "y" || $GENERATE_CERTS == "Y" ]]; then
+      # Generate certificates for all domains
+      generate_mkcert_certificates "$SSL_CERT_PATH" "$SSL_KEY_PATH" \
+        "*.$BASE_DOMAIN" "$BASE_DOMAIN" \
+        "frontend.$BASE_DOMAIN" "api.$BASE_DOMAIN" "keycloak.$BASE_DOMAIN" \
+        "grafana.$BASE_DOMAIN" "prometheus.$BASE_DOMAIN" "kong.$BASE_DOMAIN" \
+        "opa.$BASE_DOMAIN" "mongo-express.$BASE_DOMAIN" "phpldapadmin.$BASE_DOMAIN"
+    else
+      warning "Please provide mkcert SSL certificates before continuing if using HTTPS."
+    fi
   fi
 else
-  if [ "$USE_HTTPS" = "true" ]; then
-    success "SSL certificates found and ready for use"
-  else
-    info "HTTPS is disabled. No SSL certificates needed."
-  fi
+  info "HTTPS is disabled. No SSL certificates needed."
 fi
 
 # Stop existing containers
@@ -1246,3 +1399,9 @@ show_final_summary() {
 
 # Call the show_final_summary function to display the complete overview
 show_final_summary 
+
+# Regenerate configuration with security headers
+print_step "Regenerating configuration with security headers"
+show_progress "Updating configuration files..."
+./scripts/generate-config.sh staging
+success "Configuration regenerated with security headers" 

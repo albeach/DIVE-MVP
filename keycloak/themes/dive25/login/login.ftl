@@ -2,7 +2,9 @@
 <@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password') displayInfo=realm.password && realm.registrationAllowed && !registrationDisabled??; section>
     <#if section = "header">
         <div class="login-header">
-            <img src="${url.resourcesPath}/img/dive25-logo.svg" alt="DIVE25 Logo" class="login-logo">
+            <div class="w-24 h-24 mx-auto bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/20 shadow-lg">
+                <img src="${url.resourcesPath}/img/dive25-logo.svg" alt="DIVE25 Logo" class="login-logo">
+            </div>
             <h1>${msg("loginTitle")}</h1>
             <p>${msg("loginWelcomeMessage")}</p>
         </div>
@@ -17,7 +19,7 @@
                                    aria-invalid="<#if messagesPerField.existsError('username')>true</#if>"
                             />
                             <#if messagesPerField.existsError('username')>
-                                <span id="input-error-username" class="error-message" aria-live="polite">
+                                <span id="input-error-username" class="text-white/90 text-sm mt-2 block" aria-live="polite">
                                     ${kcSanitize(messagesPerField.get('username'))?no_esc}
                                 </span>
                             </#if>
@@ -30,7 +32,7 @@
                                        aria-invalid="<#if messagesPerField.existsError('password')>true</#if>"
                                 />
                                 <#if messagesPerField.existsError('password')>
-                                    <span id="input-error-password" class="error-message" aria-live="polite">
+                                    <span id="input-error-password" class="text-white/90 text-sm mt-2 block" aria-live="polite">
                                         ${kcSanitize(messagesPerField.get('password'))?no_esc}
                                     </span>
                                 </#if>
@@ -65,23 +67,23 @@
             </div>
         </div>
     <#elseif section = "info">
-        <div id="kc-registration">
+        <div id="kc-registration" class="text-center mt-6">
             <#if realm.password && realm.registrationAllowed && !registrationDisabled??>
                 <div class="register-link">
-                    <span>${msg("noAccount")} <a tabindex="6" href="${url.registrationUrl}">${msg("doRegister")}</a></span>
+                    <span class="text-white/90">${msg("noAccount")} <a tabindex="6" href="${url.registrationUrl}" class="text-white font-medium hover:underline">${msg("doRegister")}</a></span>
                 </div>
             </#if>
         </div>
 
         <#if realm.password && social.providers??>
-            <div id="kc-social-providers" class="social-providers">
-                <hr/>
-                <h4 class="identity-provider-login-label">${msg("identity-provider-login-label",realm.displayName)}</h4>
+            <div id="kc-social-providers" class="social-providers mt-10">
+                <hr class="border-white/10 mb-6"/>
+                <h4 class="text-center text-lg mb-4 text-white/90">${msg("identity-provider-login-label",realm.displayName)}</h4>
 
-                <ul class="social-providers-list">
+                <ul class="space-y-3">
                     <#list social.providers as p>
-                        <li class="social-provider-item">
-                            <a id="social-${p.alias}" class="social-provider-link ${p.providerId}" href="${p.loginUrl}">
+                        <li>
+                            <a id="social-${p.alias}" class="bg-white/10 hover:bg-white/20 text-white border border-white/10 hover:border-white/20 backdrop-blur-sm shadow-sm transition-all duration-300 rounded-xl flex items-center justify-center px-4 py-3 w-full" href="${p.loginUrl}">
                                 <span>${p.displayName}</span>
                             </a>
                         </li>

@@ -29,6 +29,11 @@
 </head>
 
 <body class="${properties.kcBodyClass!}">
+    <!-- Background decorative elements - matching landing page -->
+    <div class="decorative-orb-right"></div>
+    <div class="decorative-orb-left"></div>
+    <div class="decorative-orb-bottom"></div>
+    
     <div class="dive25-container">
         <div class="dive25-content">
             <header class="dive25-header">

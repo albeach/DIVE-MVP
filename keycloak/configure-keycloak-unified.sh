@@ -306,6 +306,32 @@ EOL
   echo "---------------------------------------------------------"
 }
 
+# Function to create test users
+create_test_users() {
+  local token=$1
+  local users_file="./test-users/sample-users.json"
+  
+  echo "Creating test users from $users_file..."
+  
+  if [ ! -f "$users_file" ]; then
+    echo "❌ Users file not found at $users_file"
+    return 1
+  fi
+  
+  # Read the users file line by line and create each user
+  while IFS= read -r user; do
+    if [ ! -z "$user" ]; then
+      echo "Creating user from data: $user"
+      curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users" \
+        -H "Authorization: Bearer $token" \
+        -H "Content-Type: application/json" \
+        -d "$user"
+    fi
+  done < <(jq -c '.[]' "$users_file")
+  
+  echo "✅ Test users created successfully"
+}
+
 # Main execution flow
 echo "Starting Keycloak configuration process..."
 
@@ -333,10 +359,13 @@ update_issuer_url "$ADMIN_TOKEN" || echo "Warning: Issuer URL update had issues"
 # Step 6: Configure clients
 configure_clients "$ADMIN_TOKEN" || echo "Warning: Client configuration had issues"
 
-# Step 7: Update environment files if running in project directory
+# Step 7: Create test users
+create_test_users "$ADMIN_TOKEN" || echo "Warning: Test users creation had issues"
+
+# Step 8: Update environment files if running in project directory
 update_environment_files || echo "Warning: Environment files update had issues"
 
-# Step 8: Generate browser script for frontend issues
+# Step 9: Generate browser script for frontend issues
 generate_browser_script || echo "Warning: Browser script generation had issues"
 
 echo
@@ -349,8 +378,9 @@ echo "1. Realm setup (created if missing)"
 echo "2. Content Security Policy settings"
 echo "3. Issuer URL configured to use port 8443"
 echo "4. Client redirects updated"
-echo "5. Environment files updated (if accessible)"
-echo "6. Browser script generated for frontend fixes"
+echo "5. Test users created"
+echo "6. Environment files updated (if accessible)"
+echo "7. Browser script generated for frontend fixes"
 echo
 echo "To access Keycloak admin console: ${PUBLIC_KEYCLOAK_URL}/admin"
 echo "Realm: ${KEYCLOAK_REALM}"

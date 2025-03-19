@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Authentication Callback</title>
+    <script>
+        // This file is used for Keycloak authentication callbacks
+        window.onload = function () {
+            try {
+                console.log('Auth callback received:', window.location.href);
+
+                // Extract authentication data from URL
+                const urlParams = new URLSearchParams(window.location.search);
+                const code = urlParams.get('code');
+                const state = urlParams.get('state');
+                const sessionState = urlParams.get('session_state');
+
+                // Store in sessionStorage for the main app to use
+                if (code) sessionStorage.setItem('kc_code', code);
+                if (state) sessionStorage.setItem('kc_state', state);
+                if (sessionState) sessionStorage.setItem('kc_session_state', sessionState);
+
+                // Redirect to home page or stored redirect path
+                const redirectPath = sessionStorage.getItem('auth_redirect') || '/';
+                sessionStorage.removeItem('auth_redirect');
+
+                console.log('Redirecting to:', redirectPath);
+                window.location.href = redirectPath;
+            } catch (error) {
+                console.error('Error in auth-callback.html:', error);
+                // Redirect to home on error
+                window.location.href = '/';
+            }
+        };
+    </script>
+</head>
+
+<body>
+    <p>Authentication in progress. Please wait...</p>
+</body>
+
+</html>

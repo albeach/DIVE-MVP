@@ -20,6 +20,7 @@ import { SecurityBanner } from '@/components/security/SecurityBanner';
 import { useAuth } from '@/context/auth-context';
 import { getClassifications, getCaveats, getReleasability, getCOIs } from '@/lib/securityUtils';
 import { DocumentUploadData } from '@/types/document';
+import toast from 'react-hot-toast';
 
 interface FormData {
   file: File | null;
@@ -45,7 +46,15 @@ export function DocumentUploadForm({
   const [uploadProgress, setUploadProgress] = useState(0);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const { getUserSecurityAttributes } = useAuth();
+  const { user } = useAuth();
+  
+  // Define security attributes based on user data
+  const securityAttributes = {
+    clearance: user?.clearance || '',
+    caveats: user?.caveats || [],
+    coi: user?.coi || [],
+    countryOfAffiliation: user?.countryOfAffiliation || ''
+  };
   
   const {
     control,
@@ -73,20 +82,18 @@ export function DocumentUploadForm({
 
   // Pre-populate form with user's security attributes
   useEffect(() => {
-    const userSecurityAttributes = getUserSecurityAttributes();
-    
-    if (userSecurityAttributes.clearance) {
-      setValue('classification', userSecurityAttributes.clearance);
+    if (securityAttributes.clearance) {
+      setValue('classification', securityAttributes.clearance);
     }
     
-    if (userSecurityAttributes.caveats && userSecurityAttributes.caveats.length > 0) {
-      setValue('caveats', userSecurityAttributes.caveats);
+    if (securityAttributes.caveats && securityAttributes.caveats.length > 0) {
+      setValue('caveats', securityAttributes.caveats);
     }
     
-    if (userSecurityAttributes.coi && userSecurityAttributes.coi.length > 0) {
-      setValue('coi', userSecurityAttributes.coi);
+    if (securityAttributes.coi && securityAttributes.coi.length > 0) {
+      setValue('coi', securityAttributes.coi);
     }
-  }, [getUserSecurityAttributes, setValue]);
+  }, [securityAttributes, setValue]);
 
   // Helper function to get file type icon
   const getFileIcon = (fileName: string) => {

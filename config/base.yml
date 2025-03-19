@@ -118,4 +118,42 @@ networks:
 
 # Logging Configuration
 logging:
-  level: info 
+  level: info
+
+# Security Headers Configuration
+security:
+  headers:
+    keycloak:
+      # Let Keycloak manage its own CSP headers
+      skip_csp: true
+      add:
+        - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
+        - "X-XSS-Protection:1; mode=block"
+        - "X-Content-Type-Options:nosniff"
+        - "X-Frame-Options:SAMEORIGIN"
+    global:
+      add:
+        - "X-Frame-Options:SAMEORIGIN"
+        - "X-XSS-Protection:1; mode=block"
+        - "X-Content-Type-Options:nosniff"
+        - "Referrer-Policy:strict-origin-when-cross-origin"
+
+# CORS configuration
+cors:
+  allowed_origins:
+    - https://frontend.dive25.local:8443
+    - https://api.dive25.local:8443
+    - https://keycloak.dive25.local:8443
+    - https://kong.dive25.local:8443
+    - https://dive25.local:8443
+
+# API configuration
+api:
+  url: https://api.dive25.local:8443
+  internal_url: http://api:8080
+  version: v1
+
+# Frontend configuration
+frontend:
+  url: https://frontend.dive25.local:8443
+  internal_url: http://frontend:3000 

@@ -20,15 +20,35 @@ interface FileValidation {
     error?: string;
 }
 
+interface UploadState {
+    isUploading: boolean;
+    error: Error | null;
+    message: string;
+    success: boolean;
+    percentage: number;
+    documentId?: string;
+}
+
 /**
  * Custom hook for handling document uploads with progress tracking
  */
 export function useDocumentUpload(options?: UseDocumentUploadOptions) {
-    const [progress, setProgress] = useState<DocumentUploadProgress>({
-        status: 'idle',
+    const [uploadState, setUploadState] = useState<UploadState>({
+        isUploading: false,
+        error: null,
+        message: '',
+        success: false,
         percentage: 0,
     });
-    const { getUserSecurityAttributes } = useAuth();
+    const { user } = useAuth();
+
+    // Define security attributes based on user data
+    const securityAttributes = {
+        clearance: user?.clearance || '',
+        caveats: user?.caveats || [],
+        coi: user?.coi || [],
+        countryOfAffiliation: user?.countryOfAffiliation || ''
+    };
 
     /**
      * Validate file type and size
@@ -61,8 +81,11 @@ export function useDocumentUpload(options?: UseDocumentUploadOptions) {
      * Reset upload progress and status
      */
     const resetUpload = useCallback(() => {
-        setProgress({
-            status: 'idle',
+        setUploadState({
+            isUploading: false,
+            error: null,
+            message: '',
+            success: false,
             percentage: 0,
         });
     }, []);
@@ -77,27 +100,30 @@ export function useDocumentUpload(options?: UseDocumentUploadOptions) {
 
             // Validate the file
             if (!data.file) {
-                setProgress({
-                    status: 'error',
+                setUploadState({
+                    isUploading: false,
+                    error: new Error('Please select a file to upload'),
+                    message: '',
+                    success: false,
                     percentage: 0,
-                    error: 'Please select a file to upload',
                 });
                 return;
             }
 
             const fileValidation = validateFile(data.file);
             if (!fileValidation.valid) {
-                setProgress({
-                    status: 'error',
+                setUploadState({
+                    isUploading: false,
+                    error: new Error(fileValidation.error || 'Validation error'),
+                    message: '',
+                    success: false,
                     percentage: 0,
-                    error: fileValidation.error,
                 });
                 return;
             }
 
             // Pre-populate security attributes if not provided
             if (!data.classification) {
-                const securityAttributes = getUserSecurityAttributes();
                 data.classification = securityAttributes.clearance;
 
                 if (!data.caveats || data.caveats.length === 0) {
@@ -110,14 +136,15 @@ export function useDocumentUpload(options?: UseDocumentUploadOptions) {
             }
 
             // Start upload
-            setProgress({
-                status: 'uploading',
+            setUploadState(prev => ({
+                ...prev,
+                isUploading: true,
                 percentage: 0,
-            });
+            }));
 
             // Simulate progress updates (since actual upload progress isn't available)
             const progressInterval = setInterval(() => {
-                setProgress(prev => ({
+                setUploadState(prev => ({
                     ...prev,
                     percentage: prev.percentage >= 90 ? 90 : prev.percentage + 10,
                 }));
@@ -129,8 +156,11 @@ export function useDocumentUpload(options?: UseDocumentUploadOptions) {
                 const uploadedDocument = await uploadDocument(data);
 
                 // Upload complete, set to 100%
-                setProgress({
-                    status: 'success',
+                setUploadState({
+                    isUploading: false,
+                    error: null,
+                    message: `Document upload successful: ${uploadedDocument._id}`,
+                    success: true,
                     percentage: 100,
                     documentId: uploadedDocument._id,
                 });
@@ -161,10 +191,12 @@ export function useDocumentUpload(options?: UseDocumentUploadOptions) {
                 }
 
                 // Update state
-                setProgress({
-                    status: 'error',
+                setUploadState({
+                    isUploading: false,
+                    error: new Error(errorMessage),
+                    message: errorMessage,
+                    success: false,
                     percentage: 0,
-                    error: errorMessage,
                 });
 
                 // Call onError callback if provided
@@ -177,12 +209,12 @@ export function useDocumentUpload(options?: UseDocumentUploadOptions) {
                 clearInterval(progressInterval);
             }
         },
-        [validateFile, resetUpload, getUserSecurityAttributes, options]
+        [validateFile, resetUpload, securityAttributes, options]
     );
 
     return {
         uploadDocument: uploadDocumentWithProgress,
-        progress,
+        uploadState,
         resetUpload,
         validateFile,
     };

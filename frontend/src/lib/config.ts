@@ -16,7 +16,7 @@ export const API_CONFIG = {
         (process.env.NEXT_PUBLIC_API_URL.endsWith('/v1') ?
             process.env.NEXT_PUBLIC_API_URL :
             `${process.env.NEXT_PUBLIC_API_URL}/v1`) :
-        '/api/v1',
+        'https://api.dive25.local:8443/api/v1',
     TIMEOUT: {
         DEFAULT: 20000, // 20 seconds
         FILE_OPERATIONS: 60000, // 60 seconds

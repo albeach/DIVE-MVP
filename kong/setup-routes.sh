@@ -91,6 +91,36 @@ create_or_update_route() {
   echo "✅ Route $name configured successfully"
 }
 
+# Function to update OIDC plugin to enable SSL verification
+update_oidc_plugin_config() {
+  echo "Checking for OIDC plugins to update..."
+  
+  # Get all OIDC plugins
+  OIDC_PLUGINS=$(curl -s http://kong:8001/plugins?name=oidc-auth)
+  
+  # Check if we have any OIDC plugins
+  if echo "$OIDC_PLUGINS" | grep -q "\"data\":\\[\\]"; then
+    echo "No OIDC plugins found."
+    return 0
+  fi
+  
+  # Extract plugin IDs
+  PLUGIN_IDS=$(echo "$OIDC_PLUGINS" | jq -r '.data[].id')
+  
+  # Update each plugin to enable SSL verification
+  for PLUGIN_ID in $PLUGIN_IDS; do
+    echo "Updating OIDC plugin $PLUGIN_ID to enable SSL verification..."
+    RESULT=$(curl -s -X PATCH http://kong:8001/plugins/$PLUGIN_ID \
+      --data "config.ssl_verify=true")
+    
+    if echo "$RESULT" | grep -q "\"ssl_verify\":true"; then
+      echo "Successfully updated OIDC plugin $PLUGIN_ID - SSL verification is now enabled."
+    else
+      echo "Failed to update OIDC plugin $PLUGIN_ID. Response: $RESULT"
+    fi
+  done
+}
+
 # Configure Keycloak routes
 echo "Configuring Keycloak routes..."
   
@@ -130,4 +160,10 @@ create_or_update_route "root-domain-route" "frontend-service" "${BASE_DOMAIN}" "
   
 echo "✅ Frontend routes configured successfully"
 
+# After all routes and plugins have been created,
+# update OIDC plugin configurations to enable SSL verification
+update_oidc_plugin_config
+
 echo -e "${GREEN}✅ All Kong routes configured successfully${NC}" 
+
+echo "Kong configuration completed successfully!" 

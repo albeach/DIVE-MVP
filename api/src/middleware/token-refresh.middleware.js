@@ -22,11 +22,11 @@ const extractToken = (req) => {
 
     // Check if token is in Bearer format
     if (authHeader.startsWith('Bearer ')) {
-        return authHeader.substring(7);
+        return authHeader;
     }
 
-    // If not in Bearer format, return the whole header
-    return authHeader;
+    // If not in Bearer format, add the Bearer prefix
+    return `Bearer ${authHeader}`;
 };
 
 /**
@@ -39,6 +39,9 @@ const tokenExpirationCheck = async (req, res, next) => {
     const startTime = Date.now();
 
     try {
+        // When using Kong with OIDC, Kong should handle token expiration and refresh
+        // But we'll still provide token expiry information to clients as a convenience
+
         // Get token from request
         const token = req.token || extractToken(req);
 

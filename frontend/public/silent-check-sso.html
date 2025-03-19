@@ -4,13 +4,16 @@
 <head>
     <meta charset="utf-8">
     <title>Silent SSO check</title>
+    <script>
+        // This file is used for silent Keycloak authentication checks
+        // It receives authentication information and sends it back to the parent window
+        parent.postMessage(location.href, location.origin);
+    </script>
 </head>
 
 <body>
-    <script>
-        // This page is used by Keycloak adapter to silently check for authentication
-        parent.postMessage(location.href, location.origin);
-    </script>
+    <!-- This page is used for silent authentication checks -->
+    <p>Authentication check in progress...</p>
 </body>
 
 </html>

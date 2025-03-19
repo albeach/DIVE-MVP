@@ -5,7 +5,7 @@
 set -e
 
 # Set variables
-KEYCLOAK_CONTAINER=${KEYCLOAK_CONTAINER:-"dive25-keycloak"}
+KEYCLOAK_CONTAINER=${KEYCLOAK_CONTAINER:-"dive25-staging-keycloak"}
 THEME_PATH="/opt/keycloak/themes/dive25"
 
 # Color codes for output
@@ -46,33 +46,7 @@ echo
 if [[ $REPLY =~ ^[Yy]$ ]]; then
     echo -e "${YELLOW}Restarting Keycloak...${NC}"
     docker restart $KEYCLOAK_CONTAINER
-    
-    echo -e "${YELLOW}Waiting for Keycloak to start...${NC}"
-    sleep 5
-    
-    # Wait for Keycloak to be ready (max 60 seconds)
-    MAX_RETRIES=12
-    COUNTER=0
-    while ! docker exec $KEYCLOAK_CONTAINER curl -s http://localhost:8080/health/ready > /dev/null; do
-        COUNTER=$((COUNTER+1))
-        if [ $COUNTER -eq $MAX_RETRIES ]; then
-            echo -e "${RED}Keycloak did not start within the expected time.${NC}"
-            echo "Please check the logs with: docker logs $KEYCLOAK_CONTAINER"
-            exit 1
-        fi
-        echo -e "${YELLOW}Keycloak not ready yet... waiting 5 seconds (attempt $COUNTER/$MAX_RETRIES)${NC}"
-        sleep 5
-    done
-    
-    echo -e "${GREEN}Keycloak has been restarted and is ready.${NC}"
-    
-    # Apply theme settings through API
-    echo -e "${YELLOW}Setting the theme for the dive25 realm...${NC}"
-    docker exec $KEYCLOAK_CONTAINER /bin/bash -c 'cd /opt/keycloak && ./bin/kcadm.sh config credentials --server http://localhost:8080/ --realm master --user "$KEYCLOAK_ADMIN" --password "$KEYCLOAK_ADMIN_PASSWORD" && ./bin/kcadm.sh update realms/dive25 -s "loginTheme=dive25" -s "accountTheme=dive25" -s "adminTheme=dive25" -s "emailTheme=dive25"'
-    
-    echo -e "${GREEN}Theme settings have been applied.${NC}"
-    echo "The dive25 theme is now active. Access it at:"
-    echo "  http://localhost:8080/realms/dive25/protocol/openid-connect/auth?client_id=account-console&redirect_uri=http://localhost:8080/realms/dive25/account/&response_type=code"
+    echo -e "${GREEN}Keycloak restarted. The theme will be applied on next login.${NC}"
 else
-    echo -e "${YELLOW}Keycloak was not restarted. Please restart it manually to apply the changes.${NC}"
+    echo -e "${YELLOW}Remember to restart Keycloak manually for changes to take effect.${NC}"
 fi 

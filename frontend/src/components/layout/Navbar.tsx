@@ -160,39 +160,36 @@ const Navbar: React.FC = () => {
     }
     
     return (
-      <span className={`text-xs font-bold px-2 py-1 rounded ${badgeClass}`}>
+      <span className={`text-xs font-bold px-2 py-1 rounded-full ${badgeClass}`}>
         {clearance.toUpperCase()}
       </span>
     );
   };
 
   // If not mounted yet, render a placeholder to avoid hydration issues
-  if (!mounted) return <div className="h-16 bg-[#173518]"></div>;
+  if (!mounted) return <div className="h-16 bg-gradient-to-r from-primary-900 to-primary-800"></div>;
 
   return (
-    <header className="sticky top-0 z-50 bg-[#173518] text-white shadow-md">
-      <div className="container mx-auto px-4 py-2">
+    <header className="sticky top-0 z-50 bg-gradient-to-r from-primary-900 to-primary-800 text-white backdrop-blur-sm backdrop-saturate-150">
+      <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          {/* Logo and site name */}
+          {/* Logo only */}
           <div className="flex items-center">
-            <Link href="/" className="flex items-center space-x-2 group">
-              <div className="w-14 h-14 relative overflow-hidden">
+            <Link href="/" className="flex items-center group relative">
+              <div className="w-12 h-12 relative overflow-hidden rounded-md bg-white/5 p-1.5 backdrop-blur-sm border border-white/10 shadow-md">
                 <Image 
                   src="/assets/dive25-logo.svg" 
-                  alt="DIVE25 Logo" 
-                  width={56} 
-                  height={56}
-                  className="transition-transform duration-300 group-hover:scale-110"
+                  alt={t('app.name')} 
+                  width={40} 
+                  height={40}
+                  className="transition-all duration-300 group-hover:scale-105"
                 />
               </div>
-              <span className="text-xl font-semibold text-white tracking-wide group-hover:text-green-300 transition-colors duration-300">
-                {t('app.name')}
-              </span>
             </Link>
           </div>
           
           {/* Desktop Navigation */}
-          <nav className="hidden md:flex items-center space-x-1">
+          <nav className="hidden md:flex items-center space-x-3">
             <NavLink href="/" active={router.pathname === '/'} label={t('navigation.home')} />
             
             {isAuthenticated && (
@@ -211,12 +208,12 @@ const Navbar: React.FC = () => {
                 {/* User info button */}
                 <button 
                   onClick={toggleDropdown}
-                  className="flex items-center space-x-2 px-3 py-2 rounded-md transition-all duration-300 bg-[#254a26] hover:bg-[#306c32] focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50"
+                  className="flex items-center space-x-2 px-4 py-2 rounded-md transition-all duration-300 bg-white/10 hover:bg-white/20 focus:outline-none focus:ring-2 focus:ring-white/30 focus:ring-offset-1 focus:ring-offset-primary-800 backdrop-blur-sm border border-white/10"
                   aria-expanded={isDropdownOpen}
                   aria-haspopup="true"
                 >
                   <div className="flex items-center">
-                    <div className="h-8 w-8 rounded-full bg-[#306c32] flex items-center justify-center text-white font-medium mr-2">
+                    <div className="h-8 w-8 rounded-md bg-primary-700 flex items-center justify-center text-white font-medium mr-2 shadow-inner border border-primary-600">
                       {user.givenName ? user.givenName.charAt(0) : (user.username ? user.username.charAt(0).toUpperCase() : 'U')}
                     </div>
                     <span className="font-medium">{user.givenName || user.username}</span>
@@ -226,7 +223,7 @@ const Navbar: React.FC = () => {
                   </div>
                   <svg 
                     xmlns="http://www.w3.org/2000/svg" 
-                    className={`h-5 w-5 transition-transform duration-300 ${isDropdownOpen ? 'rotate-180' : ''}`} 
+                    className={`h-4 w-4 transition-transform duration-300 ml-1 ${isDropdownOpen ? 'rotate-180' : ''}`} 
                     fill="none" 
                     viewBox="0 0 24 24" 
                     stroke="currentColor"
@@ -238,30 +235,40 @@ const Navbar: React.FC = () => {
                 {/* Dropdown menu */}
                 {isDropdownOpen && (
                   <div 
-                    className="absolute right-0 mt-2 w-72 bg-white rounded-md shadow-lg z-50 overflow-hidden transform origin-top-right transition-all duration-200 ease-out"
+                    className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-xl z-50 overflow-hidden transform origin-top-right transition-all duration-200 ease-out border border-gray-100"
                     role="menu"
                     aria-orientation="vertical"
                     aria-labelledby="user-menu"
                   >
-                    <div className="p-4 border-b border-gray-200 bg-gradient-to-br from-green-50 to-white">
+                    <div className="p-4 border-b border-gray-100 bg-gradient-to-br from-green-50 to-white">
                       <p className="text-base font-medium text-gray-900">{user.givenName} {user.surname}</p>
                       <p className="text-sm text-gray-600 truncate mt-0.5">{user.email}</p>
                       {user.organization && (
-                        <p className="text-xs text-gray-500 mt-1">{user.organization}</p>
+                        <p className="text-xs text-gray-500 mt-1 flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                          </svg>
+                          {user.organization}
+                        </p>
                       )}
                     </div>
                     
                     {/* Session information */}
-                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+                    <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
                       <div className="flex justify-between items-center">
-                        <p className="text-sm text-gray-500">{t('session.expires_in')}:</p>
+                        <p className="text-sm text-gray-500 flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {t('session.expires_in')}:
+                        </p>
                         <div className="flex items-center">
                           <span className={`text-sm font-medium ${isTokenExpiring ? 'text-red-600' : 'text-green-600'}`}>
                             {formatTimeRemaining(sessionTimeRemaining)}
                           </span>
                           <button 
                             onClick={handleRefreshSession}
-                            className="ml-2 text-[#306c32] hover:text-[#173518] transition-colors"
+                            className="ml-2 text-primary-600 hover:text-primary-800 transition-colors p-1 rounded-full hover:bg-green-50"
                             title={t('session.refresh')}
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -330,77 +337,94 @@ const Navbar: React.FC = () => {
                 <LoginButton 
                   variant="primary" 
                   size="md" 
-                  className="bg-[#306c32] hover:bg-[#3d883f] text-white shadow-md"
+                  className="bg-white/10 hover:bg-white/20 text-white py-2 px-4 rounded-md shadow-sm backdrop-blur-sm border border-white/10 hover:border-white/20 transition-all duration-300"
                   label={t('auth.sign_in')}
                 />
               </div>
             )}
             
             {/* Mobile menu button */}
-            <button
-              onClick={toggleMobileMenu}
-              type="button"
-              className="md:hidden inline-flex items-center justify-center p-2 rounded-md text-white hover:text-green-300 hover:bg-[#254a26] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-green-500 transition-colors duration-200"
-              aria-expanded={isMobileMenuOpen}
-            >
-              <span className="sr-only">{t('navigation.toggle_menu')}</span>
-              {/* Icon when menu is closed */}
-              {!isMobileMenuOpen && (
-                <svg className="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              )}
-              {/* Icon when menu is open */}
-              {isMobileMenuOpen && (
-                <svg className="block h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              )}
-            </button>
+            <div className="md:hidden">
+              <button 
+                onClick={toggleMobileMenu}
+                className="p-2 rounded-md hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-white/30 transition-colors duration-200"
+                aria-expanded={isMobileMenuOpen}
+              >
+                <span className="sr-only">Open main menu</span>
+                {isMobileMenuOpen ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                  </svg>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
       {/* Mobile menu, show/hide based on menu state */}
-      <div className={`md:hidden transition-all duration-300 ease-in-out ${isMobileMenuOpen ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0 overflow-hidden'}`}>
-        <div className="px-4 pt-2 pb-4 space-y-1 bg-[#254a26] border-t border-[#3d883f]">
-          <MobileNavLink href="/" active={router.pathname === '/'}>{t('navigation.home')}</MobileNavLink>
-          
-          {isAuthenticated ? (
-            <>
-              <MobileNavLink href="/documents" active={router.pathname.startsWith('/documents')}>
-                {t('navigation.documents')}
-              </MobileNavLink>
-              <MobileNavLink href="/dashboard" active={router.pathname === '/dashboard'}>
-                {t('navigation.dashboard')}
-              </MobileNavLink>
-              <MobileNavLink href="/profile" active={router.pathname === '/profile'}>
-                {t('navigation.profile')}
-              </MobileNavLink>
-              <div className="pt-2 pb-1">
-                <button
-                  onClick={handleLogout}
-                  className="flex w-full items-center px-3 py-2 text-base font-medium rounded-md text-red-100 bg-red-900 bg-opacity-50 hover:bg-opacity-75 transition-colors duration-150"
-                >
-                  <svg className="h-5 w-5 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+      {isMobileMenuOpen && (
+        <div className="md:hidden bg-gradient-to-b from-primary-800 to-primary-900 border-t border-white/10 shadow-lg animate-fadeIn">
+          <div className="px-3 pt-3 pb-4 space-y-1.5">
+            <MobileNavLink href="/" active={router.pathname === '/'}>
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              <span>{t('navigation.home')}</span>
+            </MobileNavLink>
+            
+            {isAuthenticated ? (
+              <>
+                <MobileNavLink href="/documents" active={router.pathname.startsWith('/documents')}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  {t('auth.sign_out')}
-                </button>
+                  <span>{t('navigation.documents')}</span>
+                </MobileNavLink>
+                
+                <MobileNavLink href="/dashboard" active={router.pathname === '/dashboard'}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
+                  </svg>
+                  <span>{t('navigation.dashboard')}</span>
+                </MobileNavLink>
+                
+                <MobileNavLink href="/profile" active={router.pathname === '/profile'}>
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                  <span>{t('navigation.profile')}</span>
+                </MobileNavLink>
+                
+                <div className="pt-2 pb-1">
+                  <button
+                    onClick={handleLogout}
+                    className="flex w-full items-center px-3 py-2.5 text-base font-medium rounded-lg text-red-100 bg-red-900/40 hover:bg-red-900/60 transition-colors duration-200 border border-red-800/50"
+                  >
+                    <svg className="h-5 w-5 mr-3 opacity-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
+                    </svg>
+                    {t('auth.sign_out')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="pt-2 pb-1">
+                <LoginButton 
+                  variant="primary" 
+                  size="md" 
+                  className="w-full bg-white/10 hover:bg-white/20 text-white py-2.5 px-4 rounded-lg shadow-sm backdrop-blur-sm border border-white/10 hover:border-white/20 transition-all duration-300"
+                  label={t('auth.sign_in')}
+                />
               </div>
-            </>
-          ) : (
-            <div className="pt-2">
-              <LoginButton 
-                variant="primary" 
-                size="md" 
-                className="w-full bg-[#306c32] hover:bg-[#3d883f] shadow-md"
-                label={t('auth.sign_in')}
-              />
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </header>
   );
 };
@@ -410,13 +434,14 @@ const NavLink: React.FC<{ href: string; active: boolean; label: string }> = ({ h
   return (
     <Link 
       href={href} 
-      className={`px-3 py-2 rounded-md text-base font-medium transition-all duration-200 ${
+      className={`px-4 py-2 rounded-md text-base font-medium transition-all duration-300 relative ${
         active 
-          ? 'bg-[#254a26] text-white' 
-          : 'text-green-100 hover:bg-[#254a26] hover:text-white'
+          ? 'bg-white/20 text-white' 
+          : 'text-white hover:text-white hover:bg-white/10'
       }`}
     >
       {label}
+      {active && <span className="absolute bottom-0 left-1/2 transform -translate-x-1/2 w-8 h-0.5 bg-primary-400 rounded-sm"></span>}
     </Link>
   );
 };
@@ -430,10 +455,10 @@ const MobileNavLink: React.FC<{ href: string; active: boolean; children: React.R
   return (
     <Link
       href={href}
-      className={`flex items-center px-3 py-2 rounded-md text-base font-medium ${
+      className={`flex items-center px-3 py-2.5 rounded-lg text-base font-medium transition-all duration-300 ${
         active 
-          ? 'bg-[#306c32] text-white' 
-          : 'text-green-200 hover:bg-[#306c32] hover:text-white'
+          ? 'bg-white/15 text-white shadow-inner border border-white/10' 
+          : 'text-white/80 hover:bg-white/10 hover:text-white'
       }`}
     >
       {children}
@@ -451,11 +476,11 @@ const DropdownLink: React.FC<{
   return (
     <Link 
       href={href} 
-      className="group flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 transition-colors duration-150" 
+      className="group flex items-center px-4 py-2.5 text-sm text-gray-700 hover:bg-green-50 transition-colors duration-200" 
       role="menuitem" 
       onClick={onClick}
     >
-      {icon && <span className="mr-3 text-gray-500 group-hover:text-[#254a26]">{icon}</span>}
+      {icon && <span className="mr-3 text-gray-500 group-hover:text-primary-600 transition-colors duration-200">{icon}</span>}
       {children}
     </Link>
   );

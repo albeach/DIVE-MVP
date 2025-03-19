@@ -1,174 +1,233 @@
-import { useEffect, useState } from 'react';
-import { getKeycloak } from '@/lib/keycloak';
-import { getAuthServerUrl } from '@/lib/url';
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '@/context/auth-context';
+import { Spinner } from '@/components/ui/Spinner';
+import Link from 'next/link';
+import { Button } from '@/components/ui/Button';
 
-export default function AuthDebug() {
-  const [debugInfo, setDebugInfo] = useState<any>({
-    loading: true,
-    error: null,
-    info: {}
-  });
+interface TokenInfo {
+  isValid: boolean;
+  expiresAt: string | null;
+  timeRemaining: string | null;
+  tokenParsed: Record<string, any> | null;
+}
 
-  useEffect(() => {
-    async function gatherDebugInfo() {
-      try {
-        const keycloakInstance = getKeycloak();
-        const authServerUrl = getAuthServerUrl();
-        const currentUrl = window.location.href;
-        const urlParams = new URLSearchParams(window.location.search);
-        const hashParams = window.location.hash 
-          ? new URLSearchParams(window.location.hash.substring(1)) 
-          : new URLSearchParams();
-        
-        // Check session storage
-        const storedToken = sessionStorage.getItem('kc_token');
-        const storedRefreshToken = sessionStorage.getItem('kc_refreshToken');
-        const redirectPath = sessionStorage.getItem('auth_redirect');
-        
-        // Try to get configuration from environment
-        const envConfig = {
-          NEXT_PUBLIC_KEYCLOAK_URL: process.env.NEXT_PUBLIC_KEYCLOAK_URL,
-          NEXT_PUBLIC_KEYCLOAK_REALM: process.env.NEXT_PUBLIC_KEYCLOAK_REALM,
-          NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
-        };
-        
-        // Test URL generation
-        const testLoginUrl = `${authServerUrl}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/auth?client_id=${process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID}&redirect_uri=${encodeURIComponent(window.location.origin + '/auth/callback')}&response_type=code&scope=openid`;
-        
-        // Try to initialize Keycloak and get status
-        let keycloakStatus = { initialized: false, authenticated: false };
-        try {
-          const initialized = await keycloakInstance.init({
-            onLoad: 'check-sso',
-            silentCheckSsoRedirectUri: undefined,
-            checkLoginIframe: false
-          });
-          keycloakStatus = {
-            initialized: true,
-            authenticated: keycloakInstance.authenticated || false
-          };
-        } catch (error) {
-          keycloakStatus.initialized = false;
-        }
-        
-        setDebugInfo({
-          loading: false,
-          error: null,
-          info: {
-            keycloakConfig: {
-              url: keycloakInstance.authServerUrl,
-              realm: keycloakInstance.realm,
-              clientId: keycloakInstance.clientId
-            },
-            authServerUrl,
-            currentUrl,
-            urlParams: Object.fromEntries(urlParams.entries()),
-            hashParams: Object.fromEntries(hashParams.entries()),
-            sessionStorage: {
-              hasToken: !!storedToken,
-              hasRefreshToken: !!storedRefreshToken,
-              redirectPath
-            },
-            environment: envConfig,
-            testLoginUrl,
-            keycloakStatus
-          }
-        });
-      } catch (err) {
-        setDebugInfo({
-          loading: false,
-          error: err instanceof Error ? err.message : String(err),
-          info: {}
-        });
-      }
-    }
-    
-    gatherDebugInfo();
-  }, []);
-
-  // Function to directly test login
-  const testDirectLogin = () => {
-    const authServerUrl = getAuthServerUrl();
-    const callbackUrl = `${window.location.origin}/auth/callback`;
-    const redirectUri = encodeURIComponent(callbackUrl);
-    const loginUrl = `${authServerUrl}/realms/${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}/protocol/openid-connect/auth?client_id=${process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID}&redirect_uri=${redirectUri}&response_type=code&scope=openid`;
-    
-    console.log('Redirecting to:', loginUrl);
-    window.location.href = loginUrl;
+interface DebugData {
+  keycloakState: {
+    authenticated: boolean;
+    token: string | null;
+    refreshToken: string | null;
   };
+  tokenInfo: TokenInfo;
+  environmentInfo: {
+    nextPublicVars: Record<string, string>;
+    serverTime: string;
+  };
+}
+
+export default function AuthDebugPage() {
+  const { isAuthenticated, isLoading, user, keycloak, login, refreshToken } = useAuth();
+  const [debugData, setDebugData] = useState<DebugData | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [copySuccess, setCopySuccess] = useState('');
+
+  // Collect debug information
+  useEffect(() => {
+    if (!isLoading) {
+      collectDebugInfo();
+    }
+  }, [isLoading, isAuthenticated, keycloak]);
+
+  const collectDebugInfo = () => {
+    const initialTokenInfo: TokenInfo = {
+      isValid: false,
+      expiresAt: null,
+      timeRemaining: null,
+      tokenParsed: null
+    };
+
+    // Get token information if available
+    let tokenInfo = { ...initialTokenInfo };
+    if (keycloak && keycloak.tokenParsed) {
+      const expiryTime = keycloak.tokenParsed.exp ? keycloak.tokenParsed.exp : 0;
+      const currentTime = Math.floor(Date.now() / 1000);
+      const timeRemaining = expiryTime - currentTime;
+      
+      tokenInfo = {
+        isValid: keycloak.authenticated || false,
+        expiresAt: expiryTime ? new Date(expiryTime * 1000).toLocaleString() : null,
+        timeRemaining: timeRemaining ? `${Math.floor(timeRemaining / 60)}m ${timeRemaining % 60}s` : null,
+        tokenParsed: keycloak.tokenParsed as Record<string, any>
+      };
+    }
+
+    // Collect environment info
+    const nextPublicVars: Record<string, string> = {};
+    Object.keys(process.env).forEach(key => {
+      if (key.startsWith('NEXT_PUBLIC_')) {
+        nextPublicVars[key] = process.env[key] as string;
+      }
+    });
+
+    // Set debug data
+    setDebugData({
+      keycloakState: {
+        authenticated: keycloak?.authenticated || false,
+        token: keycloak?.token ? `${keycloak.token.substring(0, 15)}...` : null,
+        refreshToken: keycloak?.refreshToken ? `${keycloak.refreshToken.substring(0, 15)}...` : null,
+      },
+      tokenInfo,
+      environmentInfo: {
+        nextPublicVars,
+        serverTime: new Date().toISOString(),
+      }
+    });
+  };
+
+  const handleRefreshToken = async () => {
+    if (!keycloak) return;
+    
+    setIsRefreshing(true);
+    try {
+      const refreshed = await refreshToken();
+      if (refreshed) {
+        collectDebugInfo();
+      }
+    } catch (error) {
+      console.error('Error refreshing token:', error);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const copyToClipboard = () => {
+    const textToCopy = JSON.stringify(debugData, null, 2);
+    navigator.clipboard.writeText(textToCopy).then(() => {
+      setCopySuccess('Copied!');
+      setTimeout(() => setCopySuccess(''), 2000);
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <Spinner size="lg" />
+        <p className="ml-2">Loading authentication info...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8">Authentication Debug</h1>
+      <h1 className="text-2xl font-bold mb-6">Authentication Debug Tool</h1>
       
-      {debugInfo.loading ? (
-        <div className="p-4 bg-blue-100 text-blue-700 rounded">Loading debug information...</div>
-      ) : debugInfo.error ? (
-        <div className="p-4 bg-red-100 text-red-700 rounded">Error: {debugInfo.error}</div>
-      ) : (
-        <div className="space-y-6">
-          <div className="p-4 bg-gray-100 rounded">
-            <h2 className="text-xl font-semibold mb-2">Environment Configuration</h2>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border">
-              {JSON.stringify(debugInfo.info.environment, null, 2)}
-            </pre>
-          </div>
-          
-          <div className="p-4 bg-gray-100 rounded">
-            <h2 className="text-xl font-semibold mb-2">Keycloak Configuration</h2>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border">
-              {JSON.stringify(debugInfo.info.keycloakConfig, null, 2)}
-            </pre>
-          </div>
-          
-          <div className="p-4 bg-gray-100 rounded">
-            <h2 className="text-xl font-semibold mb-2">Auth Server URL</h2>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border">
-              {debugInfo.info.authServerUrl}
-            </pre>
-          </div>
-          
-          <div className="p-4 bg-gray-100 rounded">
-            <h2 className="text-xl font-semibold mb-2">Session Storage</h2>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border">
-              {JSON.stringify(debugInfo.info.sessionStorage, null, 2)}
-            </pre>
-          </div>
-          
-          <div className="p-4 bg-gray-100 rounded">
-            <h2 className="text-xl font-semibold mb-2">Current URL and Parameters</h2>
-            <p className="mb-2"><strong>URL:</strong> {debugInfo.info.currentUrl}</p>
-            <p className="mb-2"><strong>URL Parameters:</strong></p>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border">
-              {JSON.stringify(debugInfo.info.urlParams, null, 2)}
-            </pre>
-            <p className="mb-2 mt-4"><strong>Hash Parameters:</strong></p>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border">
-              {JSON.stringify(debugInfo.info.hashParams, null, 2)}
-            </pre>
-          </div>
-          
-          <div className="p-4 bg-gray-100 rounded">
-            <h2 className="text-xl font-semibold mb-2">Keycloak Status</h2>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border">
-              {JSON.stringify(debugInfo.info.keycloakStatus, null, 2)}
-            </pre>
-          </div>
-          
-          <div className="p-4 bg-gray-100 rounded">
-            <h2 className="text-xl font-semibold mb-2">Test Login URL</h2>
-            <pre className="whitespace-pre-wrap bg-white p-3 rounded border mb-4">
-              {debugInfo.info.testLoginUrl}
-            </pre>
-            <button
-              onClick={testDirectLogin}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-            >
-              Test Direct Login
-            </button>
+      <div className="mb-6 flex gap-4">
+        <Button variant="primary" onClick={collectDebugInfo}>
+          Refresh Info
+        </Button>
+        
+        {isAuthenticated ? (
+          <Button 
+            variant="secondary" 
+            onClick={handleRefreshToken}
+            disabled={isRefreshing}
+          >
+            {isRefreshing ? <><Spinner size="sm" /> Refreshing...</> : 'Refresh Token'}
+          </Button>
+        ) : (
+          <Button variant="primary" onClick={login}>
+            Log In
+          </Button>
+        )}
+        
+        <Button variant="secondary" onClick={copyToClipboard}>
+          {copySuccess || 'Copy Debug Data'}
+        </Button>
+      </div>
+      
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">Authentication Status</h2>
+          <div className="space-y-2">
+            <div className="flex justify-between">
+              <span className="font-medium">Authenticated:</span>
+              <span className={isAuthenticated ? 'text-green-600' : 'text-red-600'}>
+                {isAuthenticated ? 'Yes' : 'No'}
+              </span>
+            </div>
+            
+            {user && (
+              <>
+                <div className="flex justify-between">
+                  <span className="font-medium">Username:</span>
+                  <span>{user.username}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium">Name:</span>
+                  <span>{user.givenName} {user.surname}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium">Roles:</span>
+                  <span>{user.roles?.join(', ') || 'None'}</span>
+                </div>
+              </>
+            )}
+            
+            {debugData?.tokenInfo && (
+              <>
+                <div className="flex justify-between">
+                  <span className="font-medium">Token Expires:</span>
+                  <span>{debugData.tokenInfo.expiresAt || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="font-medium">Time Remaining:</span>
+                  <span className={
+                    debugData.tokenInfo.timeRemaining && 
+                    parseInt(debugData.tokenInfo.timeRemaining.split('m')[0]) < 5 
+                      ? 'text-red-600' 
+                      : 'text-green-600'
+                  }>
+                    {debugData.tokenInfo.timeRemaining || 'N/A'}
+                  </span>
+                </div>
+              </>
+            )}
           </div>
         </div>
+        
+        <div className="bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">Environment Information</h2>
+          <div className="space-y-2">
+            {debugData?.environmentInfo.nextPublicVars && 
+              Object.entries(debugData.environmentInfo.nextPublicVars).map(([key, value]) => (
+                <div key={key} className="flex justify-between overflow-hidden">
+                  <span className="font-medium truncate mr-2">{key}:</span>
+                  <span className="truncate">{value}</span>
+                </div>
+              ))
+            }
+            
+            <div className="flex justify-between">
+              <span className="font-medium">Server Time:</span>
+              <span>{debugData?.environmentInfo.serverTime}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {debugData?.tokenInfo.tokenParsed && (
+        <div className="mt-6 bg-white shadow-md rounded-lg p-6">
+          <h2 className="text-xl font-semibold mb-4">Token Claims</h2>
+          <pre className="bg-gray-100 p-4 rounded overflow-auto max-h-96 text-sm">
+            {JSON.stringify(debugData.tokenInfo.tokenParsed, null, 2)}
+          </pre>
+        </div>
       )}
+      
+      <div className="mt-8 text-center">
+        <Link href="/" className="text-blue-600 hover:text-blue-800">
+          Back to Home
+        </Link>
+      </div>
     </div>
   );
 } 

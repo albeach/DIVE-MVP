@@ -1,151 +1,29 @@
 const jwt = require('jsonwebtoken');
-const { keycloakJwksClient } = require('../config/keycloak.config');
 const { User } = require('../models/user.model');
 const { createAuditLog } = require('./audit.service');
 const logger = require('../utils/logger');
 const { ApiError } = require('../utils/error.utils');
 const NodeCache = require('node-cache');
 
-// Create a cache for JWT validation with 5-minute TTL by default
-const tokenCache = new NodeCache({
+// Create a cache for user data with 5-minute TTL
+const userCache = new NodeCache({
     stdTTL: 300, // 5 minutes
     checkperiod: 60, // check for expired keys every 1 minute
     useClones: false,
     maxKeys: 1000 // Limit cache size to prevent memory issues
 });
 
-// Cache for public keys
-const keyCache = new NodeCache({
-    stdTTL: 3600, // 1 hour
-    checkperiod: 300, // check every 5 minutes
-    useClones: false,
-    maxKeys: 100 // Limit cache size
-});
-
-/**
- * Get public key from Keycloak by kid
- * @param {string} kid - Key ID
- * @returns {Promise<string>} Public key
- */
-const getPublicKey = (kid) => {
-    return new Promise((resolve, reject) => {
-        // Check if key is in cache
-        const cachedKey = keyCache.get(kid);
-        if (cachedKey) {
-            logger.debug(`Using cached public key for kid: ${kid}`);
-            return resolve(cachedKey);
-        }
-
-        // Get key from Keycloak
-        keycloakJwksClient.getSigningKey(kid, (err, key) => {
-            if (err) {
-                logger.error(`Error getting public key for kid ${kid}:`, err);
-                return reject(err);
-            }
-            const signingKey = key.publicKey || key.rsaPublicKey;
-
-            // Cache the key
-            keyCache.set(kid, signingKey);
-
-            resolve(signingKey);
-        });
-    });
-};
-
-/**
- * Verify and decode a JWT token
- * @param {string} token - JWT token to verify
- * @returns {Promise<Object>} Decoded token payload
- */
-const verifyToken = async (token) => {
-    try {
-        let tokenValue = token;
-
-        // Handle case where token might still be in Bearer format
-        if (token.startsWith('Bearer ')) {
-            logger.debug('Token in Bearer format, extracting token');
-            const tokenParts = token.split(' ');
-            if (tokenParts.length !== 2) {
-                logger.warn('Invalid token format (Bearer prefix but incomplete)');
-                throw new ApiError('Invalid token format', 401);
-            }
-            tokenValue = tokenParts[1];
-        }
-
-        // Debug token length
-        logger.debug(`Verifying token: length ${tokenValue.length}, starts with ${tokenValue.substring(0, 10)}...`);
-
-        // Check if token is in cache
-        const cachedResult = tokenCache.get(tokenValue);
-        if (cachedResult) {
-            logger.debug('Using cached token validation result');
-            // If cached result is an error, throw it
-            if (cachedResult instanceof Error) {
-                throw cachedResult;
-            }
-            return cachedResult;
-        }
-
-        // Decode token without verification to extract header
-        const decodedToken = jwt.decode(tokenValue, { complete: true });
-        if (!decodedToken) {
-            logger.warn('Token decode failed - invalid format');
-            const error = new ApiError('Invalid token', 401);
-            tokenCache.set(tokenValue, error); // Cache the error too
-            throw error;
-        }
-
-        logger.debug('Token header decoded', {
-            kid: decodedToken.header.kid,
-            alg: decodedToken.header.alg
-        });
-
-        // Get the public key from Keycloak
-        const getKey = async (header, callback) => {
-            try {
-                const signingKey = await getPublicKey(header.kid);
-                callback(null, signingKey);
-            } catch (err) {
-                logger.error('Error getting public key', err);
-                callback(err);
-            }
-        };
-
-        // Verify the token
-        return new Promise((resolve, reject) => {
-            jwt.verify(tokenValue, getKey, { algorithms: ['RS256'] }, (err, decoded) => {
-                if (err) {
-                    logger.error('Token verification failed:', err);
-                    const apiError = new ApiError('Invalid token', 401);
-                    tokenCache.set(tokenValue, apiError); // Cache the error
-                    return reject(apiError);
-                }
-
-                // Cache successful result, but subtract 30 seconds from exp to account for clock skew
-                const timeToLive = decoded.exp ? (decoded.exp - Math.floor(Date.now() / 1000) - 30) : 300;
-                if (timeToLive > 0) {
-                    tokenCache.set(tokenValue, decoded, timeToLive);
-                }
-
-                resolve(decoded);
-            });
-        });
-    } catch (error) {
-        logger.error('Token verification error:', error);
-        if (error instanceof ApiError) {
-            throw error;
-        }
-        throw new ApiError('Token verification failed', 401);
-    }
-};
-
 /**
  * Get user information from token payload and update or create user in local database
- * @param {Object} tokenPayload - Decoded token payload
+ * @param {Object} tokenPayload - Decoded token payload or user info from Kong
  * @returns {Promise<Object>} User object
  */
 const getUserFromToken = async (tokenPayload) => {
     try {
+        if (!tokenPayload) {
+            throw new Error('No token payload provided');
+        }
+
         // Extract user attributes from token payload
         const uniqueId = tokenPayload.sub;
         const username = tokenPayload.preferred_username || tokenPayload.username;
@@ -219,25 +97,16 @@ const getUserFromToken = async (tokenPayload) => {
 };
 
 /**
- * Clear token cache to force re-validation
- */
-const clearTokenCache = () => {
-    tokenCache.flushAll();
-    logger.info('Token cache cleared');
-};
-
-/**
  * Check token expiration and refresh if needed
  * @param {string} token - Current token
- * @param {string} refreshToken - Refresh token
- * @returns {Promise<Object>} New tokens if refreshed, or null if no refresh needed
+ * @returns {Promise<Object>} Token expiration info
  */
 const checkTokenExpiration = async (token) => {
     try {
-        // Extract token without Bearer prefix
-        const tokenValue = token.split(' ')[1];
+        // Extract token without Bearer prefix if present
+        const tokenValue = token.startsWith('Bearer ') ? token.split(' ')[1] : token;
 
-        // Decode token without verification
+        // Decode token without verification (Kong has already verified it)
         const decoded = jwt.decode(tokenValue);
         if (!decoded || !decoded.exp) {
             return null;
@@ -257,9 +126,16 @@ const checkTokenExpiration = async (token) => {
     }
 };
 
+/**
+ * Clear user cache
+ */
+const clearUserCache = () => {
+    userCache.flushAll();
+    logger.info('User cache cleared');
+};
+
 module.exports = {
-    verifyToken,
     getUserFromToken,
-    clearTokenCache,
     checkTokenExpiration,
+    clearUserCache,
 };

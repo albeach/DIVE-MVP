@@ -77,7 +77,7 @@ const PUBLIC_ENDPOINTS = [
 const AUTH_REQUIRED_ENDPOINTS = [
     '/api/v1/auth',
     '/api/v1/users',
-    '/documents'  // Keep this as /documents since it's appended to BASE_URL which already has /api/v1
+    '/api/v1/documents'  // Updated to match the full path
 ];
 
 // List of status codes that can be retried
