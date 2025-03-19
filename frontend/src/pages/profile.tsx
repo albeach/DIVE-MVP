@@ -1,5 +1,5 @@
 // frontend/src/pages/profile.tsx
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Head from 'next/head';
 import { useTranslation } from 'next-i18next';
 import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
@@ -14,8 +14,18 @@ import { formatDate } from '@/utils/date';
 
 function Profile() {
   const { t } = useTranslation(['common', 'profile']);
-  const { user } = useAuth();
+  const { user, keycloak } = useAuth();
   const [showTokenInfo, setShowTokenInfo] = useState(false);
+  const [tokenData, setTokenData] = useState<any>(null);
+
+  useEffect(() => {
+    if (keycloak && keycloak.tokenParsed) {
+      console.log('Keycloak token parsed:', keycloak.tokenParsed);
+      setTokenData(keycloak.tokenParsed);
+    } else {
+      console.log('No Keycloak token available');
+    }
+  }, [keycloak]);
 
   if (!user) {
     return null;
@@ -220,6 +230,28 @@ function Profile() {
                     <span className="text-green-700 font-medium">{t('profile:active')}</span>
                   </div>
                 </div>
+
+                {/* Debug button */}
+                <div className="mt-4">
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => setShowTokenInfo(!showTokenInfo)}
+                  >
+                    {showTokenInfo ? 'Hide Token Info' : 'Show Token Info'}
+                  </Button>
+                  
+                  {showTokenInfo && tokenData && (
+                    <div className="mt-4 text-xs">
+                      <div className="bg-gray-100 p-3 rounded-md overflow-auto max-h-64 border border-gray-200">
+                        <pre>{JSON.stringify(tokenData, null, 2)}</pre>
+                      </div>
+                      <p className="mt-2 text-gray-500 text-xs">
+                        Token debugging information
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             </Card>
 
@@ -271,7 +303,7 @@ function Profile() {
                 {showTokenInfo && (
                   <div className="mt-4 text-xs">
                     <div className="bg-gray-100 p-3 rounded-md overflow-auto max-h-64 border border-gray-200">
-                      <pre>{JSON.stringify(user, null, 2)}</pre>
+                      <pre>{JSON.stringify(tokenData, null, 2)}</pre>
                     </div>
                     <p className="mt-2 text-gray-500 text-xs">
                       {t('profile:tokenInfoWarning')}

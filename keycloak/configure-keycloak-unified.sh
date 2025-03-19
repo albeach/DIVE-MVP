@@ -224,6 +224,156 @@ configure_clients() {
   fi
 }
 
+# Function to configure user attribute protocol mappers
+configure_user_attribute_mappers() {
+  local token=$1
+  
+  echo "Configuring user attribute protocol mappers for frontend client..."
+  
+  # Get frontend client ID
+  local frontend_id=$(curl -s -X GET "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients" \
+    -H "Authorization: Bearer $token" | grep -o "\"id\":\"[^\"]*\",\"clientId\":\"${KEYCLOAK_CLIENT_ID_FRONTEND}\"" | cut -d'"' -f4)
+    
+  if [ -z "$frontend_id" ]; then
+    echo "❌ Frontend client not found, cannot configure protocol mappers"
+    return 1
+  fi
+  
+  # Create mapper for clearance attribute
+  echo "Creating mapper for clearance attribute..."
+  curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients/${frontend_id}/protocol-mappers/models" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "clearance-mapper",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "userinfo.token.claim": "true",
+        "user.attribute": "clearance",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "clearance",
+        "jsonType.label": "String"
+      }
+    }'
+  
+  # Create mapper for caveats attribute (as JSON array)
+  echo "Creating mapper for caveats attribute..."
+  curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients/${frontend_id}/protocol-mappers/models" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "caveats-mapper",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "userinfo.token.claim": "true",
+        "user.attribute": "caveats",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "caveats",
+        "jsonType.label": "JSON"
+      }
+    }'
+  
+  # Create mapper for coi attribute (as JSON array)
+  echo "Creating mapper for communities of interest attribute..."
+  curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients/${frontend_id}/protocol-mappers/models" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "coi-mapper",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "userinfo.token.claim": "true",
+        "user.attribute": "coi",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "coi",
+        "jsonType.label": "JSON"
+      }
+    }'
+  
+  # Create mapper for organization attribute
+  echo "Creating mapper for organization attribute..."
+  curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients/${frontend_id}/protocol-mappers/models" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "organization-mapper",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "userinfo.token.claim": "true",
+        "user.attribute": "organization",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "organization",
+        "jsonType.label": "String"
+      }
+    }'
+  
+  # Create mapper for countryOfAffiliation attribute
+  echo "Creating mapper for country of affiliation attribute..."
+  curl -s -X POST "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients/${frontend_id}/protocol-mappers/models" \
+    -H "Authorization: Bearer $token" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "name": "country-mapper",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-usermodel-attribute-mapper",
+      "consentRequired": false,
+      "config": {
+        "userinfo.token.claim": "true",
+        "user.attribute": "countryOfAffiliation",
+        "id.token.claim": "true",
+        "access.token.claim": "true",
+        "claim.name": "countryOfAffiliation",
+        "jsonType.label": "String"
+      }
+    }'
+    
+  echo "✅ User attribute protocol mappers configured successfully"
+  return 0
+}
+
+# Function to fix frontend translations
+fix_frontend_translations() {
+  echo "Fixing frontend translations..."
+  
+  # Check if the src/public/locales directory exists
+  if [ -d "/app/frontend/src/public/locales" ]; then
+    echo "Found translations in /app/frontend/src/public/locales"
+    mkdir -p /app/frontend/public/locales
+    
+    # Copy translations from src/public/locales to public/locales
+    echo "Copying translation files to correct location..."
+    cp -rf /app/frontend/src/public/locales/* /app/frontend/public/locales/
+    
+    echo "✅ Translation files copied successfully"
+    return 0
+  elif [ -d "${PROJECT_ROOT}/frontend/src/public/locales" ]; then
+    echo "Found translations in ${PROJECT_ROOT}/frontend/src/public/locales"
+    mkdir -p "${PROJECT_ROOT}/frontend/public/locales"
+    
+    # Copy translations from src/public/locales to public/locales
+    echo "Copying translation files to correct location..."
+    cp -rf "${PROJECT_ROOT}/frontend/src/public/locales"/* "${PROJECT_ROOT}/frontend/public/locales"/
+    
+    echo "✅ Translation files copied successfully"
+    return 0
+  else
+    echo "⚠️ Could not find translation files in src/public/locales"
+    return 1
+  fi
+}
+
 # Function to update URL in environment files
 update_environment_files() {
   echo "Checking for environment files to update..."
@@ -359,14 +509,20 @@ update_issuer_url "$ADMIN_TOKEN" || echo "Warning: Issuer URL update had issues"
 # Step 6: Configure clients
 configure_clients "$ADMIN_TOKEN" || echo "Warning: Client configuration had issues"
 
-# Step 7: Create test users
+# Step 7: Configure user attribute protocol mappers
+configure_user_attribute_mappers "$ADMIN_TOKEN" || echo "Warning: User attribute protocol mappers configuration had issues"
+
+# Step 8: Create test users
 create_test_users "$ADMIN_TOKEN" || echo "Warning: Test users creation had issues"
 
-# Step 8: Update environment files if running in project directory
+# Step 9: Update environment files if running in project directory
 update_environment_files || echo "Warning: Environment files update had issues"
 
-# Step 9: Generate browser script for frontend issues
+# Step 10: Generate browser script for frontend issues
 generate_browser_script || echo "Warning: Browser script generation had issues"
+
+# Step 11: Fix frontend translations
+fix_frontend_translations || echo "Warning: Frontend translations fix had issues"
 
 echo
 echo "=============================================="
@@ -378,9 +534,11 @@ echo "1. Realm setup (created if missing)"
 echo "2. Content Security Policy settings"
 echo "3. Issuer URL configured to use port 8443"
 echo "4. Client redirects updated"
-echo "5. Test users created"
-echo "6. Environment files updated (if accessible)"
-echo "7. Browser script generated for frontend fixes"
+echo "5. User attribute protocol mappers configured"
+echo "6. Test users created"
+echo "7. Environment files updated (if accessible)"
+echo "8. Browser script generated for frontend fixes"
+echo "9. Frontend translations fixed"
 echo
 echo "To access Keycloak admin console: ${PUBLIC_KEYCLOAK_URL}/admin"
 echo "Realm: ${KEYCLOAK_REALM}"

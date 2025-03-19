@@ -490,6 +490,79 @@ configure_realm_settings() {
   fi
 }
 
+# Function to configure user attribute protocol mappers
+configure_user_attribute_mappers() {
+  echo "Configuring user attribute protocol mappers..."
+  
+  # Get admin token
+  local TOKEN=$(get_admin_token)
+  if [ -z "$TOKEN" ]; then
+    echo "❌ Failed to get admin token for protocol mapper configuration"
+    return 1
+  fi
+  
+  # Get frontend client ID
+  local FRONTEND_CLIENT_ID=""
+  local CLIENT_LIST=$(docker exec $CURL_TOOLS_CONTAINER curl -s -H "Authorization: Bearer $TOKEN" \
+    "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients")
+  
+  FRONTEND_CLIENT_ID=$(echo "$CLIENT_LIST" | docker exec -i $CURL_TOOLS_CONTAINER jq -r '.[] | select(.clientId=="'${KEYCLOAK_CLIENT_ID_FRONTEND}'") | .id')
+  
+  if [ -z "$FRONTEND_CLIENT_ID" ]; then
+    echo "❌ Failed to get frontend client ID"
+    return 1
+  fi
+  
+  echo "Frontend client ID: $FRONTEND_CLIENT_ID"
+  
+  # Helper function to create a mapper
+  create_mapper() {
+    local name=$1
+    local attribute=$2
+    local token_claim=$3
+    local json_type=$4
+    
+    echo "Creating mapper for $name..."
+    
+    local MAPPER_JSON="{
+      \"name\": \"$name\",
+      \"protocol\": \"openid-connect\",
+      \"protocolMapper\": \"oidc-usermodel-attribute-mapper\",
+      \"consentRequired\": false,
+      \"config\": {
+        \"userinfo.token.claim\": \"true\",
+        \"user.attribute\": \"$attribute\",
+        \"id.token.claim\": \"true\",
+        \"access.token.claim\": \"true\",
+        \"claim.name\": \"$token_claim\",
+        \"jsonType.label\": \"$json_type\"
+      }
+    }"
+    
+    local RESULT=$(docker exec $CURL_TOOLS_CONTAINER curl -s -X POST \
+      "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients/${FRONTEND_CLIENT_ID}/protocol-mappers/models" \
+      -H "Authorization: Bearer $TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "$MAPPER_JSON")
+    
+    if [ -z "$RESULT" ]; then
+      echo "✅ Mapper $name created successfully"
+    else
+      echo "⚠️ Result from creating mapper $name: $RESULT"
+    fi
+  }
+  
+  # Create mappers for clearance, caveats, coi, organization, and country
+  create_mapper "clearance-mapper" "clearance" "clearance" "String"
+  create_mapper "caveats-mapper" "caveats" "caveats" "JSON"
+  create_mapper "coi-mapper" "coi" "coi" "JSON"
+  create_mapper "organization-mapper" "organization" "organization" "String"
+  create_mapper "country-mapper" "countryOfAffiliation" "countryOfAffiliation" "String"
+  
+  echo "✅ User attribute protocol mappers configured successfully"
+  return 0
+}
+
 # Function to notify Kong of realm creation
 notify_kong_of_realm_creation() {
   echo "Notifying Kong that Keycloak realm is ready..."
@@ -579,6 +652,37 @@ create_test_client_via_api() {
   fi
 }
 
+# Function to fix frontend translations
+fix_frontend_translations() {
+  echo "Fixing frontend translations..."
+  
+  # Determine the project root directory
+  local PROJECT_DIR=""
+  if [ -d "/app" ]; then
+    PROJECT_DIR="/app"
+  elif [ -d "${PROJECT_ROOT}" ]; then
+    PROJECT_DIR="${PROJECT_ROOT}"
+  else
+    PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+  fi
+  
+  # Check if the src/public/locales directory exists
+  if [ -d "${PROJECT_DIR}/frontend/src/public/locales" ]; then
+    echo "Found translations in ${PROJECT_DIR}/frontend/src/public/locales"
+    mkdir -p "${PROJECT_DIR}/frontend/public/locales"
+    
+    # Copy translations from src/public/locales to public/locales
+    echo "Copying translation files to correct location..."
+    cp -rf "${PROJECT_DIR}/frontend/src/public/locales"/* "${PROJECT_DIR}/frontend/public/locales"/
+    
+    echo "✅ Translation files copied successfully"
+    return 0
+  else
+    echo "⚠️ Could not find translation files in src/public/locales"
+    return 1
+  fi
+}
+
 # Main execution flow
 echo "Starting Keycloak configuration process..."
 
@@ -621,11 +725,17 @@ create_test_client_via_api || echo "⚠️ Direct API client creation had issues
 # Step 5: Configure realm settings
 configure_realm_settings || echo "⚠️ Realm settings configuration had issues, continuing..."
 
-# Step 6: Notify Kong of realm creation
+# Step 6: Configure user attribute protocol mappers
+configure_user_attribute_mappers || echo "⚠️ User attribute protocol mappers configuration had issues, continuing..."
+
+# Step 7: Notify Kong of realm creation
 notify_kong_of_realm_creation || echo "⚠️ Kong notification had issues, continuing..."
 
-# Step 7: Generate browser script for frontend issues
+# Step 8: Generate browser script for frontend fixes
 generate_browser_script || echo "⚠️ Browser script generation had issues, continuing..."
+
+# Step 9: Fix frontend translations
+fix_frontend_translations || echo "⚠️ Frontend translations fix had issues, continuing..."
 
 # Mark configuration as complete
 echo "completed" > /tmp/keycloak-config/status
@@ -642,6 +752,7 @@ echo "3. Issuer URL configured to use port 8443"
 echo "4. Client redirects updated"
 echo "5. Browser script generated for frontend fixes"
 echo "6. Kong notified of realm creation"
+echo "7. Frontend translations fixed"
 echo
 echo "To access Keycloak admin console: ${PUBLIC_KEYCLOAK_URL}/admin"
 echo "Realm: ${KEYCLOAK_REALM}"

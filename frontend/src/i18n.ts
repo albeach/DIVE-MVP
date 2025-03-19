@@ -15,7 +15,7 @@ i18n
         // Handle language variants like en-US -> map to en
         load: 'languageOnly',
 
-        ns: ['common'],
+        ns: ['common', 'profile', 'documents'],
         defaultNS: 'common',
 
         interpolation: {

@@ -155,72 +155,118 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       
       logger.debug('Keycloak config:', keycloakConfig);
       
-      const keycloakInstance = new Keycloak(keycloakConfig);
-      
-      // Set up event listeners
-      keycloakInstance.onTokenExpired = () => {
-        logger.debug('Token expired event triggered');
-        refreshToken();
-      };
-      
-      // Initialize Keycloak
-      const authenticated = await keycloakInstance.init({
-        onLoad: 'check-sso',
-        silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
-        pkceMethod: 'S256',
-        checkLoginIframe: false, // Disable iframe checks to prevent issues
-        enableLogging: true
-      });
-      
-      logger.info(`Keycloak initialized, authenticated: ${authenticated}`);
-      
-      // Store instance
-      window.__keycloak = keycloakInstance;
-      setKeycloak(keycloakInstance);
-      setIsAuthenticated(authenticated);
-      
-      if (authenticated) {
-        try {
-          // Extract user info from token
-          const tokenParsed = keycloakInstance.tokenParsed || {};
-          const realmAccess = tokenParsed.realm_access || { roles: [] };
-          
-          const userProfile: User = {
-            uniqueId: tokenParsed.sub || '',
-            username: tokenParsed.preferred_username || '',
-            email: tokenParsed.email || '',
-            givenName: tokenParsed.given_name || '',
-            surname: tokenParsed.family_name || '',
-            organization: tokenParsed.organization || '',
-            countryOfAffiliation: tokenParsed.countryOfAffiliation || '',
-            clearance: tokenParsed.clearance || '',
-            roles: realmAccess.roles || [],
-          };
-          
-          setUser(userProfile);
-          logger.debug('User profile set:', userProfile);
-          
-          // Set up token refresh before expiration
-          if (tokenParsed.exp) {
-            const expiryTime = tokenParsed.exp;
-            const currentTime = Math.floor(Date.now() / 1000);
-            const timeUntilExpiry = expiryTime - currentTime;
-            
-            logger.debug(`Token expires in ${timeUntilExpiry} seconds`);
-            
-            // If token is about to expire, refresh it immediately
-            if (timeUntilExpiry < TOKEN_REFRESH_BUFFER) {
-              logger.debug('Token near expiry, refreshing immediately');
-              refreshToken();
-            }
-          }
-        } catch (error) {
-          logger.error('Error processing authenticated user:', error);
-          toast.error('Error processing user information');
-        }
+      if (!keycloakConfig.url || !keycloakConfig.realm || !keycloakConfig.clientId) {
+        const errorMessage = `Missing Keycloak configuration: url=${keycloakConfig.url}, realm=${keycloakConfig.realm}, clientId=${keycloakConfig.clientId}`;
+        logger.error(errorMessage);
+        setError(errorMessage);
+        setIsLoading(false);
+        return false;
       }
       
-      return authenticated;
+      try {
+        const keycloakInstance = new Keycloak(keycloakConfig);
+        
+        // Set up event listeners
+        keycloakInstance.onTokenExpired = () => {
+          logger.debug('Token expired event triggered');
+          refreshToken();
+        };
+        
+        // Initialize Keycloak
+        const authenticated = await keycloakInstance.init({
+          onLoad: 'check-sso',
+          silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
+          pkceMethod: 'S256',
+          checkLoginIframe: false, // Disable iframe checks to prevent issues
+          enableLogging: true
+        });
+        
+        logger.info(`Keycloak initialized, authenticated: ${authenticated}`);
+        
+        // Store instance
+        window.__keycloak = keycloakInstance;
+        setKeycloak(keycloakInstance);
+        setIsAuthenticated(authenticated);
+        
+        if (authenticated) {
+          try {
+            // Extract user info from token
+            const tokenParsed = keycloakInstance.tokenParsed || {};
+            const realmAccess = tokenParsed.realm_access || { roles: [] };
+            
+            // Parse caveats and coi to ensure they're arrays
+            let caveatsArray = tokenParsed.caveats || [];
+            let coiArray = tokenParsed.coi || [];
+            
+            // Handle case where caveats is a string (parse JSON or split)
+            if (typeof tokenParsed.caveats === 'string') {
+              try {
+                // Try to parse as JSON
+                caveatsArray = JSON.parse(tokenParsed.caveats);
+              } catch (e) {
+                // If parsing fails, split by comma
+                caveatsArray = tokenParsed.caveats.split(',').map(item => item.trim()).filter(Boolean);
+              }
+            }
+            
+            // Handle case where coi is a string (parse JSON or split)
+            if (typeof tokenParsed.coi === 'string') {
+              try {
+                // Try to parse as JSON
+                coiArray = JSON.parse(tokenParsed.coi);
+              } catch (e) {
+                // If parsing fails, split by comma
+                coiArray = tokenParsed.coi.split(',').map(item => item.trim()).filter(Boolean);
+              }
+            }
+            
+            const userProfile: User = {
+              uniqueId: tokenParsed.sub || '',
+              username: tokenParsed.preferred_username || '',
+              email: tokenParsed.email || '',
+              givenName: tokenParsed.given_name || '',
+              surname: tokenParsed.family_name || '',
+              organization: tokenParsed.organization || '',
+              countryOfAffiliation: tokenParsed.countryOfAffiliation || '',
+              clearance: tokenParsed.clearance || '',
+              caveats: caveatsArray,
+              coi: coiArray,
+              roles: realmAccess.roles || [],
+              lastLogin: tokenParsed.lastLogin || null,
+            };
+            
+            logger.debug('User profile set:', userProfile);
+            logger.debug('Token parsed:', tokenParsed);
+            
+            setUser(userProfile);
+            
+            // Set up token refresh before expiration
+            if (tokenParsed.exp) {
+              const expiryTime = tokenParsed.exp;
+              const currentTime = Math.floor(Date.now() / 1000);
+              const timeUntilExpiry = expiryTime - currentTime;
+              
+              logger.debug(`Token expires in ${timeUntilExpiry} seconds`);
+              
+              // If token is about to expire, refresh it immediately
+              if (timeUntilExpiry < TOKEN_REFRESH_BUFFER) {
+                logger.debug('Token near expiry, refreshing immediately');
+                refreshToken();
+              }
+            }
+          } catch (error) {
+            logger.error('Error processing authenticated user:', error);
+            toast.error('Error processing user information');
+          }
+        }
+        
+        return authenticated;
+      } catch (err) {
+        logger.error('Failed to initialize Keycloak:', err);
+        setError('Failed to initialize authentication service');
+        toast.error('Authentication initialization failed');
+        return false;
+      }
     } catch (err) {
       logger.error('Failed to initialize Keycloak:', err);
       setError('Failed to initialize authentication service');
