@@ -15,6 +15,8 @@ const evaluateAccessPolicy = async (input) => {
         const opaInput = {
             input: {
                 user: {
+                    uniqueId: input.user.uniqueId,
+                    username: input.user.username,
                     clearance: input.user.clearance,
                     countryOfAffiliation: input.user.countryOfAffiliation,
                     caveats: input.user.caveats || [],
@@ -22,6 +24,7 @@ const evaluateAccessPolicy = async (input) => {
                     roles: input.user.roles || []
                 },
                 resource: {
+                    id: input.resource.id,
                     classification: input.resource.classification,
                     releasableTo: input.resource.releasability || [],
                     caveats: input.resource.caveats || [],

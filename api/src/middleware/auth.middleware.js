@@ -72,13 +72,14 @@ const authenticate = async (req, res, next) => {
     if (req.headers["x-skip-jwt-verification"]) {
         logger.info("SECURITY WARNING: Using test authentication bypass due to X-Skip-JWT-Verification header");
         req.user = {
-            _id: "test-user-id",
-            uniqueId: "9ef2bfa0-4410-45d2-adea-ed4368df4727", // Match the Keycloak test user
-            username: "testuser",
-            email: "testuser@example.com",
-            givenName: "Test",
-            surname: "User",
-            roles: ["user"]
+            uniqueId: 'test-user-123',
+            username: 'test.user',
+            email: 'test.user@example.com',
+            roles: ['user'],
+            clearance: "NATO SECRET",
+            countryOfAffiliation: "USA",
+            caveats: ["FVEY", "NATO"],
+            coi: ["OpAlpha", "OpBravo"]
         };
         req.token = extractToken(req) || "test-token";
         return next();

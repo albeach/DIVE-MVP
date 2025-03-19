@@ -12,11 +12,29 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 # Check if the API container is running
-if ! docker-compose ps | grep -q "dive25-api.*Up"; then
+if ! docker-compose ps | grep -q "dive25-staging-api.*Up"; then
   echo "Error: The DIVE25 API container is not running"
   echo "Please start the application with: docker-compose up -d"
   exit 1
 fi
+
+# Create a temporary package.json for the script
+echo '{
+  "dependencies": {
+    "mongoose": "^7.0.0",
+    "uuid": "^9.0.0",
+    "faker": "^5.5.3",
+    "dotenv": "^16.0.0"
+  }
+}' > scripts/temp-package.json
+
+# Copy files to the container
+echo "Copying files to container..."
+docker cp scripts/generate-sample-documents.js dive25-staging-api:/app/scripts/
+docker cp scripts/temp-package.json dive25-staging-api:/app/scripts/package.json
+
+# Clean up temporary package.json
+rm scripts/temp-package.json
 
 echo "Installing script dependencies..."
 docker-compose exec api sh -c "cd /app/scripts && npm install"

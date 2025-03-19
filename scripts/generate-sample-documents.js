@@ -94,7 +94,11 @@ const DocumentSchema = new mongoose.Schema({
     filename: String,
     fileId: String,
     mimeType: String,
-    size: Number,
+    size: {
+        type: Number,
+        get: v => Math.floor(v),
+        set: v => Math.floor(v)
+    },
     metadata: {
         classification: String,
         releasability: [String],
@@ -114,6 +118,14 @@ const DocumentSchema = new mongoose.Schema({
 }, {
     timestamps: true,
     collection: 'documents'
+});
+
+// Convert size to integer before saving
+DocumentSchema.pre('save', function (next) {
+    if (this.size) {
+        this.size = Math.floor(this.size);
+    }
+    next();
 });
 
 const Document = mongoose.model('Document', DocumentSchema);
@@ -156,7 +168,7 @@ async function generateRandomFile(fileType) {
         case 'txt':
             const content = faker.lorem.paragraphs(10);
             fs.writeFileSync(filePath, content);
-            fileSize = content.length;
+            fileSize = Math.floor(Buffer.byteLength(content, 'utf8')); // Use Buffer.byteLength for accurate byte count
             break;
 
         case 'pdf':
@@ -164,8 +176,8 @@ async function generateRandomFile(fileType) {
         case 'xlsx':
         case 'pptx':
             // For non-text files, create a placeholder file with random size
-            const size = Math.floor(Math.random() * 500000) + 10000; // 10KB to 500KB
-            const buffer = Buffer.alloc(size, 'x');
+            const size = Math.floor(Math.random() * 500000) + 10000; // 10KB to 500KB, as integer
+            const buffer = Buffer.alloc(size);
             fs.writeFileSync(filePath, buffer);
             fileSize = size;
             break;
@@ -176,7 +188,7 @@ async function generateRandomFile(fileType) {
         filePath,
         fileName,
         mimeType: fileType.mimeType,
-        size: fileSize
+        size: Math.floor(fileSize) // Ensure integer
     };
 }
 
@@ -217,10 +229,12 @@ async function generateDocument() {
     // Random user
     const user = CONFIG.sampleUsers[Math.floor(Math.random() * CONFIG.sampleUsers.length)];
 
-    // Random dates
-    const uploadDate = randomDate(new Date(2023, 0, 1), new Date());
-    const lastModifiedDate = randomDate(uploadDate, new Date());
-    const lastAccessedDate = Math.random() > 0.3 ? randomDate(uploadDate, new Date()) : null;
+    // Random dates - ensure they are proper MongoDB dates
+    const now = new Date();
+    const uploadDate = new Date(randomDate(new Date(2023, 0, 1), now));
+    const lastModifiedDate = new Date(randomDate(uploadDate, now));
+    // Always set lastAccessedDate to a date, but make it more recent than upload date
+    const lastAccessedDate = new Date(randomDate(uploadDate, now));
 
     // Classification with bias towards lower classifications
     const classificationIndex = Math.floor(Math.random() * Math.random() * CONFIG.classificationLevels.length);
@@ -230,16 +244,16 @@ async function generateDocument() {
     const maxCaveats = classificationIndex + 1;
 
     // Generate document object
-    return new Document({
+    const doc = {
         filename: fileInfo.fileName,
         fileId: fileInfo.fileId,
         mimeType: fileInfo.mimeType,
-        size: fileInfo.size,
+        size: Math.floor(fileInfo.size), // MongoDB will convert to BSON int
         metadata: {
             classification,
-            releasability: getRandomItems(CONFIG.releasabilityOptions, 0, 5),
+            releasability: getRandomItems(CONFIG.releasabilityOptions, 1, 5), // At least 1 releasability
             caveats: getRandomItems(CONFIG.caveatOptions, 0, maxCaveats),
-            coi: getRandomItems(CONFIG.coiOptions, 0, 3),
+            coi: getRandomItems(CONFIG.coiOptions, 1, 3), // At least 1 COI
             policyIdentifier: 'NATO',
             creator: {
                 id: user.id,
@@ -248,71 +262,188 @@ async function generateDocument() {
                 country: CONFIG.countries[Math.floor(Math.random() * CONFIG.countries.length)]
             }
         },
-        uploadDate,
-        lastModifiedDate,
-        lastAccessedDate
+        uploadDate: uploadDate,
+        lastAccessedDate: lastAccessedDate,
+        lastModifiedDate: lastModifiedDate
+    };
+
+    // Create and return the document
+    return new Document(doc);
+}
+
+// Function to generate summary statistics
+async function generateSummary(documents) {
+    const summary = {
+        totalDocuments: documents.length,
+        classifications: {},
+        caveats: {},
+        coi: {},
+        releasability: {},
+        organizations: {},
+        countries: {},
+        fileTypes: {},
+        totalSize: 0
+    };
+
+    documents.forEach(doc => {
+        // Count classifications
+        const classification = doc.metadata.classification;
+        summary.classifications[classification] = (summary.classifications[classification] || 0) + 1;
+
+        // Count caveats
+        doc.metadata.caveats.forEach(caveat => {
+            summary.caveats[caveat] = (summary.caveats[caveat] || 0) + 1;
+        });
+
+        // Count COIs
+        doc.metadata.coi.forEach(coi => {
+            summary.coi[coi] = (summary.coi[coi] || 0) + 1;
+        });
+
+        // Count releasability
+        doc.metadata.releasability.forEach(rel => {
+            summary.releasability[rel] = (summary.releasability[rel] || 0) + 1;
+        });
+
+        // Count organizations
+        const org = doc.metadata.creator.organization;
+        summary.organizations[org] = (summary.organizations[org] || 0) + 1;
+
+        // Count countries
+        const country = doc.metadata.creator.country;
+        summary.countries[country] = (summary.countries[country] || 0) + 1;
+
+        // Count file types
+        const fileType = doc.filename.split('.').pop();
+        summary.fileTypes[fileType] = (summary.fileTypes[fileType] || 0) + 1;
+
+        // Sum total size
+        summary.totalSize += doc.size;
     });
+
+    // Format the summary output
+    console.log('\nDocument Generation Summary:');
+    console.log('==========================');
+    console.log(`Total Documents Generated: ${summary.totalDocuments}`);
+    console.log(`Total Size: ${(summary.totalSize / 1024 / 1024).toFixed(2)} MB\n`);
+
+    console.log('Classifications:');
+    Object.entries(summary.classifications)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([classification, count]) => {
+            console.log(`  ${classification}: ${count} (${((count / summary.totalDocuments) * 100).toFixed(1)}%)`);
+        });
+
+    console.log('\nCaveats:');
+    Object.entries(summary.caveats)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([caveat, count]) => {
+            console.log(`  ${caveat}: ${count}`);
+        });
+
+    console.log('\nCommunities of Interest:');
+    Object.entries(summary.coi)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([coi, count]) => {
+            console.log(`  ${coi}: ${count}`);
+        });
+
+    console.log('\nReleasability:');
+    Object.entries(summary.releasability)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([rel, count]) => {
+            console.log(`  ${rel}: ${count}`);
+        });
+
+    console.log('\nFile Types:');
+    Object.entries(summary.fileTypes)
+        .sort((a, b) => b[1] - a[1])
+        .forEach(([type, count]) => {
+            console.log(`  ${type}: ${count} (${((count / summary.totalDocuments) * 100).toFixed(1)}%)`);
+        });
+
+    console.log('\nTop Organizations:');
+    Object.entries(summary.organizations)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .forEach(([org, count]) => {
+            console.log(`  ${org}: ${count}`);
+        });
+
+    console.log('\nTop Contributing Countries:');
+    Object.entries(summary.countries)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5)
+        .forEach(([country, count]) => {
+            console.log(`  ${country}: ${count}`);
+        });
+
+    return summary;
 }
 
 /**
- * Main function to generate documents
+ * Main execution
  */
-async function generateDocuments() {
+async function main() {
+    const count = process.argv[2] ? parseInt(process.argv[2]) : CONFIG.documentCount;
+    console.log(`Generating ${count} documents...`);
+
     try {
-        console.log(`Connecting to MongoDB at ${CONFIG.mongoUri}...`);
+        // Connect to MongoDB
+        console.log('Connecting to MongoDB...');
         await mongoose.connect(CONFIG.mongoUri, {
             useNewUrlParser: true,
             useUnifiedTopology: true
         });
 
-        console.log('Connected to MongoDB');
+        console.log(`Generating ${count} documents...`);
+        const documents = [];
 
-        console.log(`Generating ${CONFIG.documentCount} sample documents...`);
-
-        // Create temporary directory
-        if (!fs.existsSync(CONFIG.tempPath)) {
-            fs.mkdirSync(CONFIG.tempPath, { recursive: true });
-        }
-
-        // Generate and save documents one by one
-        let successCount = 0;
-        let failureCount = 0;
-
-        for (let i = 0; i < CONFIG.documentCount; i++) {
+        // Generate documents
+        for (let i = 0; i < count; i++) {
             try {
                 const doc = await generateDocument();
-                await doc.save(); // Save one by one instead of bulk insert
-                successCount++;
-
-                if ((i + 1) % 10 === 0 || i === CONFIG.documentCount - 1) {
-                    console.log(`Generated ${i + 1}/${CONFIG.documentCount} documents (Success: ${successCount}, Failed: ${failureCount})`);
+                const validationError = doc.validateSync();
+                if (validationError) {
+                    console.error('Mongoose validation error:', validationError);
+                    continue;
                 }
-            } catch (error) {
-                failureCount++;
-                console.error(`Error saving document ${i + 1}:`, error.message);
-                // Continue generating the next document
+
+                // Log the document before saving
+                console.log('Attempting to save document:', JSON.stringify(doc.toObject(), null, 2));
+
+                await doc.save();
+                documents.push(doc);
+
+                // Progress indicator
+                const progress = ((i + 1) / count * 100).toFixed(1);
+                console.log(`Progress: ${progress}% complete`);
+            } catch (err) {
+                console.error('Error generating document:', err);
+                if (err.errInfo) {
+                    console.error('Validation error details:', JSON.stringify(err.errInfo, null, 2));
+                }
+                throw err; // Re-throw to stop the process
             }
         }
 
-        console.log(`Document generation completed. Successfully saved ${successCount} documents to the database.`);
+        console.log(`Successfully generated ${documents.length} documents`);
 
-        // Clean up
-        try {
-            if (fs.existsSync(CONFIG.tempPath)) {
-                // Use fs.rm with recursive option instead of rmdirSync
-                fs.rmSync(CONFIG.tempPath, { recursive: true, force: true });
-            }
-        } catch (cleanupError) {
-            console.warn('Warning: Could not clean up temp directory:', cleanupError.message);
+        // Generate and display summary
+        const summary = await generateSummary(documents);
+        console.log('\nDocument Generation Summary:');
+        console.log(JSON.stringify(summary, null, 2));
+
+    } catch (err) {
+        console.error('Error generating documents:', err);
+        if (err.errInfo) {
+            console.error('Validation error details:', JSON.stringify(err.errInfo, null, 2));
         }
-
-    } catch (error) {
-        console.error('Error generating documents:', error);
     } finally {
         await mongoose.connection.close();
-        console.log('Database connection closed');
+        console.log('Done!');
     }
 }
 
-// Run the script
-generateDocuments().catch(console.error); 
+// Main execution
+main();

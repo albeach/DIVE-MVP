@@ -5,9 +5,9 @@ package access_policy
 clearance = {
   "UNCLASSIFIED": 0,
   "RESTRICTED": 1,
-  "CONFIDENTIAL": 2,
-  "SECRET": 3,
-  "TOP SECRET": 4
+  "NATO CONFIDENTIAL": 2,
+  "NATO SECRET": 3,
+  "COSMIC TOP SECRET": 4
 }
 
 # Define NATO member nations

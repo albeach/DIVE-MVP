@@ -1709,3 +1709,41 @@ check_keycloak_health() {
   echo "You can check Keycloak logs with: docker-compose logs keycloak"
   return 0
 }
+
+# Function to handle document generation
+setup_sample_documents() {
+  echo
+  echo "Would you like to generate sample documents? (y/n)"
+  read -r generate_docs
+  
+  if [[ "$generate_docs" =~ ^[Yy]$ ]]; then
+    echo "How many documents would you like to generate? (default: 300)"
+    read -r num_docs
+    
+    # Use default if no number provided
+    if [ -z "$num_docs" ]; then
+      num_docs=300
+    fi
+    
+    # Validate input is a number
+    if ! [[ "$num_docs" =~ ^[0-9]+$ ]]; then
+      echo "Invalid input. Using default value of 300 documents."
+      num_docs=300
+    fi
+    
+    echo "Generating $num_docs sample documents..."
+    ./scripts/generate-documents.sh "$num_docs"
+  else
+    echo "Skipping document generation."
+  fi
+}
+
+# Main script execution
+CURRENT_PHASE="Main Script Execution"
+
+echo "✅ Setup and testing completed successfully!"
+
+# Add document generation step at the end
+setup_sample_documents
+
+echo "🎉 All done! Your DIVE25 environment is ready."

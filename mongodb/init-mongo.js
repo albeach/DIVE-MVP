@@ -70,9 +70,7 @@ db.createCollection('documents', {
                     properties: {
                         classification: {
                             bsonType: 'string',
-                            enum: ['UNCLASSIFIED', 'RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP SECRET',
-                                'NATO CONFIDENTIAL', 'NATO SECRET', 'COSMIC TOP SECRET',
-                                'EU CONFIDENTIAL', 'EU SECRET', 'EU TOP SECRET'],
+                            enum: ['UNCLASSIFIED', 'RESTRICTED', 'NATO CONFIDENTIAL', 'NATO SECRET', 'COSMIC TOP SECRET'],
                             description: 'Classification must be one of the allowed values and is required'
                         },
                         releasability: {
@@ -181,9 +179,7 @@ db.createCollection('users', {
                 },
                 clearance: {
                     bsonType: 'string',
-                    enum: ['UNCLASSIFIED', 'RESTRICTED', 'CONFIDENTIAL', 'SECRET', 'TOP SECRET',
-                        'NATO CONFIDENTIAL', 'NATO SECRET', 'COSMIC TOP SECRET',
-                        'EU CONFIDENTIAL', 'EU SECRET', 'EU TOP SECRET'],
+                    enum: ['UNCLASSIFIED', 'RESTRICTED', 'NATO CONFIDENTIAL', 'NATO SECRET', 'COSMIC TOP SECRET'],
                     description: 'Clearance must be one of the allowed values and is required'
                 },
                 caveats: {
@@ -376,9 +372,7 @@ db.system_settings.insertMany([
     },
     {
         key: "allowedClassifications",
-        value: ["UNCLASSIFIED", "RESTRICTED", "CONFIDENTIAL", "SECRET", "TOP SECRET",
-            "NATO CONFIDENTIAL", "NATO SECRET", "COSMIC TOP SECRET",
-            "EU CONFIDENTIAL", "EU SECRET", "EU TOP SECRET"],
+        value: ["UNCLASSIFIED", "RESTRICTED", "NATO CONFIDENTIAL", "NATO SECRET", "COSMIC TOP SECRET"],
         description: "Allowed classification levels",
         updatedAt: new Date(),
         updatedBy: "system"
@@ -422,7 +416,7 @@ if (process.env.NODE_ENV !== "production") {
             surname: "Johnson",
             organization: "Department of Defense",
             countryOfAffiliation: "USA",
-            clearance: "TOP SECRET",
+            clearance: "COSMIC TOP SECRET",
             caveats: ["FVEY", "NATO"],
             coi: ["OpAlpha", "OpBravo"],
             lastLogin: new Date(),
@@ -439,7 +433,7 @@ if (process.env.NODE_ENV !== "production") {
             surname: "Smith",
             organization: "Ministry of Defence",
             countryOfAffiliation: "GBR",
-            clearance: "SECRET",
+            clearance: "NATO SECRET",
             caveats: ["FVEY"],
             coi: ["OpAlpha"],
             lastLogin: new Date(),
