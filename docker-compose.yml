@@ -64,6 +64,8 @@ services:
       - KEYCLOAK_ADMIN=admin
       - KEYCLOAK_ADMIN_PASSWORD=admin
       - KEYCLOAK_REALM=dive25
+      - SETUP_GRAFANA=true
+    entrypoint: ["/bin/bash", "-c", "if [ \"$$SETUP_GRAFANA\" = \"true\" ]; then echo 'Setting up Grafana dashboards...' && sleep 30 && /workdir/setup-grafana-dashboards.sh; fi && tail -f /dev/null"]
     tty: true
     stdin_open: true
     # Keep container running but don't auto-restart
@@ -72,6 +74,8 @@ services:
     depends_on:
       keycloak:
         condition: service_started
+      grafana:
+        condition: service_healthy
 
   # PostgreSQL for Keycloak
   postgres:
@@ -442,9 +446,11 @@ services:
       GF_AUTH_PROXY_HEADER_NAME: "X-WEBAUTH-USER"
       GF_AUTH_PROXY_HEADER_PROPERTY: "username"
       GF_AUTH_PROXY_AUTO_SIGN_UP: "true"
+      GF_DASHBOARDS_MIN_REFRESH_INTERVAL: 5s
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel,grafana-worldmap-panel"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./grafana/dashboards:/etc/grafana/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana_data:/var/lib/grafana
     ports:
       - "4434:3000"
@@ -459,6 +465,61 @@ services:
       timeout: 10s
       retries: 3
       start_period: 5s
+      
+  # Grafana Setup Helper
+  grafana-setup:
+    image: curlimages/curl:latest
+    container_name: dive25-staging-grafana-setup
+    volumes:
+      - ./grafana:/grafana:ro
+    entrypoint: ["/bin/sh", "-c", "sleep 15 && /grafana/setup-grafana.sh"]
+    depends_on:
+      grafana:
+        condition: service_healthy
+      curl-tools:
+        condition: service_started
+    networks:
+      - dive25-admin
+      - dive25-service
+    restart: "no"
+    
+  # Loki for log aggregation
+  loki:
+    image: grafana/loki:2.8.3
+    container_name: dive25-staging-loki
+    volumes:
+      - ./loki/config:/etc/loki
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki-config.yaml
+    ports:
+      - "3100:3100"
+    networks:
+      - dive25-admin
+      - dive25-service
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3100/ready || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+      
+  # Promtail for log collection
+  promtail:
+    image: grafana/promtail:2.8.3
+    container_name: dive25-staging-promtail
+    volumes:
+      - ./promtail/config:/etc/promtail
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/log:/var/log:ro
+    command: -config.file=/etc/promtail/promtail-config.yaml
+    depends_on:
+      - loki
+    networks:
+      - dive25-admin
+      - dive25-service
+    restart: unless-stopped
 
   # MongoDB Exporter for Prometheus
   mongodb-exporter:
@@ -660,4 +721,5 @@ volumes:
   api_logs:
   opa_data:
   kong_data:
-  keycloak_config_data: 
+  keycloak_config_data:
+  loki_data: 

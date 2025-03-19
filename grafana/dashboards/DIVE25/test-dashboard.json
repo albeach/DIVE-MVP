@@ -1,0 +1,29 @@
+{
+    "dashboard": {
+        "id": null,
+        "uid": null,
+        "title": "Test Dashboard",
+        "tags": [
+            "test"
+        ],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0,
+        "refresh": "25s",
+        "panels": [
+            {
+                "id": 1,
+                "gridPos": {
+                    "h": 8,
+                    "w": 24,
+                    "x": 0,
+                    "y": 0
+                },
+                "type": "text",
+                "title": "Test Panel",
+                "content": "# Welcome to Grafana\nThis is a test dashboard to verify provisioning is working properly."
+            }
+        ]
+    },
+    "overwrite": true
+}

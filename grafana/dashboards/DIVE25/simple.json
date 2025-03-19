@@ -1,0 +1,25 @@
+{
+    "title": "Simple Dashboard",
+    "uid": "simple",
+    "tags": [
+        "test"
+    ],
+    "timezone": "browser",
+    "schemaVersion": 16,
+    "version": 0,
+    "refresh": "25s",
+    "panels": [
+        {
+            "id": 1,
+            "gridPos": {
+                "h": 8,
+                "w": 24,
+                "x": 0,
+                "y": 0
+            },
+            "type": "text",
+            "title": "Simple Panel",
+            "content": "# Welcome to Grafana\nThis is a simple dashboard."
+        }
+    ]
+}

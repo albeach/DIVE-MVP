@@ -1,0 +1,124 @@
+{
+    "dashboard": {
+        "id": null,
+        "title": "Application Logs",
+        "tags": [
+            "logs"
+        ],
+        "timezone": "browser",
+        "schemaVersion": 16,
+        "version": 0,
+        "refresh": "10s",
+        "panels": [
+            {
+                "id": 1,
+                "gridPos": {
+                    "h": 8,
+                    "w": 24,
+                    "x": 0,
+                    "y": 0
+                },
+                "type": "logs",
+                "title": "All Logs",
+                "targets": [
+                    {
+                        "refId": "A",
+                        "expr": "{job=~\"docker|dive_application\"}",
+                        "datasource": "Loki"
+                    }
+                ]
+            },
+            {
+                "id": 2,
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 0,
+                    "y": 8
+                },
+                "type": "logs",
+                "title": "API Logs",
+                "targets": [
+                    {
+                        "refId": "A",
+                        "expr": "{filename=~\".*5b818d4.*\"}",
+                        "datasource": "Loki"
+                    }
+                ]
+            },
+            {
+                "id": 3,
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 12,
+                    "y": 8
+                },
+                "type": "logs",
+                "title": "Frontend Logs",
+                "targets": [
+                    {
+                        "refId": "A",
+                        "expr": "{filename=~\".*9132280a8c04.*\"}",
+                        "datasource": "Loki"
+                    }
+                ]
+            },
+            {
+                "id": 4,
+                "gridPos": {
+                    "h": 8,
+                    "w": 24,
+                    "x": 0,
+                    "y": 16
+                },
+                "type": "logs",
+                "title": "Application Logs by Level",
+                "targets": [
+                    {
+                        "refId": "A",
+                        "expr": "{job=\"dive_application\"} | json | level=~\"info|warn|error\"",
+                        "datasource": "Loki"
+                    }
+                ]
+            },
+            {
+                "id": 5,
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 0,
+                    "y": 24
+                },
+                "type": "logs",
+                "title": "Kong Logs",
+                "targets": [
+                    {
+                        "refId": "A",
+                        "expr": "{service=\"kong\"}",
+                        "datasource": "Loki"
+                    }
+                ]
+            },
+            {
+                "id": 6,
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 12,
+                    "y": 24
+                },
+                "type": "logs",
+                "title": "Keycloak Logs",
+                "targets": [
+                    {
+                        "refId": "A",
+                        "expr": "{service=\"keycloak\"}",
+                        "datasource": "Loki"
+                    }
+                ]
+            }
+        ]
+    },
+    "overwrite": true
+}

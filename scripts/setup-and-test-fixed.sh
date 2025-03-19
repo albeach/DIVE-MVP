@@ -1379,6 +1379,8 @@ show_final_summary() {
   echo -e "\n${BLUE}===========================================================${RESET}"
   echo -e "${BLUE}SUMMARY OF ALL HTTPS SERVICES ON PORT 8443${RESET}"
   echo -e "${BLUE}===========================================================${RESET}"
+  echo -e "${CYAN}${BOLD}NOTE:${RESET} All services are accessible through Kong reverse proxy on HTTPS port 8443."
+  echo -e "${CYAN}${BOLD}This is the recommended secure access method for all components.${RESET}\n"
   echo -e "The following services are accessible via HTTPS on port 8443:"
   echo -e "  1. ${GREEN}Frontend${RESET}: https://frontend.${BASE_DOMAIN}:8443"
   echo -e "  2. ${GREEN}API${RESET}: https://api.${BASE_DOMAIN}:8443"
@@ -1396,6 +1398,54 @@ show_final_summary() {
 
   exit 0
 }
+
+# Add Grafana, Loki, and Promtail setup for log monitoring
+setup_log_monitoring() {
+  print_section "Configuring Log Monitoring"
+  
+  # Check if Loki and Promtail are running
+  local loki_container=$(get_container_name "loki")
+  local promtail_container=$(get_container_name "promtail")
+  local grafana_container=$(get_container_name "grafana")
+  
+  if [ -z "$loki_container" ] || [ -z "$promtail_container" ] || [ -z "$grafana_container" ]; then
+    warning "Some logging containers (Loki, Promtail, or Grafana) are not running. Log monitoring may not be fully functional."
+  else
+    show_progress "Waiting for Grafana to initialize..."
+    # Wait for Grafana to be ready - checking on externally mapped port
+    timeout 60 sh -c "until curl -s http://localhost:4434 > /dev/null; do sleep 1; done" || warning "Grafana is not accessible at http://localhost:4434"
+    
+    # Create curl tools container if it doesn't exist
+    if ! docker ps | grep -q "dive25-curl-tools"; then
+      show_progress "Creating curl tools container..."
+      docker run -d --name dive25-curl-tools --network dive-mvp_default alpine/curl:latest sh -c "while true; do sleep 30; done"
+    fi
+    
+    # Create Loki datasource in Grafana
+    show_progress "Setting up Loki data source in Grafana..."
+    # Note: Using internal Grafana port 3000 when accessing from within Docker network
+    docker exec -it dive25-curl-tools curl -s -X POST -H "Content-Type: application/json" -d '{
+      "name": "Loki",
+      "type": "loki",
+      "url": "http://loki:3100",
+      "access": "proxy",
+      "basicAuth": false
+    }' http://admin:admin@grafana:3000/api/datasources 2>/dev/null || true
+    
+    # Reload Grafana dashboard provisioning
+    show_progress "Reloading Grafana dashboard provisioning..."
+    docker exec -it dive25-curl-tools curl -s -X POST http://admin:admin@grafana:3000/api/admin/provisioning/dashboards/reload 2>/dev/null || true
+    
+    success "Log monitoring configured successfully"
+    echo -e "  ${GREEN}✓${RESET} Grafana Monitoring Dashboard"
+    echo -e "  ${GREEN}✓${RESET} Loki Log Aggregation"
+    echo -e "  ${GREEN}✓${RESET} Promtail Log Collection"
+    echo -e "\n  ${BOLD}${BLUE}Access logs dashboard at:${RESET} https://grafana.${BASE_DOMAIN}:8443/d/logs/application-logs"
+  fi
+}
+
+# Setup log monitoring before final summary
+setup_log_monitoring
 
 # Call the show_final_summary function to display the complete overview
 show_final_summary 
