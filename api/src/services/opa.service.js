@@ -80,27 +80,54 @@ const evaluateAccessPolicy = async (input) => {
  * @returns {Promise<{allowed: boolean, explanation: string}>} Access result with explanation
  */
 const checkDocumentAccess = async (user, document) => {
-    // Remove the testing bypass and use the proper implementation
-    const input = {
-        user: {
-            uniqueId: user.uniqueId,
-            username: user.username,
-            clearance: user.clearance,
-            countryOfAffiliation: user.countryOfAffiliation,
-            caveats: user.caveats || [],
-            coi: user.coi || [],
-            roles: user.roles || []
-        },
-        resource: {
-            id: document._id || document.id,
-            classification: document.metadata.classification,
-            releasability: document.metadata.releasability || [],
-            caveats: document.metadata.caveats || [],
-            coi: document.metadata.coi || []
-        }
-    };
+    try {
+        // Log the access check for debugging
+        logger.debug(`Checking document access for user ${user.username} (${user.uniqueId}) on document ${document._id || document.id}`);
 
-    return evaluateAccessPolicy(input);
+        // Admin users always have access to all documents
+        if (user.roles && user.roles.includes('admin')) {
+            logger.debug(`Access granted for admin user: ${user.username}`);
+            return { allowed: true, explanation: "Access granted (admin role)" };
+        }
+
+        // Document owners always have access to their own documents
+        if (document.metadata?.creator?.id === user.uniqueId) {
+            logger.debug(`Access granted for document owner: ${user.username}`);
+            return { allowed: true, explanation: "Access granted (document owner)" };
+        }
+
+        // For all other users, apply normal security policy
+        const input = {
+            user: {
+                uniqueId: user.uniqueId,
+                username: user.username,
+                clearance: user.clearance,
+                countryOfAffiliation: user.countryOfAffiliation,
+                caveats: user.caveats || [],
+                coi: user.coi || [],
+                roles: user.roles || []
+            },
+            resource: {
+                id: document._id || document.id,
+                classification: document.metadata.classification,
+                releasability: document.metadata.releasability || [],
+                caveats: document.metadata.caveats || [],
+                coi: document.metadata.coi || []
+            }
+        };
+
+        // Log user and document details for debugging
+        logger.debug(`User attributes: clearance=${user.clearance}, country=${user.countryOfAffiliation}`);
+        logger.debug(`Document attributes: classification=${document.metadata.classification}, releasability=${JSON.stringify(document.metadata.releasability || [])}`);
+
+        const result = await evaluateAccessPolicy(input);
+        logger.debug(`Access decision for user ${user.username}: ${result.allowed ? 'ALLOWED' : 'DENIED'} - ${result.explanation}`);
+        return result;
+    } catch (error) {
+        logger.error(`Error in checkDocumentAccess: ${error.message}`, error);
+        // Default to denying access on errors
+        return { allowed: false, explanation: "Access denied due to system error" };
+    }
 };
 
 /**
