@@ -67,6 +67,10 @@ const UserSchema = new mongoose.Schema({
     roles: {
         type: [String],
         default: ['user']
+    },
+    avatar: {
+        type: String,
+        default: null
     }
 }, {
     timestamps: true,

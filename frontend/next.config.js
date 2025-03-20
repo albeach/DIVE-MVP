@@ -34,6 +34,10 @@ const nextConfig = {
                         key: 'Permissions-Policy',
                         value: 'camera=(), microphone=(), geolocation=()',
                     },
+                    {
+                        key: 'Content-Security-Policy',
+                        value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.dive25.local:* https://dive25.local:* http://localhost:*; frame-src 'self' https://*.dive25.local:* https://dive25.local:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' https://*.dive25.local:* https://dive25.local:* http://localhost:*;",
+                    },
                 ],
             },
         ];

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>DIVE25 CORS Fix</title>
+    <script>
+        // This script fixes CORS issues with CSS by injecting the CSS through a proxy
+        window.addEventListener('DOMContentLoaded', function () {
+            // The CSS file that's having CORS issues
+            const cssFile = 'cf2f07e87a7c6988.css';
+
+            // Function to create a link element for the CSS
+            function createCSSLink() {
+                // Create link element
+                const link = document.createElement('link');
+                link.rel = 'stylesheet';
+                link.type = 'text/css';
+
+                // Use our proxy endpoint that adds CORS headers
+                link.href = '/api/proxy/css?file=' + cssFile;
+
+                return link;
+            }
+
+            // Add the stylesheet to the document
+            document.head.appendChild(createCSSLink());
+
+            // Check if this is in an iframe and try to send the stylesheet to parent
+            try {
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'CSS_FIX',
+                        cssUrl: window.location.origin + '/api/proxy/css?file=' + cssFile
+                    }, '*');
+                }
+            } catch (e) {
+                console.error('Failed to communicate with parent window:', e);
+            }
+        });
+    </script>
+</head>
+
+<body style="background: #f9f9f9; font-family: sans-serif;">
+    <div style="padding: 20px; max-width: 600px; margin: 0 auto; text-align: center;">
+        <h1 style="color: #173518;">DIVE25 CORS Fix</h1>
+        <p>This page helps fix CORS issues with CSS files.</p>
+        <p>You can include this frame in any page to apply the fix:</p>
+        <pre style="background: #eee; padding: 10px; border-radius: 5px; text-align: left; overflow: auto;">
+&lt;iframe src="/fix-cors.html" style="display:none;"&gt;&lt;/iframe&gt;
+    </pre>
+        <p>Or you can add this script directly to your pages:</p>
+        <pre style="background: #eee; padding: 10px; border-radius: 5px; text-align: left; overflow: auto;">
+&lt;script src="/api/proxy/css-loader.js"&gt;&lt;/script&gt;
+    </pre>
+    </div>
+
+    <script>
+        // Listen for messages from other windows that need the CSS fix
+        window.addEventListener('message', function (event) {
+            if (event.data && event.data.type === 'NEED_CSS_FIX') {
+                // Send back the CSS URL
+                event.source.postMessage({
+                    type: 'CSS_FIX',
+                    cssUrl: window.location.origin + '/api/proxy/css?file=cf2f07e87a7c6988.css'
+                }, '*');
+            }
+        });
+    </script>
+</body>
+
+</html>

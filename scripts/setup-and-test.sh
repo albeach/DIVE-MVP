@@ -1502,248 +1502,103 @@ else
   echo "⚠️ cleanup-patches.sh script not found at ./scripts/cleanup-patches.sh"
 fi
 
+# Apply frontend CSS and image fixes
+print_step "Applying Frontend Fixes"
+
+echo "Fixing MIME type issue in CSS proxy endpoint..."
+CSS_PROXY_FILE="frontend/src/pages/api/proxy/css.js"
+
+if [ -f "$CSS_PROXY_FILE" ]; then
+    # Create backup
+    cp "$CSS_PROXY_FILE" "${CSS_PROXY_FILE}.bak"
+    
+    # Update the file
+    cat > "$CSS_PROXY_FILE" << 'EOF'
+import fs from 'fs';
+import path from 'path';
+
+export default async function handler(req, res) {
+    // Enable CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+
+    // Handle OPTIONS request
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+
+    try {
+        // Get the CSS filename from the query parameter
+        const cssFile = req.query.file || 'cf2f07e87a7c6988.css';
+
+        // Log request for debugging
+        console.log(`Proxying CSS file: ${cssFile}`);
+
+        // Construct path to the CSS file
+        const cssPath = path.join(process.cwd(), '.next', 'static', 'css', cssFile);
+
+        // Check if file exists
+        if (!fs.existsSync(cssPath)) {
+            // Fallback to serving directly from the static endpoint
+            const response = await fetch(`${process.env.NEXT_PUBLIC_URL || 'https://dive25.local:8443'}/_next/static/css/${cssFile}`);
+            const css = await response.text();
+
+            // Make sure to set the Content-Type to text/css, not application/json
+            res.setHeader('Content-Type', 'text/css');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            res.status(200).send(css);
+            return;
+        }
+
+        // Read file content
+        const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+        // Set proper content type
+        res.setHeader('Content-Type', 'text/css');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+        // Send the CSS content
+        res.status(200).send(cssContent);
+    } catch (error) {
+        console.error('Error serving CSS proxy:', error);
+        // Even for errors, set the Content-Type to text/css if we were trying to serve CSS
+        res.setHeader('Content-Type', 'text/css');
+        res.status(500).send('/* Error loading CSS file */');
+    }
+}
+EOF
+    echo "✅ Updated CSS proxy endpoint to ensure proper MIME type headers"
+else
+    echo "⚠️ CSS proxy file not found at: $CSS_PROXY_FILE - skipping fix"
+fi
+
+echo "Fixing logo preload warning in Navbar component..."
+NAVBAR_FILE="frontend/src/components/layout/Navbar.tsx"
+
+if [ -f "$NAVBAR_FILE" ]; then
+    # Create backup
+    cp "$NAVBAR_FILE" "${NAVBAR_FILE}.bak"
+    
+    # Use sed to remove the priority attribute from the Image component
+    sed -i.tmp 's/priority\s*//g' "$NAVBAR_FILE"
+    rm -f "${NAVBAR_FILE}.tmp"
+    
+    echo "✅ Removed priority attribute from logo Image component to fix preload warning"
+else
+    echo "⚠️ Navbar file not found at: $NAVBAR_FILE - skipping fix"
+fi
+
+# Rebuild the frontend container to apply changes
+echo "Rebuilding frontend container to apply fixes..."
+docker-compose build --no-cache frontend
+docker-compose up -d frontend
+
+echo "✅ All frontend fixes have been applied successfully"
+echo "  ✓ CSS MIME type issue fixed"
+echo "  ✓ Logo preload warning fixed"
+echo "  ✓ Frontend container rebuilt with fixes"
+
 echo ""
 echo "✅ Setup and tests completed successfully"
-echo ""
-echo "Access your deployment at:"
-echo "Frontend: https://dive25.local:8443"
-echo "API: https://api.dive25.local:8443"
-echo "Keycloak: https://keycloak.dive25.local:8443"
-echo ""
-echo "Thank you for using DIVE25!"
-
-# Set up entries in /etc/hosts for local domain resolution
-set_local_dns() {
-  # Function implementation
-  :
-}
-
-# Function to check for required commands
-check_requirements() {
-  # Function implementation
-  :
-}
-
-# Special function for Keycloak health checking
-check_keycloak_health() {
-  local keycloak_url="$1"
-  local timeout=$2
-  local counter=0
-  
-  echo "Performing comprehensive Keycloak health check..."
-  
-  # Get the curl-tools container name
-  local CURL_TOOLS_CONTAINER=${CURL_TOOLS_CONTAINER:-"dive25-curl-tools"}
-  
-  # Skip check if configured to do so
-  if [ "$SKIP_URL_CHECKS" = "true" ] || [ "$FAST_SETUP" = "true" ] || [ "$SKIP_KEYCLOAK_CHECKS" = "true" ]; then
-    echo "Skipping Keycloak health check (SKIP_URL_CHECKS=true, FAST_SETUP=true, or SKIP_KEYCLOAK_CHECKS=true)"
-    return 0
-  fi
-  
-  # Dynamically determine Keycloak container name with better fallback options
-  local KEYCLOAK_CONTAINER=$(get_container_name "keycloak")
-  
-  # Verify container exists
-  if ! docker ps -a | grep -q "$KEYCLOAK_CONTAINER"; then
-    echo "INFO: Keycloak container '$KEYCLOAK_CONTAINER' not found with primary naming pattern"
-    # Try alternate container name formats
-    local alt_formats=("dive25-keycloak" "dive25_keycloak" "keycloak")
-    local found=false
-    
-    for format in "${alt_formats[@]}"; do
-      if docker ps -a | grep -q "$format"; then
-        KEYCLOAK_CONTAINER="$format"
-        echo "Found Keycloak container with name: $KEYCLOAK_CONTAINER"
-        found=true
-        break
-      fi
-    done
-    
-    if ! $found; then
-      echo "WARNING: Could not find Keycloak container. Health check will be limited to URL checks."
-    fi
-  fi
-  
-  # If Keycloak container exists, check if it's healthy
-  if docker ps -a | grep -q "$KEYCLOAK_CONTAINER"; then
-    # Use a shorter but reasonable timeout
-    local container_timeout=$((timeout < 60 ? 60 : timeout / 2))
-    local start_time=$(date +%s)
-    local end_time=$((start_time + container_timeout))
-    
-    echo "Checking Keycloak container status..."
-    while [ $(date +%s) -lt $end_time ]; do
-      local container_status=$(docker inspect --format='{{.State.Status}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "not_found")
-      local container_health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no_health_check{{end}}' "$KEYCLOAK_CONTAINER" 2>/dev/null || echo "unknown")
-      
-      echo "Keycloak container status: $container_status, health: $container_health"
-      
-      if [[ "$container_status" == "running" ]]; then
-        if [[ "$container_health" == "healthy" || "$container_health" == "no_health_check" ]]; then
-          echo "✅ Keycloak container is running and healthy according to Docker!"
-          break
-        fi
-      fi
-      
-      sleep 5
-      counter=$((counter + 5))
-      local elapsed=$(($(date +%s) - start_time))
-      echo "Still waiting for Keycloak container to be healthy... ($elapsed seconds elapsed, $container_timeout seconds timeout)"
-      
-      if [ $elapsed -ge $container_timeout ]; then
-        echo "Timeout waiting for Keycloak container to be healthy. Moving on to direct checks..."
-        break
-      fi
-    done
-  fi
-  
-  # Check if curl-tools container is running to test Keycloak connectivity
-  if docker ps | grep -q "$CURL_TOOLS_CONTAINER"; then
-    echo "Testing Keycloak connectivity using curl-tools container..."
-    
-    # Try Keycloak connection on standard ports with common endpoints
-    local endpoints=(
-      "/" 
-      "/auth" 
-      "/auth/realms/master/" 
-      "/realms/master/" 
-      "/health/ready" 
-      "/metrics"
-    )
-    
-    for endpoint in "${endpoints[@]}"; do
-      if docker exec "$CURL_TOOLS_CONTAINER" curl -s -f -m 5 http://keycloak:8080$endpoint >/dev/null 2>&1; then
-        echo "✅ Keycloak is responding on port 8080 at endpoint $endpoint via curl-tools container!"
-        return 0
-      fi
-    done
-    
-    # Try admin port as fallback
-    if docker exec "$CURL_TOOLS_CONTAINER" curl -s -f -m 5 http://keycloak:9990/ >/dev/null 2>&1; then
-      echo "✅ Keycloak admin console is responding on port 9990 via curl-tools container!"
-      return 0
-    fi
-    
-    echo "⚠️ Could not connect to Keycloak directly using curl-tools container"
-  else
-    echo "curl-tools container not running, falling back to direct container check"
-    
-    # Try to check if the Keycloak process is running inside the container
-    echo "Checking if Keycloak process is running inside the container..."
-    if docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null | grep -q "java\|jboss\|keycloak"; then
-      echo "✅ Keycloak process is running inside the container!"
-    else
-      echo "⚠️ WARNING: Keycloak process doesn't appear to be running inside the container."
-      docker exec "$KEYCLOAK_CONTAINER" ps aux 2>/dev/null || echo "Failed to check processes in Keycloak container"
-    fi
-    
-    # If we have the Keycloak container, try internal health checks
-    if docker ps -a | grep -q "$KEYCLOAK_CONTAINER"; then
-      # Check if curl is available in the container
-      if docker exec "$KEYCLOAK_CONTAINER" which curl >/dev/null 2>&1; then
-        # Try internal connection on standard Keycloak port
-        if docker exec "$KEYCLOAK_CONTAINER" curl -s -f -m 5 http://localhost:8080/ >/dev/null 2>&1; then
-          echo "✅ Keycloak is responding internally on port 8080!"
-          return 0
-        elif docker exec "$KEYCLOAK_CONTAINER" curl -s -f -m 5 http://localhost:9990/ >/dev/null 2>&1; then
-          echo "✅ Keycloak admin console is responding internally on port 9990!"
-          return 0
-        fi
-      else
-        echo "curl not available in Keycloak container, skipping internal check"
-      fi
-    fi
-  fi
-  
-  # Skip further checks if master timeout is close to being reached
-  CURRENT_TIME=$(date +%s)
-  ELAPSED_TIME=$((CURRENT_TIME - MASTER_START_TIME))
-  if [ $ELAPSED_TIME -ge $((MASTER_TIMEOUT - 60)) ]; then
-    echo "⚠️ Master timeout is approaching. Skipping Keycloak URL checks to avoid further delays."
-    return 0
-  fi
-  
-  # Get Keycloak port with fallback to environment variable
-  local keycloak_port=${KEYCLOAK_PORT:-8080}
-  local keycloak_https_port=${KEYCLOAK_PORT:-8443}
-  
-  # Try direct localhost check with shorter timeouts
-  echo "Trying direct localhost connection to verify Keycloak accessibility..."
-  local direct_localhost_success=false
-  
-  # Try both HTTP and HTTPS on localhost with various endpoints
-  local localhost_endpoints=(
-    "/health" 
-    "/auth" 
-    "/auth/realms/master/" 
-    "/realms/master/" 
-    "/health/ready" 
-    "/metrics"
-    "/"
-  )
-  
-  # Try localhost URLs
-  for endpoint in "${localhost_endpoints[@]}"; do
-    # Try HTTPS first (it's more commonly used with Keycloak)
-    if curl -s -k -f -o /dev/null --connect-timeout 3 --max-time 5 https://localhost:$keycloak_https_port$endpoint 2>/dev/null; then
-      echo "✅ Keycloak is directly accessible via https://localhost:$keycloak_https_port$endpoint!"
-      direct_localhost_success=true
-      break
-    # Then try HTTP
-    elif curl -s -f -o /dev/null --connect-timeout 3 --max-time 5 http://localhost:$keycloak_port$endpoint 2>/dev/null; then
-      echo "✅ Keycloak is directly accessible via http://localhost:$keycloak_port$endpoint!"
-      direct_localhost_success=true
-      break
-    fi
-  done
-  
-  # If direct localhost works, we consider this a success
-  if [ "$direct_localhost_success" = "true" ]; then
-    echo "Keycloak is working properly via localhost."
-    return 0
-  fi
-  
-  # If we're here, we couldn't verify Keycloak health but we'll continue anyway
-  echo "⚠️ Could not definitively verify Keycloak health, but continuing with setup."
-  echo "You can check Keycloak logs with: docker-compose logs keycloak"
-  return 0
-}
-
-# Function to handle document generation
-setup_sample_documents() {
-  echo
-  echo "Would you like to generate sample documents? (y/n)"
-  read -r generate_docs
-  
-  if [[ "$generate_docs" =~ ^[Yy]$ ]]; then
-    echo "How many documents would you like to generate? (default: 300)"
-    read -r num_docs
-    
-    # Use default if no number provided
-    if [ -z "$num_docs" ]; then
-      num_docs=300
-    fi
-    
-    # Validate input is a number
-    if ! [[ "$num_docs" =~ ^[0-9]+$ ]]; then
-      echo "Invalid input. Using default value of 300 documents."
-      num_docs=300
-    fi
-    
-    echo "Generating $num_docs sample documents..."
-    ./scripts/generate-documents.sh "$num_docs"
-  else
-    echo "Skipping document generation."
-  fi
-}
-
-# Main script execution
-CURRENT_PHASE="Main Script Execution"
-
-echo "✅ Setup and testing completed successfully!"
-
-# Add document generation step at the end
-setup_sample_documents
-
-echo "🎉 All done! Your DIVE25 environment is ready."

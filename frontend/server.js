@@ -28,8 +28,48 @@ console.log(`NODE_ENV: ${process.env.NODE_ENV}`);
 console.log(`NEXT_PUBLIC_KEYCLOAK_URL: ${process.env.NEXT_PUBLIC_KEYCLOAK_URL}`);
 console.log(`NEXT_PUBLIC_API_URL: ${apiUrl}`);
 
+// CSS file that's causing CORS issues
+const TARGET_CSS = 'cf2f07e87a7c6988.css';
+
 app.prepare().then(() => {
     let server;
+
+    // Function to handle requests
+    const requestHandler = (req, res) => {
+        // Parse URL
+        const parsedUrl = parse(req.url, true);
+
+        // Special handling for the problematic CSS file
+        if (req.url.includes('/_next/static/css') && req.url.includes(TARGET_CSS)) {
+            console.log(`Applying CORS headers to CSS file: ${req.url}`);
+
+            // Add CORS headers
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', '*');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+            // If it's an OPTIONS request, handle it immediately
+            if (req.method === 'OPTIONS') {
+                res.writeHead(204);
+                res.end();
+                return;
+            }
+        }
+
+        // Handle CORS preflight requests for any other path
+        if (req.method === 'OPTIONS') {
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
+            res.setHeader('Access-Control-Allow-Headers', '*');
+            res.writeHead(204);
+            res.end();
+            return;
+        }
+
+        // Let Next.js handle the request
+        handle(req, res, parsedUrl);
+    };
 
     if (useHttps) {
         console.log('Attempting to start server with HTTPS...');
@@ -48,32 +88,20 @@ app.prepare().then(() => {
 
                 console.log(`HTTPS configuration loaded with certificates from ${sslCertPath} and ${sslKeyPath}`);
 
-                server = https.createServer(httpsOptions, (req, res) => {
-                    const parsedUrl = parse(req.url, true);
-                    handle(req, res, parsedUrl);
-                });
+                server = https.createServer(httpsOptions, requestHandler);
             } else {
                 console.warn(`SSL certificates not found at: ${sslCertPath} or ${sslKeyPath}`);
                 console.warn('Falling back to HTTP server');
-                server = http.createServer((req, res) => {
-                    const parsedUrl = parse(req.url, true);
-                    handle(req, res, parsedUrl);
-                });
+                server = http.createServer(requestHandler);
             }
         } catch (error) {
             console.error('Error setting up HTTPS server:', error);
             console.warn('Falling back to HTTP server');
-            server = http.createServer((req, res) => {
-                const parsedUrl = parse(req.url, true);
-                handle(req, res, parsedUrl);
-            });
+            server = http.createServer(requestHandler);
         }
     } else {
         console.log('Starting server with HTTP (HTTPS not enabled)');
-        server = http.createServer((req, res) => {
-            const parsedUrl = parse(req.url, true);
-            handle(req, res, parsedUrl);
-        });
+        server = http.createServer(requestHandler);
     }
 
     server.listen(port, hostname, (err) => {

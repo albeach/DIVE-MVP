@@ -1,13 +1,31 @@
 const express = require('express');
+const multer = require('multer');
 const {
     getById,
     getByUniqueId,
     getAll,
     create,
     update,
-    remove
+    remove,
+    uploadAvatar
 } = require('../controllers/users.controller');
 const { authenticate, authorize } = require('../middleware/auth.middleware');
+
+// Configure multer for avatar uploads
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: {
+        fileSize: 5 * 1024 * 1024 // 5MB
+    },
+    fileFilter: (req, file, cb) => {
+        // Accept only image files
+        if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only image files are allowed'), false);
+        }
+    }
+});
 
 const router = express.Router();
 
@@ -86,6 +104,34 @@ router.post('/', authorize(['admin']), create);
  *         description: Unauthorized
  */
 router.get('/me', (req, res) => res.status(200).json({ success: true, user: req.user }));
+
+/**
+ * @swagger
+ * /users/me/avatar:
+ *   post:
+ *     summary: Upload user avatar
+ *     tags: [Users]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               avatar:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Avatar uploaded successfully
+ *       400:
+ *         description: Invalid file type or file too large
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/me/avatar', upload.single('avatar'), uploadAvatar);
 
 /**
  * @swagger

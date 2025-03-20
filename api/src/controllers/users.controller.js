@@ -4,9 +4,11 @@ const {
     getUsers,
     createUser,
     updateUser,
-    deleteUser
+    deleteUser,
+    uploadUserAvatar
 } = require('../services/users.service');
 const logger = require('../utils/logger');
+const { ApiError } = require('../utils/error.utils');
 
 /**
  * Get user by ID
@@ -145,11 +147,47 @@ const remove = async (req, res, next) => {
     }
 };
 
+/**
+ * Upload avatar for the current user
+ * @param {Object} req - Express request object
+ * @param {Object} res - Express response object
+ * @param {Function} next - Express next middleware function
+ */
+const uploadAvatar = async (req, res, next) => {
+    try {
+        // Check if file was uploaded
+        if (!req.file) {
+            throw new ApiError('No avatar file uploaded', 400, 'FILE_REQUIRED');
+        }
+
+        // Check file type
+        if (!req.file.mimetype.startsWith('image/')) {
+            throw new ApiError('Only image files are allowed for avatars', 400, 'INVALID_FILE_TYPE');
+        }
+
+        // Upload the avatar
+        const result = await uploadUserAvatar(req.user, req.file);
+
+        res.status(200).json({
+            success: true,
+            message: 'Avatar uploaded successfully',
+            avatar: result.avatarUrl
+        });
+    } catch (error) {
+        logger.error('Avatar upload error:', {
+            error: error.message,
+            user: req.user ? req.user.username : 'unknown'
+        });
+        next(error);
+    }
+};
+
 module.exports = {
     getById,
     getByUniqueId,
     getAll,
     create,
     update,
-    remove
+    remove,
+    uploadAvatar
 };

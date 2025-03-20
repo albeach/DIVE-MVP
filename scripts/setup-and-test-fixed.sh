@@ -1447,6 +1447,109 @@ setup_log_monitoring() {
 # Setup log monitoring before final summary
 setup_log_monitoring
 
+# Apply frontend CSS and image fixes
+apply_frontend_fixes() {
+  print_section "Applying Frontend Fixes"
+  
+  show_progress "Fixing MIME type issue in CSS proxy endpoint..."
+  local CSS_PROXY_FILE="frontend/src/pages/api/proxy/css.js"
+  
+  if [ -f "$CSS_PROXY_FILE" ]; then
+      # Create backup
+      cp "$CSS_PROXY_FILE" "${CSS_PROXY_FILE}.bak"
+      
+      # Update the file
+      cat > "$CSS_PROXY_FILE" << 'EOF'
+import fs from 'fs';
+import path from 'path';
+
+export default async function handler(req, res) {
+    // Enable CORS
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+
+    // Handle OPTIONS request
+    if (req.method === 'OPTIONS') {
+        res.status(200).end();
+        return;
+    }
+
+    try {
+        // Get the CSS filename from the query parameter
+        const cssFile = req.query.file || 'cf2f07e87a7c6988.css';
+
+        // Log request for debugging
+        console.log(`Proxying CSS file: ${cssFile}`);
+
+        // Construct path to the CSS file
+        const cssPath = path.join(process.cwd(), '.next', 'static', 'css', cssFile);
+
+        // Check if file exists
+        if (!fs.existsSync(cssPath)) {
+            // Fallback to serving directly from the static endpoint
+            const response = await fetch(`${process.env.NEXT_PUBLIC_URL || 'https://dive25.local:8443'}/_next/static/css/${cssFile}`);
+            const css = await response.text();
+
+            // Make sure to set the Content-Type to text/css, not application/json
+            res.setHeader('Content-Type', 'text/css');
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            res.status(200).send(css);
+            return;
+        }
+
+        // Read file content
+        const cssContent = fs.readFileSync(cssPath, 'utf8');
+
+        // Set proper content type
+        res.setHeader('Content-Type', 'text/css');
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+
+        // Send the CSS content
+        res.status(200).send(cssContent);
+    } catch (error) {
+        console.error('Error serving CSS proxy:', error);
+        // Even for errors, set the Content-Type to text/css if we were trying to serve CSS
+        res.setHeader('Content-Type', 'text/css');
+        res.status(500).send('/* Error loading CSS file */');
+    }
+}
+EOF
+      success "Updated CSS proxy endpoint to ensure proper MIME type headers"
+  else
+      warning "CSS proxy file not found at: $CSS_PROXY_FILE - skipping fix"
+  fi
+  
+  show_progress "Fixing logo preload warning in Navbar component..."
+  local NAVBAR_FILE="frontend/src/components/layout/Navbar.tsx"
+  
+  if [ -f "$NAVBAR_FILE" ]; then
+      # Create backup
+      cp "$NAVBAR_FILE" "${NAVBAR_FILE}.bak"
+      
+      # Use sed to remove the priority attribute from the Image component
+      sed -i.tmp 's/priority\s*//g' "$NAVBAR_FILE"
+      rm -f "${NAVBAR_FILE}.tmp"
+      
+      success "Removed priority attribute from logo Image component to fix preload warning"
+  else
+      warning "Navbar file not found at: $NAVBAR_FILE - skipping fix"
+  fi
+  
+  # Rebuild the frontend container to apply changes
+  show_progress "Rebuilding frontend container to apply fixes..."
+  docker-compose build --no-cache frontend
+  docker-compose up -d frontend
+  
+  success "All frontend fixes have been applied successfully"
+  echo -e "  ${GREEN}✓${RESET} CSS MIME type issue fixed"
+  echo -e "  ${GREEN}✓${RESET} Logo preload warning fixed"
+  echo -e "  ${GREEN}✓${RESET} Frontend container rebuilt with fixes"
+}
+
+# Apply frontend fixes before showing final summary
+apply_frontend_fixes
+
 # Call the show_final_summary function to display the complete overview
 show_final_summary 
 

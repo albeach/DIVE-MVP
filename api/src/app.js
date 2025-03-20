@@ -16,6 +16,7 @@ const { connectToMongoDB } = require('./config/mongodb.config');
 const { setupPrometheusMetrics } = require('./utils/metrics');
 const { checkHealth, checkLiveness } = require('./utils/healthcheck');
 const swagger = require('./swagger');
+const path = require('path');
 
 // Import routes
 const authRoutes = require('./routes/auth.routes');
@@ -307,6 +308,14 @@ app.use('/health', healthRoutes);  // Keep this as it's not part of /api/v1
 
 // Serve Swagger UI
 swagger.serve(app);
+
+// Serve static files from the React app
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.join(__dirname, '../../frontend/build')));
+}
+
+// Serve uploaded avatar files
+app.use('/api/uploads/avatars', express.static(path.join(__dirname, '../uploads/avatars')));
 
 // Apply error handler middleware
 app.use(errorHandler);

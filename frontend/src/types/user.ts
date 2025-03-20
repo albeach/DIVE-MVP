@@ -12,4 +12,5 @@ export interface User {
     coi?: string[];
     roles?: string[];
     lastLogin?: string;
+    avatar?: string; // URL to the user's avatar image
 }

@@ -173,17 +173,28 @@ const Navbar: React.FC = () => {
     <header className="sticky top-0 z-50 bg-gradient-to-r from-primary-900 to-primary-800 text-white backdrop-blur-sm backdrop-saturate-150">
       <div className="container mx-auto px-4">
         <div className="flex items-center justify-between h-16">
-          {/* Logo only */}
+          {/* Enhanced Logo */}
           <div className="flex items-center">
-            <Link href="/" className="flex items-center group relative">
-              <div className="w-12 h-12 relative overflow-hidden rounded-md bg-white/5 p-1.5 backdrop-blur-sm border border-white/10 shadow-md">
+            <Link href="/" className="flex items-center group">
+              <div className="relative w-14 h-14 flex items-center justify-center overflow-hidden rounded-xl bg-white/10 backdrop-blur-md border border-white/20 shadow-lg transition-all duration-300 group-hover:border-white/30 group-hover:bg-white/15">
+                {/* Subtle glow behind logo */}
+                <div className="absolute inset-0 bg-primary-500/20 blur-md transform scale-75"></div>
+                
+                {/* Logo with hover effect */}
                 <Image 
                   src="/assets/dive25-logo.svg" 
                   alt={t('app.name')} 
-                  width={40} 
-                  height={40}
-                  className="transition-all duration-300 group-hover:scale-105"
+                  width={48} 
+                  height={48}
+                  className="relative z-10 transition-all duration-300 group-hover:scale-110"
                 />
+              </div>
+              
+              {/* Add the text logo for larger screens */}
+              <div className="ml-3 hidden md:block">
+                <span className="text-xl font-bold bg-gradient-to-r from-white to-green-200 bg-clip-text text-transparent">
+                  {t('app.name')}
+                </span>
               </div>
             </Link>
           </div>

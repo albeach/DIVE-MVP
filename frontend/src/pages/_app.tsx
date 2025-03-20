@@ -13,6 +13,7 @@ import { Layout } from '@/components/layout/Layout';
 import { useEffect, useState } from 'react';
 // Import i18n initialization
 import '@/utils/i18n';
+import Head from 'next/head';
 
 function App({ Component, pageProps }: AppProps) {
   const router = useRouter();
@@ -40,6 +41,61 @@ function App({ Component, pageProps }: AppProps) {
     }
   }, []);
 
+  // Add effect to inject the CSS fix
+  useEffect(() => {
+    // Function to fix CSS CORS issues
+    const fixCssIssue = () => {
+      // The CSS file that's having CORS issues
+      const cssFile = 'cf2f07e87a7c6988.css';
+      
+      // Check if we need to add the CSS (avoid duplicates)
+      const existingLinks = document.querySelectorAll(`link[href*="${cssFile}"]`);
+      if (existingLinks.length > 0) return;
+      
+      // Create link element with our proxy
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.type = 'text/css';
+      link.href = `/api/proxy/css?file=${cssFile}`;
+      
+      // Append to document head
+      document.head.appendChild(link);
+      console.log('DIVE25: Applied CSS CORS fix');
+    };
+    
+    // Apply the fix
+    fixCssIssue();
+    
+    // Add a global error handler to detect CORS issues
+    const originalOnError = window.onerror;
+    window.onerror = function(message, source, lineno, colno, error) {
+      // Check if the error is CORS related
+      if (typeof message === 'string' && 
+          (message.includes('CORS') || message.includes('cross-origin'))) {
+        console.warn('DIVE25: Detected potential CORS error, applying fix:', message);
+        fixCssIssue();
+      }
+      
+      // Call original handler if it exists
+      if (originalOnError) {
+        return originalOnError.call(this, message, source, lineno, colno, error);
+      }
+      
+      return false;
+    };
+    
+    // Also listen for specific security policy violations
+    window.addEventListener('securitypolicyviolation', (e) => {
+      console.warn('DIVE25: Security policy violation:', e.violatedDirective);
+      fixCssIssue();
+    });
+    
+    return () => {
+      // Clean up event listeners
+      window.onerror = originalOnError;
+    };
+  }, []);
+
   // Basic public routes that don't require authentication
   const isPublicRoute = [
     '/',
@@ -62,6 +118,10 @@ function App({ Component, pageProps }: AppProps) {
 
   return (
     <QueryClientProvider client={queryClient}>
+      <Head>
+        {/* Safe fallback approach: add a preconnect for the origin */}
+        <link rel="preconnect" href="https://dive25.local:8443" crossOrigin="anonymous" />
+      </Head>
       {/* Use AuthProvider with conditional auto-initialization */}
       <AuthProvider autoInitialize={shouldAutoInitialize}>
         <Layout isPublicRoute={isPublicRoute}>

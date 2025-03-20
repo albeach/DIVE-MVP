@@ -281,44 +281,57 @@ const download = async (req, res, next) => {
             throw new ApiError('Document ID is required', 400, 'ID_REQUIRED');
         }
 
-        // Get document
+        // Get document to verify it exists and user has access
         const document = await getDocumentById(req.params.id, req.user);
 
-        // Get file
-        const fileBuffer = await getFile(document.fileId);
+        if (!document) {
+            throw new ApiError('Document not found', 404, 'DOCUMENT_NOT_FOUND');
+        }
 
-        // Set security headers
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Content-Security-Policy', "default-src 'none'");
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
+        // Get file data with full policy enforcement
+        try {
+            logger.debug(`Downloading file for document: ${document._id}`);
+            const fileBuffer = await getFile(document._id.toString(), req.user);
 
-        // Set content headers
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.filename)}"`);
-        res.setHeader('Content-Length', document.size);
+            // Set CORS headers to allow content to be loaded in iframe
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-        // Send file
-        res.send(fileBuffer);
+            // Set security headers
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+            res.setHeader('Content-Security-Policy', "default-src 'none'");
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+            res.setHeader('Pragma', 'no-cache');
+            res.setHeader('Expires', '0');
 
-        const duration = performance.now() - startTime;
-        logger.debug(`Document download completed in ${duration.toFixed(2)}ms, size: ${document.size} bytes`);
+            // Set content headers
+            res.setHeader('Content-Type', document.mimeType || 'application/octet-stream');
+            res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(document.filename)}"`);
 
-        // Create audit log
-        await createAuditLog({
-            userId: req.user.uniqueId,
-            username: req.user.username,
-            action: 'DOCUMENT_DOWNLOAD',
-            resourceId: document._id,
-            resourceType: 'document',
-            details: {
-                filename: document.filename,
-                classification: document.metadata.classification,
-                size: document.size
-            },
-            success: true
-        });
+            // Send the file buffer
+            res.send(fileBuffer);
+
+            const duration = performance.now() - startTime;
+            logger.debug(`Document download completed in ${duration.toFixed(2)}ms`);
+
+            // Create audit log
+            await createAuditLog({
+                userId: req.user.uniqueId,
+                username: req.user.username,
+                action: 'DOCUMENT_DOWNLOAD',
+                resourceId: document._id,
+                resourceType: 'document',
+                details: {
+                    filename: document.filename,
+                    classification: document.metadata.classification
+                },
+                success: true
+            });
+        } catch (fileError) {
+            logger.error(`Error retrieving file data for download: ${fileError.message}`, fileError);
+            throw new ApiError('Unable to retrieve document content for download', 500, 'FILE_RETRIEVAL_ERROR');
+        }
     } catch (error) {
         logger.error('Document download error:', {
             error: error.message,
@@ -341,45 +354,84 @@ const preview = async (req, res, next) => {
             throw new ApiError('Document ID is required', 400, 'ID_REQUIRED');
         }
 
-        // Get document
+        // Get document to verify it exists and user has access
         const document = await getDocumentById(req.params.id, req.user);
 
-        // Get file
-        const fileBuffer = await getFile(document.fileId);
+        if (!document) {
+            throw new ApiError('Document not found', 404, 'DOCUMENT_NOT_FOUND');
+        }
 
-        // Set security headers
-        res.setHeader('X-Content-Type-Options', 'nosniff');
-        res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'none'");
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
+        // Log successful retrieval of document metadata
+        logger.debug(`Retrieved document metadata for preview: ${document._id}`);
 
-        // Set content headers
-        res.setHeader('Content-Type', document.mimeType);
-        res.setHeader('Content-Disposition', 'inline');
-        res.setHeader('Content-Length', document.size);
+        // Handle preflight CORS requests
+        if (req.method === 'OPTIONS') {
+            // Set CORS headers
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+            res.status(204).end();
+            return;
+        }
 
-        // Send file
-        res.send(fileBuffer);
+        // Get file data with full policy enforcement
+        try {
+            // Get file buffer
+            const fileBuffer = await getFile(document._id.toString(), req.user);
 
-        // Update last accessed date
-        document.lastAccessedDate = new Date();
-        await document.save();
+            // If we got here, we have the file buffer
+            logger.debug(`Successfully retrieved file buffer for document preview: ${document._id}`);
 
-        // Create audit log for sensitive documents
-        if (document.metadata.classification !== 'UNCLASSIFIED') {
-            await createAuditLog({
-                userId: req.user.uniqueId,
-                username: req.user.username,
-                action: 'DOCUMENT_PREVIEW',
-                resourceId: document._id,
-                resourceType: 'document',
-                details: {
-                    filename: document.filename,
-                    classification: document.metadata.classification
-                },
-                success: true
-            });
+            // Set CORS headers to allow content to be loaded in iframe or object tag
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+            res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+            // Set security headers based on content type
+            res.setHeader('X-Content-Type-Options', 'nosniff');
+
+            // Adjust CSP based on content type
+            if (document.mimeType.startsWith('image/')) {
+                res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:;");
+            } else if (document.mimeType === 'application/pdf') {
+                // Less restrictive CSP for PDFs to allow them to load properly
+                res.setHeader('Content-Security-Policy', "default-src 'self'; object-src 'self'; style-src 'self' 'unsafe-inline';");
+            } else {
+                res.setHeader('Content-Security-Policy', "default-src 'none';");
+            }
+
+            res.setHeader('Cache-Control', 'public, max-age=300'); // Allow caching for 5 minutes
+            res.setHeader('Pragma', 'public');
+
+            // Set content headers
+            res.setHeader('Content-Type', document.mimeType || 'application/octet-stream');
+            res.setHeader('Content-Disposition', 'inline');
+
+            // Send the file buffer
+            res.send(fileBuffer);
+
+            // Update last accessed date
+            document.lastAccessedDate = new Date();
+            await document.save();
+
+            // Create audit log for sensitive documents
+            if (document.metadata.classification !== 'UNCLASSIFIED') {
+                await createAuditLog({
+                    userId: req.user.uniqueId,
+                    username: req.user.username,
+                    action: 'DOCUMENT_PREVIEW',
+                    resourceId: document._id,
+                    resourceType: 'document',
+                    details: {
+                        filename: document.filename,
+                        classification: document.metadata.classification
+                    },
+                    success: true
+                });
+            }
+        } catch (fileError) {
+            logger.error(`Error retrieving file data for preview: ${fileError.message}`, fileError);
+            throw new ApiError('Unable to retrieve document content for preview', 500, 'FILE_RETRIEVAL_ERROR');
         }
     } catch (error) {
         logger.error('Document preview error:', {

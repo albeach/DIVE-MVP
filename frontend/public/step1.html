@@ -3,6 +3,8 @@
 
 <head>
     <title>Authentication Step 1</title>
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' 'unsafe-inline'; frame-ancestors 'self' https://*.dive25.local https://dive25.local:* http://localhost:*">
     <script type="text/javascript">
         // This file is critical for Keycloak authentication
         // It needs to be as simple and reliable as possible
@@ -88,27 +90,38 @@
                 function postToParent() {
                     if (window.parent) {
                         try {
-                            // Specific origin first
-                            window.parent.postMessage(window.location.href, parentOrigin);
-                            console.log('[Step1] Posted to specific origin:', parentOrigin);
-
-                            // Then try each expected origin if using wildcard
-                            if (parentOrigin === '*') {
+                            // Use specific origin when possible to improve security
+                            if (parentOrigin !== '*') {
+                                window.parent.postMessage(window.location.href, parentOrigin);
+                                console.log('[Step1] Posted to specific origin:', parentOrigin);
+                            } else {
+                                // Try each expected origin first - more secure than wildcard
+                                var messageSent = false;
                                 expectedOrigins.forEach(function (origin) {
                                     try {
                                         window.parent.postMessage(window.location.href, origin);
                                         console.log('[Step1] Posted to expected origin:', origin);
+                                        messageSent = true;
                                     } catch (e) {
                                         console.log('[Step1] Error posting to', origin, e);
                                     }
                                 });
-                            }
 
-                            // Always try wildcard as last resort
-                            window.parent.postMessage(window.location.href, '*');
-                            console.log('[Step1] Posted with wildcard origin');
+                                // Use wildcard only if needed as last resort
+                                if (!messageSent) {
+                                    window.parent.postMessage(window.location.href, '*');
+                                    console.log('[Step1] Posted with wildcard origin');
+                                }
+                            }
                         } catch (e) {
                             console.error('[Step1] Error posting message:', e);
+
+                            // Last resort fallback with wildcard
+                            try {
+                                window.parent.postMessage(window.location.href, '*');
+                            } catch (e2) {
+                                console.error('[Step1] Final fallback also failed:', e2);
+                            }
                         }
                     }
                 }
@@ -138,6 +151,9 @@
 
 <body>
     <!-- Authentication step1 page - used by Keycloak for iframe communication -->
+    <noscript>
+        <p>JavaScript is required for this authentication step. Please enable JavaScript in your browser.</p>
+    </noscript>
 </body>
 
 </html>

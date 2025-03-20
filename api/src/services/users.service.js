@@ -2,6 +2,10 @@ const { User, userValidationSchema } = require('../models/user.model');
 const { createAuditLog } = require('./audit.service');
 const logger = require('../utils/logger');
 const { ApiError } = require('../utils/error.utils');
+const mongoose = require('mongoose');
+const fs = require('fs');
+const path = require('path');
+const { v4: uuidv4 } = require('uuid');
 
 /**
  * Get user by ID
@@ -306,11 +310,45 @@ const deleteUser = async (id, deletedBy) => {
     }
 };
 
+/**
+ * Upload an avatar image for a user
+ * @param {Object} user - Current user object
+ * @param {Object} file - Upload file from multer
+ * @returns {Object} Result object with avatar URL
+ */
+const uploadUserAvatar = async (user, file) => {
+    try {
+        // Create uploads directory if it doesn't exist
+        const uploadsDir = path.join(__dirname, '../../uploads/avatars');
+        if (!fs.existsSync(uploadsDir)) {
+            fs.mkdirSync(uploadsDir, { recursive: true });
+        }
+
+        // Generate unique filename
+        const fileExtension = file.mimetype.split('/')[1];
+        const fileName = `${uuidv4()}.${fileExtension}`;
+        const filePath = path.join(uploadsDir, fileName);
+
+        // Write file to disk
+        fs.writeFileSync(filePath, file.buffer);
+
+        // Update user record with avatar path
+        const avatarUrl = `/api/uploads/avatars/${fileName}`;
+        await User.findByIdAndUpdate(user.id, { avatar: avatarUrl });
+
+        return { avatarUrl };
+    } catch (error) {
+        logger.error('Error uploading avatar:', error);
+        throw new ApiError('Failed to upload avatar', 500, 'AVATAR_UPLOAD_FAILED');
+    }
+};
+
 module.exports = {
     getUserById,
     getUserByUniqueId,
     getUsers,
     createUser,
     updateUser,
-    deleteUser
+    deleteUser,
+    uploadUserAvatar
 };

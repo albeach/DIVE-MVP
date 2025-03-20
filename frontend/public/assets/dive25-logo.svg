@@ -1,11 +1,19 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="200" height="80" viewBox="0 0 200 80">
-  <style>
-    .text { font-family: Arial, sans-serif; font-weight: bold; }
-    .dive { fill: #ffffff; }
-    .number { fill: #ff9900; }
-  </style>
-  <rect width="200" height="80" fill="transparent" rx="10" ry="10" />
-  <text x="30" y="50" class="text dive" font-size="36">DIVE</text>
-  <text x="120" y="50" class="text number" font-size="36">25</text>
-  <path d="M20,60 L180,60" stroke="#ffffff" stroke-width="3" />
+  <defs>
+    <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#3d883f" />
+      <stop offset="100%" stop-color="#173518" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+  <rect width="200" height="80" fill="url(#logoGradient)" rx="12" ry="12" />
+  <text x="26" y="50" font-family="'Montserrat', Arial, sans-serif" font-weight="700" font-size="38" fill="#ffffff" filter="url(#glow)">DIVE</text>
+  <text x="118" y="50" font-family="'Montserrat', Arial, sans-serif" font-weight="700" font-size="38" fill="#a7d8a8">25</text>
+  <path d="M24,60 L176,60" stroke="#ffffff" stroke-width="2" stroke-opacity="0.6" />
+  <path d="M30,65 L170,65" stroke="#ffffff" stroke-width="1" stroke-opacity="0.3" />
+  <circle cx="30" cy="30" r="8" fill="#a7d8a8" fill-opacity="0.15" />
+  <circle cx="170" cy="50" r="12" fill="#a7d8a8" fill-opacity="0.15" />
 </svg> 

@@ -1,330 +1,280 @@
 // frontend/src/pages/profile.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Head from 'next/head';
 import { useTranslation } from 'next-i18next';
 import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
-import { GetServerSideProps } from 'next';
-import { withAuth } from '@/components/hoc/withAuth';
-import { SecurityBanner } from '@/components/security/SecurityBanner';
 import { useAuth } from '@/context/auth-context';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { formatDate } from '@/utils/date';
+import { useRouter } from 'next/router';
+import Image from 'next/image';
+import { User } from '@/types/user';
 
 function Profile() {
   const { t } = useTranslation(['common', 'profile']);
+  const router = useRouter();
   const { user, keycloak } = useAuth();
   const [showTokenInfo, setShowTokenInfo] = useState(false);
   const [tokenData, setTokenData] = useState<any>(null);
+  const [uploadLoading, setUploadLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (keycloak && keycloak.tokenParsed) {
-      console.log('Keycloak token parsed:', keycloak.tokenParsed);
-      setTokenData(keycloak.tokenParsed);
-    } else {
-      console.log('No Keycloak token available');
+    if (!user) {
+      router.push('/login');
+      return;
     }
-  }, [keycloak]);
 
-  if (!user) {
-    return null;
-  }
+    if (showTokenInfo && keycloak?.token) {
+      const parts = keycloak.token.split('.');
+      if (parts.length === 3) {
+        try {
+          const payload = JSON.parse(atob(parts[1]));
+          setTokenData(payload);
+        } catch (error) {
+          console.error('Failed to parse token', error);
+        }
+      }
+    }
+  }, [user, showTokenInfo, keycloak, router]);
+
+  if (!user) return null;
 
   // Generate user's initials for avatar
   const initials = `${user.givenName?.[0] || ''}${user.surname?.[0] || ''}`.toUpperCase();
 
+  const handleAvatarUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (!event.target.files || event.target.files.length === 0) {
+      return;
+    }
+
+    const file = event.target.files[0];
+    
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      setError(t('profile.avatar.invalidType', { defaultValue: 'Only image files are allowed' }));
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setError(t('profile.avatar.fileTooBig', { defaultValue: 'File exceeds 5MB size limit' }));
+      return;
+    }
+
+    setUploadLoading(true);
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('avatar', file);
+
+      const response = await fetch('/api/users/me/avatar', {
+        method: 'POST',
+        body: formData,
+        headers: {
+          'Authorization': `Bearer ${keycloak?.token || ''}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to upload avatar');
+      }
+
+      const data = await response.json();
+      
+      // Force page refresh to show updated avatar
+      router.reload();
+    } catch (err: any) {
+      setError(err.message || t('profile.avatar.uploadFailed', { defaultValue: 'Failed to upload avatar' }));
+    } finally {
+      setUploadLoading(false);
+    }
+  };
+
+  const triggerFileInput = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   return (
     <>
       <Head>
-        <title>{t('profile:title')} | DIVE25</title>
+        <title>{t('profile:title')} | DIVE</title>
       </Head>
 
-      <SecurityBanner />
-
-      <div className="px-4 sm:px-6 lg:px-8 py-8 max-w-7xl mx-auto">
-        {/* Profile Header */}
-        <div className="bg-gradient-to-r from-dive25-600 to-dive25-800 rounded-xl shadow-lg p-6 mb-8 text-white">
-          <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
-            <div className="flex-shrink-0 w-24 h-24 rounded-full bg-white text-dive25-800 flex items-center justify-center text-3xl font-bold shadow-md border-4 border-white">
-              {initials}
-            </div>
-            <div className="flex-1 text-center sm:text-left">
-              <h1 className="text-3xl font-bold">
-                {user.givenName} {user.surname}
-              </h1>
-              <p className="text-dive25-100 text-lg mt-1">@{user.username}</p>
-              <div className="mt-2 flex flex-wrap gap-2 justify-center sm:justify-start">
-                <Badge 
-                  variant="clearance" 
-                  level={user.clearance}
-                  className="border border-white/30 backdrop-blur-sm bg-opacity-70"
-                >
-                  {user.clearance}
-                </Badge>
-                {user.roles && user.roles.length > 0 && (
-                  <Badge 
-                    variant="info"
-                    className="border border-white/30 backdrop-blur-sm bg-opacity-70"
-                  >
-                    {user.roles[0]}
-                    {user.roles.length > 1 && `+${user.roles.length - 1}`}
-                  </Badge>
+      <main className="flex-1 p-6">
+        <h1 className="text-2xl font-bold mb-6">{t('profile:title')}</h1>
+        
+        <div className="space-y-6">
+          <Card className="bg-dive25-700">
+            <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
+              <div className="relative flex-shrink-0 w-24 h-24 rounded-full bg-white text-dive25-800 flex items-center justify-center text-3xl font-bold shadow-md border-4 border-white overflow-hidden">
+                {user.avatar ? (
+                  <Image 
+                    src={user.avatar} 
+                    alt={`${user.givenName} ${user.surname}`}
+                    width={96}
+                    height={96}
+                    className="object-cover"
+                  />
+                ) : (
+                  initials
                 )}
-              </div>
-            </div>
-            <div className="hidden md:block mt-4 sm:mt-0">
-              <div className="flex items-center gap-2 text-sm text-dive25-100">
-                <span>
-                  {t('profile:lastLogin')}: {user.lastLogin ? formatDate(new Date(user.lastLogin)) : '—'}
-                </span>
-                <span className="px-1.5 py-0.5 rounded-full bg-green-500/20 text-green-300 border border-green-400/30 flex items-center gap-1 text-xs">
-                  <span className="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
-                  {t('profile:active')}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Main Information */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Personal Information Card */}
-            <Card className="overflow-hidden transition-all duration-200 hover:shadow-md">
-              <div className="px-6 py-5 flex justify-between items-center border-b border-gray-200 bg-gray-50">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {t('profile:personalInformation')}
-                </h3>
-                <Badge variant="primary" className="bg-opacity-70">
-                  {t('profile:userDetails')}
-                </Badge>
-              </div>
-              <div className="divide-y divide-gray-200">
-                <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-                  <div className="p-5">
-                    <h4 className="font-medium text-sm text-gray-500 mb-1">
-                      {t('profile:email')}
-                    </h4>
-                    <p className="text-gray-900">{user.email}</p>
+                {uploadLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50">
+                    <svg className="animate-spin h-8 w-8 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
                   </div>
-                  <div className="p-5">
-                    <h4 className="font-medium text-sm text-gray-500 mb-1">
-                      {t('profile:organization')}
-                    </h4>
-                    <p className="text-gray-900">{user.organization || '—'}</p>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-                  <div className="p-5">
-                    <h4 className="font-medium text-sm text-gray-500 mb-1">
-                      {t('profile:username')}
-                    </h4>
-                    <p className="text-gray-900">{user.username}</p>
-                  </div>
-                  <div className="p-5">
-                    <h4 className="font-medium text-sm text-gray-500 mb-1">
-                      {t('profile:country')}
-                    </h4>
-                    <p className="text-gray-900">{user.countryOfAffiliation || '—'}</p>
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Security Clearance Card */}
-            <Card className="overflow-hidden transition-all duration-200 hover:shadow-md">
-              <div className="px-6 py-5 flex justify-between items-center border-b border-gray-200 bg-gray-50">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {t('profile:securityInformation')}
-                </h3>
-                <Badge variant="warning" className="bg-opacity-70">
-                  {t('profile:restrictedAccess')}
-                </Badge>
-              </div>
-              
-              <div className="p-5 space-y-6">
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-3">
-                    {t('profile:clearance')}
-                  </h4>
-                  <Badge 
-                    variant="clearance" 
-                    level={user.clearance}
-                    className="text-sm px-3 py-1"
-                  >
-                    {user.clearance}
-                  </Badge>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-3">
-                    {t('profile:caveats')}
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {user.caveats?.length ? (
-                      user.caveats.map((caveat) => (
-                        <Badge 
-                          key={caveat} 
-                          variant="secondary"
-                          className="transition-all duration-200 hover:bg-gray-200"
-                        >
-                          {caveat}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-gray-500 text-sm italic">{t('profile:noCaveatsAssigned')}</span>
-                    )}
-                  </div>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-3">
-                    {t('profile:communities')}
-                  </h4>
-                  <div className="flex flex-wrap gap-2">
-                    {user.coi?.length ? (
-                      user.coi.map((coi) => (
-                        <Badge 
-                          key={coi} 
-                          variant="tertiary"
-                          className="transition-all duration-200 hover:bg-indigo-200"
-                        >
-                          {coi}
-                        </Badge>
-                      ))
-                    ) : (
-                      <span className="text-gray-500 text-sm italic">{t('profile:noCommunitiesAssigned')}</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-
-          {/* Sidebar */}
-          <div className="space-y-8">
-            {/* Session Card */}
-            <Card className="overflow-hidden transition-all duration-200 hover:shadow-md">
-              <div className="px-6 py-5 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {t('profile:sessionInformation')}
-                </h3>
-              </div>
-              <div className="p-5 space-y-4">
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">
-                    {t('profile:lastLogin')}
-                  </h4>
-                  <p className="text-gray-900">
-                    {user.lastLogin ? formatDate(new Date(user.lastLogin)) : '—'}
-                  </p>
-                </div>
-                
-                <div>
-                  <h4 className="font-medium text-sm text-gray-500 mb-1">
-                    {t('profile:sessionStatus')}
-                  </h4>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="w-3 h-3 rounded-full bg-green-500 animate-pulse"></span>
-                    <span className="text-green-700 font-medium">{t('profile:active')}</span>
-                  </div>
-                </div>
-
-                {/* Debug button */}
-                <div className="mt-4">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setShowTokenInfo(!showTokenInfo)}
-                  >
-                    {showTokenInfo ? 'Hide Token Info' : 'Show Token Info'}
-                  </Button>
-                  
-                  {showTokenInfo && tokenData && (
-                    <div className="mt-4 text-xs">
-                      <div className="bg-gray-100 p-3 rounded-md overflow-auto max-h-64 border border-gray-200">
-                        <pre>{JSON.stringify(tokenData, null, 2)}</pre>
-                      </div>
-                      <p className="mt-2 text-gray-500 text-xs">
-                        Token debugging information
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </Card>
-
-            {/* Roles Card */}
-            <Card className="overflow-hidden transition-all duration-200 hover:shadow-md">
-              <div className="px-6 py-5 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {t('profile:roles')}
-                </h3>
-              </div>
-              <div className="p-5">
-                <div className="flex flex-wrap gap-2">
-                  {user.roles?.length ? (
-                    user.roles.map((role) => (
-                      <Badge 
-                        key={role} 
-                        variant="info"
-                        className="transition-all duration-200 hover:bg-blue-200 px-3 py-1"
-                      >
-                        {role}
-                      </Badge>
-                    ))
-                  ) : (
-                    <span className="text-gray-500 text-sm italic">{t('profile:noRolesAssigned')}</span>
-                  )}
-                </div>
-              </div>
-            </Card>
-
-            {/* Developer Card */}
-            <Card className="overflow-hidden transition-all duration-200 hover:shadow-md">
-              <div className="px-6 py-5 border-b border-gray-200 bg-gray-50">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {t('profile:developerTools')}
-                </h3>
-              </div>
-              <div className="p-5">
-                <Button
-                  onClick={() => setShowTokenInfo(!showTokenInfo)}
-                  variant="secondary"
-                  size="sm"
-                  className="w-full transition-all duration-200 hover:bg-gray-100"
+                )}
+                <button 
+                  onClick={triggerFileInput}
+                  className="absolute bottom-0 right-0 bg-dive25-500 hover:bg-dive25-600 text-white rounded-full p-1 shadow-md" 
+                  title={t('profile.avatar.change', { defaultValue: 'Change profile photo' })}
                 >
-                  {showTokenInfo 
-                    ? t('profile:hideTokenInfo') 
-                    : t('profile:showTokenInfo')}
-                </Button>
-
-                {showTokenInfo && (
-                  <div className="mt-4 text-xs">
-                    <div className="bg-gray-100 p-3 rounded-md overflow-auto max-h-64 border border-gray-200">
-                      <pre>{JSON.stringify(tokenData, null, 2)}</pre>
-                    </div>
-                    <p className="mt-2 text-gray-500 text-xs">
-                      {t('profile:tokenInfoWarning')}
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleAvatarUpload}
+                  className="hidden"
+                />
+              </div>
+              <div className="flex-1 text-center sm:text-left">
+                <h2 className="text-xl font-bold">{user.givenName} {user.surname}</h2>
+                <p className="text-dive25-100">@{user.username}</p>
+                <div className="mt-1">
+                  {user.lastLogin && (
+                    <p className="text-sm text-dive25-200">
+                      {t('profile:lastLogin')}: {formatDate(user.lastLogin)}
                     </p>
-                  </div>
+                  )}
+                </div>
+                {error && (
+                  <p className="mt-2 text-red-500 text-sm">
+                    {error}
+                  </p>
                 )}
               </div>
-            </Card>
-          </div>
+              <div className="hidden md:block mt-4 sm:mt-0">
+                <div className="flex flex-col items-center justify-center bg-dive25-600 px-4 py-3 rounded-md">
+                  <span className="text-sm text-dive25-200">{t('profile:clearance')}</span>
+                  <span className="text-lg font-bold">{user.clearance}</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Personal Information */}
+          <Card>
+            <h2 className="font-bold text-xl mb-4">{t('profile:personalInformation')}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:email')}</h3>
+                <p>{user.email}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:organization')}</h3>
+                <p>{user.organization || '-'}</p>
+              </div>
+              <div>
+                <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:countryOfAffiliation')}</h3>
+                <p>{user.countryOfAffiliation || '-'}</p>
+              </div>
+              <div className="md:hidden">
+                <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:clearance')}</h3>
+                <div className="flex items-center gap-2">
+                  <span className="px-2 py-1 bg-dive25-700 text-white text-sm rounded">{user.clearance}</span>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Security Information */}
+          <Card>
+            <h2 className="font-bold text-xl mb-4">{t('profile:securityInformation')}</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:roles')}</h3>
+                <div className="flex flex-wrap gap-1">
+                  {user.roles?.map((role, index) => (
+                    <span key={index} className="px-2 py-1 bg-dive25-700 text-white text-sm rounded">
+                      {role}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {user.caveats && (
+                <div>
+                  <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:caveats')}</h3>
+                  <div className="flex flex-wrap gap-1">
+                    {user.caveats.map((caveat, index) => (
+                      <span key={index} className="px-2 py-1 bg-dive25-700 text-white text-sm rounded">
+                        {caveat}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {user.coi && (
+                <div>
+                  <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:coi')}</h3>
+                  <div className="flex flex-wrap gap-1">
+                    {user.coi.map((coi, index) => (
+                      <span key={index} className="px-2 py-1 bg-dive25-700 text-white text-sm rounded">
+                        {coi}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
+
+          {/* Session Information */}
+          <Card>
+            <h2 className="font-bold text-xl mb-4">{t('profile:sessionInformation')}</h2>
+            <div>
+              <Button
+                variant={showTokenInfo ? 'primary' : 'secondary'}
+                onClick={() => setShowTokenInfo(!showTokenInfo)}
+              >
+                {showTokenInfo ? t('profile:hideToken', { defaultValue: 'Hide Token Info' }) : t('profile:showToken', { defaultValue: 'Show Token Info' })}
+              </Button>
+
+              {showTokenInfo && tokenData && (
+                <div className="mt-4">
+                  <h3 className="text-sm font-medium text-dive25-400 mb-1">{t('profile:tokenInformation')}</h3>
+                  <div className="bg-dive25-900 p-4 rounded-md mt-2 overflow-x-auto">
+                    <pre className="text-sm text-dive25-100">{JSON.stringify(tokenData, null, 2)}</pre>
+                  </div>
+                </div>
+              )}
+            </div>
+          </Card>
         </div>
-      </div>
+      </main>
     </>
   );
 }
 
-export const getServerSideProps: GetServerSideProps = async ({ locale }) => {
+export const getServerSideProps = async ({ locale }: { locale: string }) => {
   return {
     props: {
-      ...(await serverSideTranslations(locale || 'en', ['common', 'profile'])),
+      ...(await serverSideTranslations(locale, ['common', 'profile'])),
     },
   };
 };
 
-export default withAuth(Profile);
+export default Profile;

@@ -23,6 +23,9 @@ interface AuthContextProps {
   refreshToken: () => Promise<boolean>;
   hasRole: (roles: string[]) => boolean;
   error: string | null;
+  tokenExpiresIn: number | null; // Time in seconds until token expires
+  isTokenExpiring: boolean; // Flag indicating if token is expiring soon
+  getAuthHeaders: () => Record<string, string>; // Method to get auth headers for API requests
 }
 
 export interface UserSecurityAttributes {
@@ -55,7 +58,40 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
   const [isLoading, setIsLoading] = useState(false);
   const [user, setUser] = useState<User | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tokenExpiresIn, setTokenExpiresIn] = useState<number | null>(null);
+  const [isTokenExpiring, setIsTokenExpiring] = useState(false);
   const router = useRouter();
+  
+  // Function to update token expiration time
+  const updateTokenExpiration = useCallback(() => {
+    if (!keycloak || !keycloak.tokenParsed || !keycloak.tokenParsed.exp) {
+      setTokenExpiresIn(null);
+      setIsTokenExpiring(false);
+      return;
+    }
+    
+    const expiryTime = keycloak.tokenParsed.exp;
+    const currentTime = Math.floor(Date.now() / 1000);
+    const timeUntilExpiry = expiryTime - currentTime;
+    
+    setTokenExpiresIn(timeUntilExpiry > 0 ? timeUntilExpiry : 0);
+    setIsTokenExpiring(timeUntilExpiry < TOKEN_REFRESH_BUFFER * 2);
+    
+    logger.debug(`Token expires in ${timeUntilExpiry} seconds, isExpiring: ${timeUntilExpiry < TOKEN_REFRESH_BUFFER * 2}`);
+  }, [keycloak]);
+  
+  // Set up periodic token expiration check
+  useEffect(() => {
+    if (!keycloak || !keycloak.authenticated) return;
+    
+    // Update immediately
+    updateTokenExpiration();
+    
+    // Then set up interval to check regularly
+    const interval = setInterval(updateTokenExpiration, 1000);
+    
+    return () => clearInterval(interval);
+  }, [keycloak, updateTokenExpiration]);
   
   // Define refreshToken function
   const refreshToken = useCallback(async (): Promise<boolean> => {
@@ -75,6 +111,7 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       
       if (refreshed) {
         logger.info('Token refreshed successfully');
+        updateTokenExpiration(); // Update token expiration after refresh
         return true;
       } else {
         logger.debug('Token is still valid, no refresh needed');
@@ -98,7 +135,7 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       
       return false;
     }
-  }, [keycloak]);
+  }, [keycloak, updateTokenExpiration]);
   
   // Define logout function
   const logout = useCallback(() => {
@@ -121,6 +158,18 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       // If no keycloak instance, just redirect to home
       window.location.href = '/';
     }
+  }, [keycloak]);
+  
+  // Function to get auth headers for API requests
+  const getAuthHeaders = useCallback((): Record<string, string> => {
+    if (!keycloak || !keycloak.token) {
+      logger.warn('Cannot get auth headers - no token available');
+      return {};
+    }
+    
+    return {
+      'Authorization': `Bearer ${keycloak.token}`
+    };
   }, [keycloak]);
   
   // Function to check if user has any of the specified roles
@@ -248,6 +297,10 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
               
               logger.debug(`Token expires in ${timeUntilExpiry} seconds`);
               
+              // Update token expiration time
+              setTokenExpiresIn(timeUntilExpiry > 0 ? timeUntilExpiry : 0);
+              setIsTokenExpiring(timeUntilExpiry < TOKEN_REFRESH_BUFFER * 2);
+              
               // If token is about to expire, refresh it immediately
               if (timeUntilExpiry < TOKEN_REFRESH_BUFFER) {
                 logger.debug('Token near expiry, refreshing immediately');
@@ -346,7 +399,10 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
       logout,
       refreshToken,
       hasRole,
-      error
+      error,
+      tokenExpiresIn,
+      isTokenExpiring,
+      getAuthHeaders
     }}>
       {children}
     </AuthContext.Provider>
