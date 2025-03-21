@@ -187,6 +187,44 @@ debug() {
   fi
 }
 
+# Function to check if a command exists
+command_exists() {
+  command -v "$1" >/dev/null 2>&1
+}
+
+# Improved function to get user input more reliably and consistently
+get_input() {
+  local prompt=$1
+  local default=$2
+  local response
+  
+  # Display a clear user input marker
+  echo -e "\n${BOLD}${WHITE}========== USER INPUT REQUIRED ===========${RESET}"
+  
+  # Temporarily disable the ALRM trap to prevent interruptions
+  local old_trap
+  old_trap=$(trap -p ALRM | sed -e "s/^trap -- '\(.*\)' ALRM$/\1/")
+  trap '' ALRM
+  
+  # Display the prompt with the default value
+  echo -en "${BOLD}${CYAN}>>> $prompt${RESET} [${default}]: "
+  
+  # Read the input
+  read response
+  
+  # Re-enable the original ALRM trap
+  trap "$old_trap" ALRM
+  
+  # Use default if no input provided
+  if [ -z "$response" ]; then
+    echo "$default"
+  else
+    # Trim whitespace but preserve internal spaces
+    response=$(echo "$response" | xargs)
+    echo "$response"
+  fi
+}
+
 # Function to print elapsed time
 print_elapsed_time() {
   local DURATION=$1
@@ -364,6 +402,128 @@ echo "============================================================"
 echo -e "${RESET}"
 echo -e "This script will set up and configure the DIVE25 authentication system."
 echo
+
+# Check requirements
+print_header "Checking System Requirements"
+show_progress "Verifying installed dependencies..."
+
+if ! command_exists docker; then
+  error "Docker is not installed. Please install Docker first."
+  exit 1
+fi
+success "Docker is installed"
+
+if ! command_exists docker-compose; then
+  error "docker-compose is not installed. Please install docker-compose first."
+  exit 1
+fi
+success "Docker Compose is installed"
+
+if ! command_exists curl; then
+  warning "curl is not installed. This script uses curl for testing."
+  echo -e "${BOLD}${WHITE}========== USER INPUT REQUIRED ===========${RESET}"
+  echo -en "${BOLD}${CYAN}>>> Continue without curl? (y/n)${RESET} [n]: "
+  read CONTINUE_WITHOUT_CURL
+  if [[ $CONTINUE_WITHOUT_CURL != "y" && $CONTINUE_WITHOUT_CURL != "Y" ]]; then
+    error "Exiting. Please install curl and try again."
+    exit 1
+  fi
+else
+  success "curl is installed"
+fi
+
+# Ask for environment
+print_header "Environment Selection"
+echo -e "Please select the environment to set up:"
+echo -e "  ${CYAN}1.${RESET} Development ${YELLOW}(default)${RESET}"
+echo -e "  ${CYAN}2.${RESET} Staging"
+echo -e "  ${CYAN}3.${RESET} Production"
+echo
+
+# Print a highly visible input request marker
+echo -e "\n${BOLD}${WHITE}========== USER INPUT REQUIRED ===========${RESET}"
+
+# Display the prompt separately to avoid it being read as part of the input
+echo -en "${BOLD}${CYAN}>>> Please make a selection:${RESET} ${BOLD}Enter your choice [1]${RESET}: "
+
+# Read user input directly - note we just pass empty strings as we've already displayed the prompt
+read ENV_CHOICE
+
+# Use default if empty
+if [ -z "$ENV_CHOICE" ]; then
+  ENV_CHOICE="1"
+fi
+
+# Debug line to see what's actually captured
+debug "User selected option: '$ENV_CHOICE'"
+
+# Make sure to sanitize the input to prevent unexpected values
+ENV_CHOICE=$(echo "$ENV_CHOICE" | tr -d '[:space:]')
+
+case $ENV_CHOICE in
+  1|"")
+    ENVIRONMENT="dev"
+    ENV_DISPLAY="Development"
+    ;;
+  2)
+    ENVIRONMENT="staging"
+    ENV_DISPLAY="Staging"
+    ;;
+  3)
+    ENVIRONMENT="prod"
+    ENV_DISPLAY="Production"
+    ;;
+  *)
+    echo -e "${YELLOW}${EMOJI_WARNING} WARNING: Invalid choice '${ENV_CHOICE}'.${RESET}"
+    echo -e "Defaulting to development environment."
+    ENVIRONMENT="dev"
+    ENV_DISPLAY="Development"
+    ;;
+esac
+
+export ENVIRONMENT
+success "Using ${BOLD}$ENV_DISPLAY${RESET} environment"
+
+# Fix template files to ensure proper quoting
+fix_template_files() {
+  print_step "Fixing configuration templates"
+  show_progress "Ensuring proper quoting in template files..."
+  
+  # Check if env.template.j2 exists
+  if [ -f "config/templates/env.template.j2" ]; then
+    # Make a backup
+    cp config/templates/env.template.j2 config/templates/env.template.j2.bak
+    
+    # Ensure KEYCLOAK_SECURITY_HEADERS is properly quoted in the template
+    if ! grep -q 'KEYCLOAK_SECURITY_HEADERS="' config/templates/env.template.j2; then
+      # Add the properly quoted line to the template
+      echo 'KEYCLOAK_SECURITY_HEADERS="Strict-Transport-Security:max-age=31536000; includeSubDomains,X-XSS-Protection:1; mode=block,X-Content-Type-Options:nosniff,X-Frame-Options:SAMEORIGIN"' > config/templates/env.template.j2.new
+      cat config/templates/env.template.j2 >> config/templates/env.template.j2.new
+      mv config/templates/env.template.j2.new config/templates/env.template.j2
+      success "Fixed KEYCLOAK_SECURITY_HEADERS quoting in template"
+    else
+      info "KEYCLOAK_SECURITY_HEADERS already properly quoted in template"
+    fi
+    
+    # Ensure GLOBAL_SECURITY_HEADERS is properly quoted in the template
+    if ! grep -q 'GLOBAL_SECURITY_HEADERS="' config/templates/env.template.j2; then
+      # Add the properly quoted line to the template
+      echo 'GLOBAL_SECURITY_HEADERS="Strict-Transport-Security:max-age=31536000; includeSubDomains,X-XSS-Protection:1; mode=block,X-Content-Type-Options:nosniff,X-Frame-Options:SAMEORIGIN"' > config/templates/env.template.j2.new
+      cat config/templates/env.template.j2 >> config/templates/env.template.j2.new
+      mv config/templates/env.template.j2.new config/templates/env.template.j2
+      success "Fixed GLOBAL_SECURITY_HEADERS quoting in template"
+    else
+      info "GLOBAL_SECURITY_HEADERS already properly quoted in template"
+    fi
+  else
+    warning "env.template.j2 not found, skipping template fixes"
+  fi
+  
+  return 0
+}
+
+# Run the template fixing function
+fix_template_files
 
 # Validate environment variables
 print_step "Validating environment variables"
@@ -651,11 +811,11 @@ EOF
     
     # Fix URLs in the IdP config to point to Keycloak using portable_sed
     show_progress "Updating IdP config: $idp_file"
-    portable_sed "-E s|\"tokenUrl\": \"https://[^/]+/oauth2/token\"|\"tokenUrl\": \"${keycloak_base_url}/token\"|g" "$idp_file" || true
-    portable_sed "-E s|\"authorizationUrl\": \"https://[^/]+/oauth2/authorize\"|\"authorizationUrl\": \"${keycloak_base_url}/auth\"|g" "$idp_file" || true
-    portable_sed "-E s|\"jwksUrl\": \"https://[^/]+/oauth2/jwks\"|\"jwksUrl\": \"${keycloak_base_url}/certs\"|g" "$idp_file" || true
-    portable_sed "-E s|\"userInfoUrl\": \"https://[^/]+/oauth2/userinfo\"|\"userInfoUrl\": \"${keycloak_base_url}/userinfo\"|g" "$idp_file" || true
-    portable_sed "-E s|\"logoutUrl\": \"https://[^/]+/oauth2/logout\"|\"logoutUrl\": \"${keycloak_base_url}/logout\"|g" "$idp_file" || true
+    portable_sed "-E s|\"tokenUrl\": \"https://[^\"]+\"|\"tokenUrl\": \"${keycloak_base_url}/token\"|g" "$idp_file" || true
+    portable_sed "-E s|\"authorizationUrl\": \"https://[^\"]+\"|\"authorizationUrl\": \"${keycloak_base_url}/auth\"|g" "$idp_file" || true
+    portable_sed "-E s|\"jwksUrl\": \"https://[^\"]+\"|\"jwksUrl\": \"${keycloak_base_url}/certs\"|g" "$idp_file" || true
+    portable_sed "-E s|\"userInfoUrl\": \"https://[^\"]+\"|\"userInfoUrl\": \"${keycloak_base_url}/userinfo\"|g" "$idp_file" || true
+    portable_sed "-E s|\"logoutUrl\": \"https://[^\"]+\"|\"logoutUrl\": \"${keycloak_base_url}/logout\"|g" "$idp_file" || true
   done
   
   # Check if fix-idps.sh exists, create if not
@@ -673,10 +833,30 @@ if [ -z "$KEYCLOAK_CONTAINER" ]; then
   exit 1
 fi
 
+# First check if frontend client exists and get its ID
+echo "Getting frontend client ID..."
+CLIENT_ID=$(docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh get clients -r dive25 --fields id,clientId -q clientId=dive25-frontend | grep '"id"' | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+
+if [ -z "$CLIENT_ID" ]; then
+  echo "WARNING: Frontend client not found"
+else
+  echo "Found frontend client with ID: $CLIENT_ID"
+  
+  # Get valid redirect URIs for the client
+  REDIRECT_URIS=$(docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh get clients/$CLIENT_ID -r dive25 | grep redirectUris | sed 's/.*\[\(.*\)\].*/\1/' | tr -d ' "')
+  echo "Frontend client has redirect URIs: $REDIRECT_URIS"
+fi
+
 # Copy IdP configs to the container
 for config in keycloak/identity-providers/*-oidc-idp-config.json; do
   provider=$(basename "$config" | sed 's/-oidc-idp-config.json//')
   echo "Configuring $provider identity provider..."
+  
+  # Add proper redirect handling to the config
+  # We must update the file before copying it to the container
+  sed -i.bak 's/"config": {/"config": {\n    "syncMode": "FORCE",\n    "validateSignature": "false",\n    "disableUserInfo": "false",/g' "$config" || true
+  
+  # Copy modified file to the container
   docker cp "$config" $KEYCLOAK_CONTAINER:/tmp/
 done
 
@@ -701,6 +881,13 @@ for provider in usa uk canada australia newzealand; do
       identity-provider/instances -r dive25 \
       -f /tmp/${provider}-oidc-idp-config.json
   fi
+  
+  # Create additional flow bindings to fix redirect issues
+  echo "Setting up broker flow overrides for $provider..."
+  docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh update \
+    identity-provider/instances/${provider}-oidc -r dive25 \
+    -s 'config.defaultBrowserFlow=browser' \
+    -s 'config.useJwksUrl=true'
 done
 
 echo "All identity providers configured successfully!"
@@ -840,10 +1027,27 @@ keycloak_post_config_hook() {
 }
 EOF" 2>/dev/null || true
     
-    # Apply the mapper (ignoring errors if already exists)
+    # Create redirect URI mapper to fix redirect issues
+    docker exec $KEYCLOAK_CONTAINER bash -c "cat > /tmp/redirect-mapper.json << EOF
+{
+  \"name\": \"redirect-uri-mapper\",
+  \"identityProviderAlias\": \"${provider}-oidc\",
+  \"identityProviderMapper\": \"oidc-user-attribute-idp-mapper\",
+  \"config\": {
+    \"claim\": \"redirect_uri\",
+    \"user.attribute\": \"redirect_uri\"
+  }
+}
+EOF" 2>/dev/null || true
+    
+    # Apply the mappers (ignoring errors if already exists)
     docker exec $KEYCLOAK_CONTAINER bash -c "/opt/keycloak/bin/kcadm.sh create \
       identity-provider/instances/${provider}-oidc/mappers -r dive25 \
       -f /tmp/country-mapper.json >/dev/null 2>&1 || true" || true
+      
+    docker exec $KEYCLOAK_CONTAINER bash -c "/opt/keycloak/bin/kcadm.sh create \
+      identity-provider/instances/${provider}-oidc/mappers -r dive25 \
+      -f /tmp/redirect-mapper.json >/dev/null 2>&1 || true" || true
   done
   
   # Create marker file to indicate successful configuration
@@ -1574,6 +1778,150 @@ if [ $? -ne 0 ]; then
 else
   success "Identity providers configured successfully!"
 fi
+
+# Function to update Keycloak client configuration
+update_keycloak_client_config() {
+  print_step "Updating Keycloak Client Configuration"
+  show_progress "Updating frontend client configuration for proper redirects..."
+  
+  # Get Keycloak container
+  local KEYCLOAK_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E 'keycloak' | grep -v "config" | head -n 1)
+  
+  if [ -z "$KEYCLOAK_CONTAINER" ]; then
+    warning "Keycloak container not found. Cannot update client configuration."
+    return 1
+  fi
+  
+  # First make sure we're authenticated
+  show_progress "Authenticating with Keycloak admin CLI..."
+  if ! docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080 \
+    --realm master \
+    --user admin \
+    --password admin >/dev/null 2>&1; then
+    warning "Could not authenticate with Keycloak admin CLI. Client config updates may fail."
+  fi
+  
+  # Get frontend client ID
+  show_progress "Getting frontend client ID..."
+  local CLIENT_ID=$(docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh get clients -r dive25 --fields id,clientId -q clientId=dive25-frontend | grep '"id"' | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+  
+  if [ -z "$CLIENT_ID" ]; then
+    warning "Frontend client not found. Cannot update client configuration."
+    return 1
+  fi
+  
+  success "Found frontend client with ID: $CLIENT_ID"
+  
+  # Update client configuration for proper IdP redirects
+  show_progress "Updating frontend client configuration..."
+  
+  # Create a JSON file with the updated configuration
+  docker exec $KEYCLOAK_CONTAINER bash -c "cat > /tmp/frontend-client-update.json << EOF
+{
+  \"webOrigins\": [\"*\"],
+  \"attributes\": {
+    \"post.logout.redirect.uris\": \"*\",
+    \"oauth2.device.authorization.grant.enabled\": \"true\",
+    \"backchannel.logout.session.required\": \"true\",
+    \"backchannel.logout.revoke.offline.tokens\": \"false\",
+    \"access.token.lifespan\": \"1800\",
+    \"oauth2.device.polling.interval\": \"5\"
+  },
+  \"standardFlowEnabled\": true,
+  \"implicitFlowEnabled\": false,
+  \"directAccessGrantsEnabled\": true,
+  \"authenticationFlowBindingOverrides\": {
+    \"browser\": \"browser\"
+  }
+}
+EOF"
+  
+  # Apply the configuration update
+  if docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh update clients/$CLIENT_ID -r dive25 -f /tmp/frontend-client-update.json >/dev/null 2>&1; then
+    success "Frontend client configuration updated successfully"
+  else
+    warning "Failed to update frontend client configuration"
+  fi
+  
+  # Make sure all identity providers are enabled for the client
+  show_progress "Ensuring identity providers are enabled for the client..."
+  for provider in usa uk canada australia newzealand; do
+    docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh update clients/$CLIENT_ID/identity-provider-mappers \
+      -r dive25 \
+      -s identityProviderAlias=${provider}-oidc \
+      -s identityProviderMapper=oidc-role-idp-mapper \
+      -s name="${provider}-roles-mapper" \
+      -s config="{\"syncMode\":\"FORCE\"}" >/dev/null 2>&1 || true
+  done
+  
+  success "Client identity provider configuration completed"
+  return 0
+}
+
+# Function to fix client redirect URIs
+update_client_redirect_uris() {
+  print_step "Updating client redirect URIs"
+  show_progress "Adding comprehensive redirect URIs to frontend client..."
+  
+  # Get Keycloak container
+  local KEYCLOAK_CONTAINER=$(docker ps --format '{{.Names}}' | grep -E 'keycloak' | grep -v "config" | head -n 1)
+  
+  if [ -z "$KEYCLOAK_CONTAINER" ]; then
+    warning "Keycloak container not found. Cannot update redirect URIs."
+    return 1
+  fi
+  
+  # Get frontend client ID
+  show_progress "Getting frontend client ID..."
+  local CLIENT_ID=$(docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh get clients -r dive25 --fields id,clientId -q clientId=dive25-frontend | grep '"id"' | sed 's/.*"id" : "\([^"]*\)".*/\1/')
+  
+  if [ -z "$CLIENT_ID" ]; then
+    warning "Frontend client not found. Cannot update redirect URIs."
+    return 1
+  fi
+  
+  # Create comprehensive list of redirect URIs
+  docker exec $KEYCLOAK_CONTAINER bash -c "cat > /tmp/redirect-uris.json << EOF
+{
+  \"redirectUris\": [
+    \"https://dive25.local:8443/*\",
+    \"https://dive25.local:8443/callback\",
+    \"https://dive25.local:8443/auth/callback\",
+    \"https://frontend.dive25.local:3001/*\",
+    \"https://frontend.dive25.local:3001/callback\",
+    \"https://frontend.dive25.local:3001/auth/callback\",
+    \"https://frontend.dive25.local:3001/oidc/callback\",
+    \"https://frontend.dive25.local:8443/*\",
+    \"https://frontend.dive25.local:8443/callback\",
+    \"https://frontend.dive25.local:8443/auth/callback\",
+    \"https://frontend.dive25.local:8443/oidc/callback\",
+    \"http://localhost:3001/*\",
+    \"http://localhost:3001/callback\",
+    \"http://localhost:3001/auth/callback\",
+    \"http://localhost:3000/*\",
+    \"http://localhost:3000/callback\",
+    \"http://localhost:3000/auth/callback\",
+    \"https://localhost:8443/*\",
+    \"https://localhost:8443/callback\",
+    \"https://localhost:8443/auth/callback\"
+  ]
+}
+EOF"
+  
+  # Apply the redirect URIs update
+  if docker exec $KEYCLOAK_CONTAINER /opt/keycloak/bin/kcadm.sh update clients/$CLIENT_ID -r dive25 -f /tmp/redirect-uris.json >/dev/null 2>&1; then
+    success "Redirect URIs updated successfully"
+  else
+    warning "Failed to update redirect URIs"
+  fi
+  
+  return 0
+}
+
+# Update Keycloak client configuration for proper IdP redirects
+update_keycloak_client_config
+update_client_redirect_uris
 
 # Run any post-configuration Keycloak hooks
 print_step "Running post-configuration hooks"
