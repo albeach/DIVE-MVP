@@ -13,6 +13,12 @@ FROM quay.io/keycloak/keycloak:21.0
 COPY --from=builder /opt/keycloak/ /opt/keycloak/
 
 USER root
+# Install bash for compatibility with scripts
+RUN command -v dnf && dnf install -y bash || \
+    command -v apt-get && apt-get update && apt-get install -y bash || \
+    command -v apk && apk add --no-cache bash || \
+    echo "No package manager found to install bash. Continuing without bash."
+
 # Copy themes
 COPY ./themes/dive25 /opt/keycloak/themes/dive25
 

@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  keycloak-idp-fix:
+    build:
+      context: .
+      dockerfile: Dockerfile.idp-fix
+    container_name: dive25-staging-keycloak-idp-fix
+    environment:
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KEYCLOAK_REALM=dive25
+    networks:
+      - dive-mvp_dive25-service
+
+networks:
+  dive-mvp_dive25-service:
+    external: true 

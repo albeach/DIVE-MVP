@@ -41,13 +41,115 @@ const getRedirectUri = (): string => {
         // Get the base URL - should be the Kong URL for external access
         const kongBaseUrl = process.env.NEXT_PUBLIC_KONG_URL || DEFAULT_KONG_URL;
 
-        // Use the configured redirect path that matches Kong's OIDC plugin configuration
-        // The OIDC plugin in Kong is configured with /callback path
-        return `${kongBaseUrl}/callback`;
+        // For Identity Provider broker redirects, Keycloak expects a specific format
+        // Use /auth/callback to distinguish it from the Kong OIDC plugin's /callback
+        const redirectUri = `${kongBaseUrl}/auth/callback`;
+        console.log(`DEBUG: getRedirectUri returning = ${redirectUri}`);
+        return redirectUri;
     }
 
     // Fallback for SSR
-    return `${DEFAULT_KONG_URL}/callback`;
+    const fallbackUri = `${DEFAULT_KONG_URL}/auth/callback`;
+    console.log(`DEBUG: getRedirectUri fallback returning = ${fallbackUri}`);
+    return fallbackUri;
+};
+
+/**
+ * Get the base Keycloak URL for identity provider redirects
+ * This helps ensure consistency across the application
+ */
+export const getKeycloakBaseUrl = (): string => {
+    // Always use the Keycloak URL for authentication, with fallback options
+    const keycloakUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'https://keycloak.dive25.local:8443/auth';
+    // Extract the base Keycloak URL without the /auth path if present
+    const baseUrl = keycloakUrl.replace(/\/auth$/, '');
+    console.log(`DEBUG: getKeycloakBaseUrl processing ${keycloakUrl} -> ${baseUrl}`);
+    return baseUrl;
+};
+
+/**
+ * Create a proper redirect URL for an identity provider
+ * @param countryIdp The country identity provider ID (e.g., 'usa-oidc')
+ * @returns The full URL for the identity provider redirect
+ */
+export const createIdpRedirectUrl = (countryIdp: string): string => {
+    console.log(`===DIVE25 DEBUG START - createIdpRedirectUrl (${new Date().toISOString()})===`);
+    console.log(`Input countryIdp: ${countryIdp}`);
+
+    // Get base URL with debugging
+    const baseUrl = getKeycloakBaseUrl();
+    console.log(`baseUrl: ${baseUrl}`);
+
+    // Get realm with debugging
+    const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'dive25';
+    console.log(`realm: ${realm}`);
+    console.log(`NEXT_PUBLIC_KEYCLOAK_REALM env var: ${process.env.NEXT_PUBLIC_KEYCLOAK_REALM}`);
+
+    // Extract country name from the IdP alias (e.g., usa-oidc -> usa)
+    const country = countryIdp.split('-')[0];
+    console.log(`country: ${country}`);
+
+    // Use the main frontend client ID instead of country-specific
+    const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || DEFAULT_CLIENT_ID;
+    console.log(`clientId: ${clientId}`);
+    console.log(`NEXT_PUBLIC_KEYCLOAK_CLIENT_ID env var: ${process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID}`);
+    console.log(`DEFAULT_CLIENT_ID: ${DEFAULT_CLIENT_ID}`);
+
+    // Use the proper auth callback endpoint with /auth prefix
+    const kongUrl = process.env.NEXT_PUBLIC_KONG_URL || DEFAULT_KONG_URL;
+    console.log(`kongUrl: ${kongUrl}`);
+    console.log(`NEXT_PUBLIC_KONG_URL env var: ${process.env.NEXT_PUBLIC_KONG_URL}`);
+    console.log(`DEFAULT_KONG_URL: ${DEFAULT_KONG_URL}`);
+
+    const redirectUri = `${kongUrl}/auth/callback`;
+    console.log(`redirectUri: ${redirectUri}`);
+
+    // Generate a random state parameter for security
+    const state = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    console.log(`state: ${state}`);
+
+    // Generate a session state parameter for Keycloak's broker service
+    const sessionState = Math.random().toString(36).substring(2, 15);
+    console.log(`sessionState: ${sessionState}`);
+
+    // Store state in sessionStorage for verification when returning
+    if (typeof window !== 'undefined') {
+        sessionStorage.setItem('idp_state', state);
+        console.log(`Set sessionStorage: idp_state = ${state}`);
+
+        sessionStorage.setItem('idp_session_state', sessionState);
+        console.log(`Set sessionStorage: idp_session_state = ${sessionState}`);
+
+        // Add timestamp for debugging
+        const timestamp = new Date().toISOString();
+        sessionStorage.setItem('idp_redirect_time', timestamp);
+        console.log(`Set sessionStorage: idp_redirect_time = ${timestamp}`);
+
+        // Store the country for user context
+        sessionStorage.setItem('selected_country', country);
+        console.log(`Set sessionStorage: selected_country = ${country}`);
+    }
+
+    // Build the IDP redirect URL with session_state parameter
+    const encodedRedirectUri = encodeURIComponent(redirectUri);
+    console.log(`encodedRedirectUri: ${encodedRedirectUri}`);
+
+    const idpRedirectUrl = `${baseUrl}/realms/${realm}/broker/${countryIdp}/login?client_id=${clientId}&redirect_uri=${encodedRedirectUri}&state=${state}&session_state=${sessionState}`;
+    console.log(`FINAL idpRedirectUrl: ${idpRedirectUrl}`);
+
+    // Log all important components for debugging
+    console.log(`===URL Components Summary===`);
+    console.log(`baseUrl: ${baseUrl}`);
+    console.log(`realm: ${realm}`);
+    console.log(`countryIdp: ${countryIdp}`);
+    console.log(`clientId: ${clientId}`);
+    console.log(`redirectUri: ${redirectUri}`);
+    console.log(`encodedRedirectUri: ${encodedRedirectUri}`);
+    console.log(`state: ${state}`);
+    console.log(`sessionState: ${sessionState}`);
+    console.log(`===DIVE25 DEBUG END - createIdpRedirectUrl===`);
+
+    return idpRedirectUrl;
 };
 
 // Initialize Keycloak instance with proper URL handling

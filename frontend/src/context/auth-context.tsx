@@ -6,6 +6,7 @@ import { User } from '@/types/user';
 import { Spinner } from '@/components/ui/Spinner';
 import toast from 'react-hot-toast';
 import { createLogger } from '@/utils/logger';
+import { createIdpRedirectUrl } from '@/lib/keycloak';
 
 // Create a logger for auth context
 const logger = createLogger('AuthContext');
@@ -13,12 +14,28 @@ const logger = createLogger('AuthContext');
 // Token refresh buffer constants
 const TOKEN_REFRESH_BUFFER = 60; // Refresh token 60 seconds before expiry
 
+// Define the country IdP interface
+export interface CountryIdP {
+  id: string;
+  name: string;
+  flag: string;
+}
+
+// List of supported country IdPs
+export const COUNTRY_IDPS: CountryIdP[] = [
+  { id: 'usa-oidc', name: 'United States', flag: '🇺🇸' },
+  { id: 'uk-oidc', name: 'United Kingdom', flag: '🇬🇧' },
+  { id: 'canada-oidc', name: 'Canada', flag: '🇨🇦' },
+  { id: 'australia-oidc', name: 'Australia', flag: '🇦🇺' },
+  { id: 'newzealand-oidc', name: 'New Zealand', flag: '🇳🇿' }
+];
+
 interface AuthContextProps {
   isAuthenticated: boolean;
   isLoading: boolean;
   user: User | null;
   keycloak: Keycloak | null;
-  login: () => void;
+  login: (countryIdP?: string) => void;
   logout: () => void;
   refreshToken: () => Promise<boolean>;
   hasRole: (roles: string[]) => boolean;
@@ -26,6 +43,7 @@ interface AuthContextProps {
   tokenExpiresIn: number | null; // Time in seconds until token expires
   isTokenExpiring: boolean; // Flag indicating if token is expiring soon
   getAuthHeaders: () => Record<string, string>; // Method to get auth headers for API requests
+  countryIdPs: CountryIdP[]; // List of supported country IdPs
 }
 
 export interface UserSecurityAttributes {
@@ -44,6 +62,9 @@ interface AuthProviderProps {
 
 // List of paths that should trigger authentication
 const AUTH_PATHS = ['/auth', '/api/auth', '/callback', '/logout', '/profile', '/documents', '/admin'];
+
+// List of paths that should never trigger authentication
+const NON_AUTH_PATHS = ['/', '/country-select', '/login'];
 
 // Move and update the global window interface declaration at the top of the file
 declare global {
@@ -221,7 +242,9 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
           refreshToken();
         };
         
-        // Initialize Keycloak
+        // Initialize Keycloak - For country selection flow, we don't check SSO right away
+        // We just initialize the instance without authentication since users will first
+        // choose a country IdP
         const authenticated = await keycloakInstance.init({
           onLoad: 'check-sso',
           silentCheckSsoRedirectUri: window.location.origin + '/silent-check-sso.html',
@@ -313,71 +336,84 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
           }
         }
         
-        return authenticated;
-      } catch (err) {
-        logger.error('Failed to initialize Keycloak:', err);
-        setError('Failed to initialize authentication service');
-        toast.error('Authentication initialization failed');
+        // Even if not authenticated, initialization is considered successful
+        // This allows the country selection flow to work
+        setIsLoading(false);
+        return true;
+        
+      } catch (initError) {
+        const errorMessage = `Error initializing Keycloak: ${initError instanceof Error ? initError.message : String(initError)}`;
+        logger.error(errorMessage);
+        logger.error('Full error:', initError);
+        setError(errorMessage);
+        setIsLoading(false);
         return false;
       }
-    } catch (err) {
-      logger.error('Failed to initialize Keycloak:', err);
-      setError('Failed to initialize authentication service');
-      toast.error('Authentication initialization failed');
-      return false;
-    } finally {
+    } catch (outerError) {
+      const errorMessage = `Unexpected error initializing auth: ${outerError instanceof Error ? outerError.message : String(outerError)}`;
+      logger.error(errorMessage);
+      setError(errorMessage);
       setIsLoading(false);
+      return false;
     }
-  }, [refreshToken]);
+  }, [refreshToken, router.pathname]);
   
   // Check if authentication should be initialized based on current route
   useEffect(() => {
-    const shouldInitialize = autoInitialize || 
-      AUTH_PATHS.some(path => router.pathname.startsWith(path));
+    // Skip auth initialization for:
+    // 1. Explicitly excluded paths (NON_AUTH_PATHS)
+    // 2. Keycloak broker URLs (containing '/broker/')
+    // 3. Any Keycloak realm URLs (containing '/realms/')
+    const isKeycloakUrl = router.pathname.includes('/broker/') || 
+                         router.pathname.includes('/realms/');
+    
+    const shouldInitialize = autoInitialize && 
+      !NON_AUTH_PATHS.some(path => router.pathname === path) &&
+      !isKeycloakUrl;
     
     if (shouldInitialize && !keycloak) {
       logger.debug(`Initializing auth due to route: ${router.pathname}`);
       initializeAuth();
+    } else {
+      logger.debug(`Skipping auth initialization for path: ${router.pathname}`);
     }
   }, [router.pathname, autoInitialize, initializeAuth, keycloak]);
   
-  // Login function
-  const login = useCallback(() => {
-    // Store current path for redirect after login
-    if (typeof window !== 'undefined') {
-      const redirectPath = router.asPath !== '/login' ? router.asPath : '/';
-      sessionStorage.setItem('auth_redirect', redirectPath);
+  // Login function - enhanced to support country IdP selection
+  const login = useCallback((countryIdP?: string) => {
+    if (!keycloak) {
+      logger.error('Cannot login - no Keycloak instance');
+      return;
     }
     
-    const performLogin = (kc: Keycloak) => {
-      try {
-        const loginOptions: KeycloakLoginOptions = {
-          redirectUri: window.location.origin + '/auth/callback',
-          prompt: 'login'
-        };
-        
-        logger.debug('Initiating login with options:', loginOptions);
-        kc.login(loginOptions);
-      } catch (error) {
-        logger.error('Error during login:', error);
-        toast.error('Failed to initialize login');
+    try {
+      // Store current location for redirect after login if not already in sessionStorage
+      if (!sessionStorage.getItem('auth_redirect') && window.location.pathname !== '/country-select') {
+        sessionStorage.setItem('auth_redirect', window.location.pathname);
       }
-    };
-    
-    if (keycloak) {
-      performLogin(keycloak);
-    } else {
-      // Initialize Keycloak if it isn't initialized yet
-      logger.debug('Keycloak not initialized, initializing before login');
-      initializeAuth().then(success => {
-        if (success && window.__keycloak) {
-          performLogin(window.__keycloak);
-        } else {
-          toast.error('Could not initialize authentication service');
-        }
-      });
+      
+      logger.debug('Initiating login process');
+      
+      // If a specific country IdP is selected, redirect to that IdP
+      if (countryIdP) {
+        logger.info(`Logging in with country IdP: ${countryIdP}`);
+        
+        // Use the utility function to get a consistent URL for the IdP redirect
+        const idpRedirectUrl = createIdpRedirectUrl(countryIdP);
+        
+        logger.debug(`Redirecting to IdP: ${idpRedirectUrl}`);
+        window.location.href = idpRedirectUrl;
+        return;
+      }
+      
+      // If no country selected, redirect to country selection page
+      logger.debug('No country IdP selected, redirecting to country selection');
+      router.push('/country-select');
+    } catch (error) {
+      logger.error('Error during login:', error);
+      setError('Login failed. Please try again.');
     }
-  }, [keycloak, router.asPath, initializeAuth]);
+  }, [keycloak, router]);
   
   // Provide loading UI if initializing
   if (isLoading) {
@@ -390,20 +426,23 @@ export function AuthProvider({ children, autoInitialize = false }: AuthProviderP
   }
   
   return (
-    <AuthContext.Provider value={{
-      isAuthenticated,
-      isLoading,
-      user,
-      keycloak,
-      login,
-      logout,
-      refreshToken,
-      hasRole,
-      error,
-      tokenExpiresIn,
-      isTokenExpiring,
-      getAuthHeaders
-    }}>
+    <AuthContext.Provider
+      value={{
+        isAuthenticated,
+        isLoading,
+        user,
+        keycloak,
+        login,
+        logout,
+        refreshToken,
+        hasRole,
+        error,
+        tokenExpiresIn,
+        isTokenExpiring,
+        getAuthHeaders,
+        countryIdPs: COUNTRY_IDPS
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

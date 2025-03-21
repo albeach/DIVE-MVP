@@ -187,11 +187,7 @@ services:
       - name: response-transformer
         config:
           add:
-            headers:
-              - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
-              - "X-XSS-Protection:1; mode=block"
-              - "X-Content-Type-Options:nosniff"
-              - "X-Frame-Options:SAMEORIGIN"
+            headers: Strict-Transport-Security:max-age=31536000; includeSubDomains,X-XSS-Protection:1; mode=block,X-Content-Type-Options:nosniff,X-Frame-Options:SAMEORIGIN,Content-Security-Policy:frame-ancestors 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:
 
   # Grafana Service (Admin)
   - name: grafana-service

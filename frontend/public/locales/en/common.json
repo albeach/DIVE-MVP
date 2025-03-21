@@ -1,130 +1,54 @@
 {
-    "app": {
-        "name": "DIVE25",
-        "description": "Digital Interoperability Verification Experiment"
-    },
-    "navigation": {
+    "appName": "DIVE25 Document Access System",
+    "nav": {
         "home": "Home",
-        "dashboard": "Dashboard",
         "documents": "Documents",
-        "profile": "Your Profile",
-        "settings": "Settings",
-        "logout": "Logout",
-        "toggle_menu": "Toggle menu"
+        "profile": "Profile",
+        "signIn": "Sign In",
+        "signOut": "Sign Out"
     },
-    "session": {
-        "expires_in": "Session expires in",
-        "refresh": "Refresh session",
-        "expired": "Session expired",
-        "about_to_expire": "Your session is about to expire"
+    "login": {
+        "title": "Sign in to your account",
+        "signIn": "Sign In",
+        "selectProvider": "Select your identity provider",
+        "withCredentials": "Sign in with credentials"
     },
-    "auth": {
-        "sign_in": "Sign in",
-        "sign_out": "Sign out",
-        "get_started": "Get Started",
-        "login_with": "Login with {{provider}}",
-        "or_sign_in_with": "Or sign in with",
-        "create_account": "Create account",
-        "forgot_password": "Forgot password?",
-        "remember_me": "Remember me",
-        "dont_have_account": "Don't have an account?",
-        "already_have_account": "Already have an account?"
-    },
-    "actions": {
-        "save": "Save",
-        "cancel": "Cancel",
-        "delete": "Delete",
-        "edit": "Edit",
-        "create": "Create",
-        "upload": "Upload",
-        "download": "Download",
-        "search": "Search",
-        "refresh": "Refresh",
-        "retry": "Retry",
-        "view": "View",
-        "title": "Actions",
-        "filter": "Filter",
-        "apply": "Apply",
-        "clear": "Clear"
-    },
-    "messages": {
-        "welcome": "Welcome to DIVE25",
-        "loading": "Loading...",
-        "error": "An error occurred",
-        "success": "Operation successful",
-        "unknownError": "An unknown error occurred"
-    },
-    "pagination": {
-        "previous": "Previous",
-        "next": "Next",
-        "page": "Page {{page}}",
-        "of": "of {{total}}",
-        "showing": "Showing",
-        "to": "to",
-        "results": "results",
-        "aria": {
-            "goToPage": "Go to page {{page}}",
-            "currentPage": "Current page, page {{page}}",
-            "previousPage": "Go to previous page",
-            "nextPage": "Go to next page"
-        }
-    },
-    "pages": {
-        "home": {
-            "title": "Home",
-            "description": "Secure document sharing across organizational boundaries",
-            "hero": {
-                "subtitle": "Secure, controlled access to documents across organizational boundaries with advanced authentication and authorization systems.",
-                "document_cta": "View Documents",
-                "learn_more": "Learn More"
-            },
-            "features": {
-                "title": "Key Features",
-                "feature1": {
-                    "title": "Secure Authentication",
-                    "description": "Enterprise-grade security with multi-factor authentication and identity verification systems."
-                },
-                "feature2": {
-                    "title": "Document Control",
-                    "description": "Fine-grained access controls with detailed auditing and tracking for document interactions."
-                },
-                "feature3": {
-                    "title": "Cross-Organization Sharing",
-                    "description": "Seamless collaboration with partners while maintaining appropriate security and access controls."
-                }
-            },
-            "cta": {
-                "title": "Ready to get started?",
-                "description": "Sign in to access the secure document repository with advanced security features.",
-                "security_note": "This system requires authentication and proper clearance to access sensitive documents. All access attempts are logged and monitored for security purposes.",
-                "need_help": "Need help? Access diagnostic tools"
-            }
-        }
+    "home": {
+        "subtitle": "Secure access to classified documents across NATO partner nations",
+        "welcomeBack": "Welcome back! What would you like to do?",
+        "viewDocuments": "View Documents",
+        "uploadDocument": "Upload Document",
+        "loginPrompt": "Please sign in to access the document repository",
+        "securityNotice": "This system is for authorized users only. All activities are monitored and recorded."
     },
     "security": {
-        "classification": "Classification"
-    },
-    "backToDocuments": "Back to Documents",
-    "formLabels": {
-        "required": "Required"
-    },
-    "errors": {
-        "failedToLoadDocuments": "Failed to load documents",
-        "unknownError": "An unknown error occurred",
-        "tryAgain": "Please try again later"
+        "classification": "Classification",
+        "releasability": "Releasability",
+        "caveats": "Caveats",
+        "warning": "This system contains information up to"
     },
     "footer": {
         "privacyPolicy": "Privacy Policy",
         "termsOfService": "Terms of Service",
-        "contact": "Contact Us",
-        "aboutUs": "About Us",
-        "help": "Help Center",
-        "allRightsReserved": "All rights reserved",
-        "securityNotice": "UNCLASSIFIED network. Authorized use only. Usage may be monitored.",
-        "poweredBy": "Powered by",
-        "version": "Version",
-        "feedbackLink": "Submit Feedback"
+        "contact": "Contact",
+        "allRightsReserved": "All Rights Reserved.",
+        "securityNotice": "This system is for authorized use only. Unauthorized access is prohibited."
     },
-    "appName": "DIVE25",
-    "retry": "Retry"
+    "errors": {
+        "failedToLoadDocuments": "Failed to load documents",
+        "failedToLoadDocument": "Failed to load document",
+        "unknownError": "An unknown error occurred",
+        "unauthorized": "You are not authorized to access this resource",
+        "forbidden": "You do not have permission to access this resource",
+        "notFound": "The requested resource could not be found",
+        "serverError": "A server error occurred. Please try again later."
+    },
+    "back": "Back",
+    "loading": "Loading...",
+    "pagination": {
+        "previous": "Previous",
+        "next": "Next",
+        "page": "Page",
+        "of": "of"
+    }
 }

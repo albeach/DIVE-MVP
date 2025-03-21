@@ -8,6 +8,8 @@
     "clientAuthenticatorType": "client-secret",
     "redirectUris": [
         "https://dive25.local:8443/*",
+        "https://dive25.local:8443/callback",
+        "https://dive25.local:8443/auth/callback",
         "https://frontend.dive25.local:3001/*"
     ],
     "webOrigins": [

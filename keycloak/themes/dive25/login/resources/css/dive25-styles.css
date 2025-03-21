@@ -3,46 +3,51 @@
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap');
 
 :root {
-    /* Colors matching the DIVE25 home page */
-    --dive25-primary: #173518;
-    /* Base dark green color */
-    --dive25-primary-50: #edf7ed;
-    /* Lightest tint */
-    --dive25-primary-100: #d1ecd2;
-    /* Very light tint */
-    --dive25-primary-200: #a7d8a8;
-    /* Light tint */
-    --dive25-primary-300: #7fc280;
-    /* Medium light tint */
-    --dive25-primary-400: #54ab56;
-    /* Medium tint */
-    --dive25-primary-500: #3d883f;
-    /* Medium dark tint */
-    --dive25-primary-600: #306c32;
-    /* Dark tint */
-    --dive25-primary-700: #254a26;
-    /* Darker tint */
-    --dive25-primary-800: #1d3b1e;
-    /* Very dark tint */
-    --dive25-primary-900: #173518;
-    /* Original dark green */
-    --dive25-primary-950: #0b1b0c;
-    /* Darkest shade */
+    /* Colors from frontend globals.css */
+    --background: hsl(120, 30%, 99%);
+    --foreground: hsl(138, 50%, 4%);
 
-    --dive25-text: #ffffff;
-    --dive25-text-light: #ffffff;
-    --dive25-border: rgba(255, 255, 255, 0.2);
-    --dive25-success: #3e8635;
-    --dive25-warning: #f0ab00;
-    --dive25-danger: #c9190b;
-    --dive25-info: #2b9af3;
-    --dive25-background: transparent;
+    --card: hsl(0, 0%, 100%);
+    --card-foreground: hsl(138, 50%, 4%);
+
+    --primary: hsl(138, 50%, 15%);
+    --primary-foreground: hsl(120, 10%, 98%);
+
+    --secondary: hsl(120, 40%, 93%);
+    --secondary-foreground: hsl(138, 50%, 15%);
+
+    --muted: hsl(120, 20%, 96%);
+    --muted-foreground: hsl(138, 10%, 40%);
+
+    --accent: hsl(120, 40%, 93%);
+    --accent-foreground: hsl(138, 50%, 15%);
+
+    --destructive: hsl(0, 85%, 60%);
+    --destructive-foreground: hsl(120, 10%, 98%);
+
+    --border: hsl(138, 20%, 85%);
+    --input: hsl(138, 20%, 80%);
+    --ring: hsl(138, 50%, 15%);
+
+    --radius: 0.5rem;
+
+    /* Additional color variables from frontend */
+    --primary-50: hsl(138, 50%, 95%);
+    --primary-100: hsl(138, 40%, 90%);
+    --primary-200: hsl(138, 35%, 85%);
+    --primary-300: hsl(138, 30%, 70%);
+    --primary-400: hsl(138, 40%, 60%);
+    --primary-500: hsl(138, 45%, 45%);
+    --primary-600: hsl(138, 50%, 35%);
+    --primary-700: hsl(138, 50%, 25%);
+    --primary-800: hsl(138, 50%, 15%);
+    --primary-900: hsl(138, 50%, 10%);
 }
 
 /* Base Styles */
 body {
-    background: linear-gradient(to bottom right, var(--dive25-primary-900), var(--dive25-primary-700));
-    color: var(--dive25-text);
+    background: linear-gradient(135deg, var(--primary-900), var(--primary-700));
+    color: white;
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     margin: 0;
     padding: 0;
@@ -56,12 +61,9 @@ body {
     overflow-x: hidden;
 }
 
-/* Background decorative elements - exactly matching the landing page */
+/* Background decorative elements */
 body::before,
-body::after,
-.decorative-orb-right,
-.decorative-orb-left,
-.decorative-orb-bottom {
+body::after {
     content: '';
     position: fixed;
     border-radius: 50%;
@@ -71,27 +73,32 @@ body::after,
 }
 
 body::before {
-    top: 80px;
-    right: -160px;
-    width: 320px;
-    height: 320px;
-    background: var(--dive25-primary-500);
+    top: 10%;
+    right: -10%;
+    width: 25vw;
+    height: 25vw;
+    background: var(--primary-500);
 }
 
 body::after {
-    top: -80px;
-    left: -80px;
-    width: 320px;
-    height: 320px;
-    background: var(--dive25-primary-400);
+    top: -5%;
+    left: -5%;
+    width: 25vw;
+    height: 25vw;
+    background: var(--primary-400);
 }
 
 .decorative-orb-bottom {
-    bottom: 40px;
-    right: 80px;
-    width: 240px;
-    height: 240px;
-    background: var(--dive25-primary-300);
+    position: fixed;
+    bottom: 5%;
+    right: 10%;
+    width: 20vw;
+    height: 20vw;
+    border-radius: 50%;
+    background: var(--primary-300);
+    filter: blur(80px);
+    opacity: 0.1;
+    z-index: 0;
 }
 
 /* Container Layouts */
@@ -123,22 +130,22 @@ body::after {
 }
 
 .dive25-card {
-    background: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--dive25-border);
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 15px 35px rgba(0, 0, 0, 0.2);
     padding: 40px;
     width: 100%;
     max-width: 450px;
-    transition: all 0.3s ease;
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .dive25-card:hover {
     transform: translateY(-5px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
-    border-color: rgba(255, 255, 255, 0.3);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+    border-color: rgba(255, 255, 255, 0.15);
 }
 
 /* Header Styles */
@@ -163,24 +170,24 @@ body::after {
     width: 96px;
     height: 96px;
     margin: 0 auto 24px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--dive25-border);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 16px;
     padding: 12px;
-    transition: all 0.3s ease;
+    transition: all 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .login-logo:hover {
     transform: scale(1.05);
-    border-color: rgba(255, 255, 255, 0.4);
+    border-color: rgba(255, 255, 255, 0.2);
 }
 
 .login-header h1 {
     font-size: 36px;
-    font-weight: bold;
-    color: var(--dive25-text);
+    font-weight: 700;
+    color: white;
     margin-bottom: 10px;
     line-height: 1.2;
     letter-spacing: -0.02em;
@@ -198,38 +205,40 @@ body::after {
 }
 
 .form-group {
-    margin-bottom: 20px;
+    margin-bottom: 24px;
 }
 
 .form-label {
     display: block;
     margin-bottom: 8px;
     font-weight: 500;
-    color: var(--dive25-text);
+    color: white;
+    font-size: 15px;
 }
 
 .form-control {
     width: 100%;
     padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(8px);
     -webkit-backdrop-filter: blur(8px);
-    border: 1px solid var(--dive25-border);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 10px;
     font-size: 15px;
     font-family: 'Inter', sans-serif;
-    transition: all 0.2s ease;
-    color: var(--dive25-text);
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    color: white;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
 }
 
 .form-control:focus {
     outline: none;
-    border-color: rgba(255, 255, 255, 0.4);
+    border-color: rgba(255, 255, 255, 0.3);
     box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
 }
 
 .form-control::placeholder {
-    color: rgba(255, 255, 255, 0.6);
+    color: rgba(255, 255, 255, 0.5);
 }
 
 .password-container {
@@ -263,11 +272,11 @@ body::after {
 }
 
 .forgot-password a:hover {
-    color: #ffffff;
+    color: white;
     text-decoration: underline;
 }
 
-/* Button Styles - match landing page exactly */
+/* Button Styles - match frontend components */
 .btn {
     display: inline-flex;
     align-items: center;
@@ -278,12 +287,13 @@ body::after {
     vertical-align: middle;
     user-select: none;
     border: 1px solid transparent;
-    transition: all 0.3s ease;
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
     font-size: 15px;
     line-height: 1.5;
     border-radius: 10px;
     position: relative;
     overflow: hidden;
+    cursor: pointer;
 }
 
 .btn:focus,
@@ -293,18 +303,16 @@ body::after {
 }
 
 .btn-primary {
-    background-color: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.1);
+    background-color: var(--primary-600);
+    color: white;
+    border-color: var(--primary-600);
     box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
 }
 
 .btn-primary:hover,
 .btn-primary:focus {
-    background-color: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.2);
+    background-color: var(--primary-700);
+    border-color: var(--primary-700);
     transform: translateY(-2px);
     box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
 }
@@ -333,26 +341,26 @@ body::after {
 
 .alert-error {
     background-color: rgba(201, 25, 11, 0.1);
-    border: 1px solid rgba(201, 25, 11, 0.3);
-    color: #ffffff;
+    border: 1px solid rgba(201, 25, 11, 0.2);
+    color: white;
 }
 
 .alert-warning {
     background-color: rgba(240, 171, 0, 0.1);
-    border: 1px solid rgba(240, 171, 0, 0.3);
-    color: #ffffff;
+    border: 1px solid rgba(240, 171, 0, 0.2);
+    color: white;
 }
 
 .alert-success {
     background-color: rgba(62, 134, 53, 0.1);
-    border: 1px solid rgba(62, 134, 53, 0.3);
-    color: #ffffff;
+    border: 1px solid rgba(62, 134, 53, 0.2);
+    color: white;
 }
 
 .alert-info {
     background-color: rgba(43, 154, 243, 0.1);
-    border: 1px solid rgba(43, 154, 243, 0.3);
-    color: #ffffff;
+    border: 1px solid rgba(43, 154, 243, 0.2);
+    color: white;
 }
 
 /* Icon and spans inside alerts */
@@ -361,6 +369,11 @@ body::after {
     display: inline-block;
     width: 20px;
     height: 20px;
+}
+
+/* Social identity providers */
+.social-providers {
+    margin-top: 30px;
 }
 
 /* Footer */
@@ -386,7 +399,7 @@ body::after {
 }
 
 .footer-links a:hover {
-    color: #ffffff;
+    color: white;
     text-decoration: underline;
 }
 
@@ -405,6 +418,23 @@ body::after {
 
 .mb-30 {
     margin-bottom: 30px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animated-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
 }
 
 /* Responsive adjustments */

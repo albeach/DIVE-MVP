@@ -4,50 +4,71 @@ const { i18n } = require('./next-i18next.config');
 
 const nextConfig = {
     reactStrictMode: true,
+    swcMinify: true,
     i18n,
     output: 'standalone',
     images: {
         domains: ['localhost', 'dive25.local', 'dive25.com'],
     },
+    env: {
+        baseUrl: process.env.NEXT_PUBLIC_BASE_URL || 'https://dive25.local:8443',
+        apiUrl: process.env.NEXT_PUBLIC_API_URL || 'https://api.dive25.local:8443',
+        keycloakUrl: process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'https://keycloak.dive25.local:8443',
+        keycloakRealm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'dive25',
+        keycloakClientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'dive25-frontend',
+        kongUrl: process.env.NEXT_PUBLIC_KONG_URL || 'https://dive25.local:8443',
+        apiPath: '/api/v1',
+    },
     async headers() {
         return [
             {
-                source: '/(.*)',
+                source: '/:path*',
                 headers: [
                     {
-                        key: 'X-Frame-Options',
-                        value: 'SAMEORIGIN',
+                        key: 'X-DNS-Prefetch-Control',
+                        value: 'on'
                     },
                     {
-                        key: 'X-Content-Type-Options',
-                        value: 'nosniff',
+                        key: 'Strict-Transport-Security',
+                        value: 'max-age=63072000; includeSubDomains; preload'
                     },
                     {
                         key: 'X-XSS-Protection',
-                        value: '1; mode=block',
+                        value: '1; mode=block'
+                    },
+                    {
+                        key: 'X-Frame-Options',
+                        value: 'SAMEORIGIN'
+                    },
+                    {
+                        key: 'X-Content-Type-Options',
+                        value: 'nosniff'
                     },
                     {
                         key: 'Referrer-Policy',
-                        value: 'strict-origin-when-cross-origin',
-                    },
-                    {
-                        key: 'Permissions-Policy',
-                        value: 'camera=(), microphone=(), geolocation=()',
-                    },
+                        value: 'origin-when-cross-origin'
+                    }
+                ]
+            },
+            {
+                source: '/country-select',
+                headers: [
                     {
                         key: 'Content-Security-Policy',
-                        value: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; font-src 'self' https://fonts.gstatic.com; connect-src 'self' https://*.dive25.local:* https://dive25.local:* http://localhost:*; frame-src 'self' https://*.dive25.local:* https://dive25.local:* http://localhost:*; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self' https://*.dive25.local:* https://dive25.local:* http://localhost:*;",
-                    },
-                ],
-            },
+                        value: "frame-ancestors 'self'; default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://*.dive25.local:*; font-src 'self'; object-src 'none';"
+                    }
+                ]
+            }
         ];
     },
-    // Handle environment-specific configuration
-    publicRuntimeConfig: {
-        apiUrl: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api/v1',
-        keycloakUrl: process.env.NEXT_PUBLIC_KEYCLOAK_URL || 'http://localhost:8080',
-        keycloakRealm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || 'dive25',
-        keycloakClientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'dive25-frontend',
+    async redirects() {
+        return [
+            {
+                source: '/login',
+                destination: '/country-select',
+                permanent: true,
+            },
+        ];
     },
 };
 

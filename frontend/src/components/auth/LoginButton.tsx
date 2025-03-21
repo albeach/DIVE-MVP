@@ -3,6 +3,7 @@ import { useAuth } from '@/context/auth-context';
 import { User } from '@/types/user';
 import toast from 'react-hot-toast';
 import { createLogger } from '@/utils/logger';
+import { useRouter } from 'next/router';
 
 // Create a logger for LoginButton
 const logger = createLogger('LoginButton');
@@ -21,6 +22,7 @@ const LoginButton: React.FC<LoginButtonProps> = ({
   label = 'Sign In'
 }) => {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const router = useRouter();
   
   // Safely try to get auth context
   let auth: any = {};
@@ -36,143 +38,34 @@ const LoginButton: React.FC<LoginButtonProps> = ({
   }
   
   // Safely access auth methods with fallbacks
-  const login = auth?.login || (() => {});
-  const logout = auth?.logout || (() => {});
-  const initializeAuth = auth?.initializeAuth || (() => Promise.resolve(false));
+  const login = auth?.login;
+  const logout = auth?.logout || (() => window.location.href = '/');
   
-  const handleLogin = async () => {
+  // Handle click to navigate to country selection
+  const handleLogin = () => {
     try {
       setIsLoggingIn(true);
       
-      // Display a loading toast
-      toast.loading('Initializing login...', { id: 'login-process' });
-      
-      // Try to initialize auth first if it's available
-      if (initializeAuth && !isAuthenticated) {
-        logger.debug('Initializing auth before login');
-        const initialized = await initializeAuth();
-        if (!initialized) {
-          logger.warn('Auth initialization failed, trying fallback');
-          toast.dismiss('login-process');
-          fallbackDirectLogin();
-          return;
-        }
+      // Store current path for post-login redirect
+      if (typeof window !== 'undefined') {
+        const currentPath = window.location.pathname;
+        sessionStorage.setItem('auth_redirect', currentPath === '/' ? '/dashboard' : currentPath);
+        
+        // Navigate directly to country-select page
+        logger.info('Navigating to country selection page');
+        const baseUrl = window.location.origin;
+        window.location.href = `${baseUrl}/country-select`;
       }
-      
-      // Try to login
-      logger.debug('Calling login method');
-      toast.dismiss('login-process');
-      toast.loading('Redirecting to login...', { id: 'login-redirect' });
-      
-      await login();
-      
-      // If we get here without a redirect, try fallback
-      setTimeout(() => {
-        if (document.visibilityState !== 'hidden') {
-          toast.dismiss('login-redirect');
-          logger.warn('Login did not redirect, using fallback');
-          fallbackDirectLogin();
-        }
-      }, 3000);
-      
     } catch (error) {
-      logger.error('Login error:', error);
-      toast.dismiss('login-process');
-      toast.dismiss('login-redirect');
-      toast.error('Login failed. Trying direct method...');
-      
-      // Fallback to direct login if keycloak auth isn't initialized properly
-      fallbackDirectLogin();
-    } finally {
-      // Don't set isLoggingIn to false until after a delay
-      // to prevent multiple clicks during redirect
-      setTimeout(() => {
-        setIsLoggingIn(false);
-      }, 5000);
+      logger.error('Login redirect error:', error);
+      toast.error('Failed to navigate to country selection. Please try again.');
+      setIsLoggingIn(false);
     }
   };
   
+  // Handle logout
   const handleLogout = () => {
     logout();
-  };
-  
-  // Fallback login method that constructs auth URL
-  const fallbackDirectLogin = () => {
-    toast.loading('Attempting direct login...', { id: 'direct-login' });
-    
-    // Store current path for redirect after login
-    const currentPath = window.location.pathname + window.location.search;
-    if (currentPath !== '/' && !currentPath.includes('/login') && !currentPath.includes('/auth/')) {
-      sessionStorage.setItem('auth_redirect', currentPath);
-    }
-    
-    // Set redirect to documents for home page
-    if (currentPath === '/' || currentPath === '/login') {
-      sessionStorage.setItem('auth_redirect', '/documents');
-    }
-    
-    // Construct auth URL directly with our callback page
-    try {
-      // CRITICAL: For direct login, always use the original Keycloak URL for the backend auth
-      // but use the frontend URL for the UI parts like redirects
-      const keycloakOriginalUrl = process.env.NEXT_PUBLIC_KEYCLOAK_URL;
-      const frontendUrl = process.env.NEXT_PUBLIC_FRONTEND_URL || window.location.origin;
-      const realm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM;
-      const clientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID;
-      
-      if (!keycloakOriginalUrl || !realm || !clientId) {
-        throw new Error('Missing Keycloak configuration');
-      }
-      
-      logger.debug('Fallback login with configuration:', {
-        keycloakOriginalUrl,
-        frontendUrl,
-        realm,
-        clientId
-      });
-      
-      // Use our dedicated callback page
-      const redirectUri = encodeURIComponent(window.location.origin + '/auth/callback');
-      
-      // Generate a random state parameter for CSRF protection
-      const state = crypto.randomUUID();
-      
-      // Generate a nonce for replay protection
-      const nonce = crypto.randomUUID();
-      
-      // Generate code challenge for PKCE
-      const codeVerifier = crypto.randomUUID() + crypto.randomUUID();
-      sessionStorage.setItem('code_verifier', codeVerifier);
-      
-      // Hash the code verifier for the code challenge
-      // For simplicity, we'll just use the first part of the verifier directly
-      // In a production app, you would use a proper SHA-256 hash and base64url encoding
-      const codeChallenge = codeVerifier.substring(0, 24);
-      
-      // For the auth backend operations, use the actual Keycloak URL directly
-      // This avoids routing conflicts when the Kong routes are misconfigured
-      const authUrl = `${keycloakOriginalUrl}/realms/${realm}/protocol/openid-connect/auth?` +
-        `client_id=${clientId}` +
-        `&redirect_uri=${redirectUri}` +
-        `&state=${state}` +
-        `&response_mode=query` +
-        `&response_type=code` +
-        `&scope=openid` +
-        `&nonce=${nonce}` +
-        `&prompt=login` +
-        `&kc_theme=dive25` +
-        `&ui_locales=en`;
-      
-      logger.debug('Redirecting to auth URL:', authUrl);
-      
-      // Add a small delay to ensure logs are visible before redirect
-      setTimeout(() => {
-        window.location.href = authUrl;
-      }, 500);
-    } catch (error) {
-      logger.error('Fallback login failed:', error);
-      toast.error('Login service unavailable. Please try again later.');
-    }
   };
   
   // Button styling based on variant and size
@@ -188,8 +81,9 @@ const LoginButton: React.FC<LoginButtonProps> = ({
     lg: 'text-base px-6 py-3 rounded-md font-medium',
   };
   
+  // Determine button text based on authentication state
   const buttonText = isLoggingIn 
-    ? 'Signing in...'
+    ? 'Signing in...' 
     : label || (isAuthenticated ? 'Sign out' : 'Sign in');
   
   return (
@@ -197,6 +91,7 @@ const LoginButton: React.FC<LoginButtonProps> = ({
       className={`inline-flex items-center justify-center font-medium transition-all duration-300 focus:ring-2 focus:ring-offset-2 focus:ring-white/30 focus:outline-none disabled:opacity-50 ${variantClasses[variant]} ${sizeClasses[size]} ${className}`}
       onClick={isAuthenticated ? handleLogout : handleLogin}
       disabled={isLoggingIn}
+      data-testid="login-button"
     >
       {isLoggingIn && (
         <svg className="animate-spin -ml-1 mr-2 h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">

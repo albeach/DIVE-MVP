@@ -1,451 +1,113 @@
-_format_version: "3.0"
+_format_version: "2.1"
 _transform: true
-
-# Standardized Kong Configuration for DIVE25
-# Generated for staging environment
 
 services:
   # Frontend Service
   - name: frontend-service
     url: http://frontend:3000
-    tags:
-      - core
-      - frontend
-      - public
-    connect_timeout: 60000
-    read_timeout: 60000
-    write_timeout: 60000
-    retries: 2
-    plugins:
-      - name: response-transformer
-        config:
-          remove:
-            headers:
-              - Content-Security-Policy
-              - X-Frame-Options
-      - name: oidc-auth
-        config:
-          client_id: dive25-frontend
-          client_secret: qNHj9FyLW3cjMcYbiCJMDr6eaznU4khB
-          discovery: https://keycloak.dive25.local:8443/realms/dive25/.well-known/openid-configuration
-          introspection_endpoint: https://keycloak.dive25.local:8443/realms/dive25/protocol/openid-connect/token/introspect
-          bearer_only: false
-          realm: dive25
-          redirect_uri: https://dive25.local:8443/auth/callback
-          redirect_uri_path: /auth/callback
-          response_type: id_token
-          scope: openid
-          session_name: oidc_session
-          token_endpoint_auth_method: client_secret_basic
-          unauth_action: auth
-          filters: []
-          ssl_verify: true
-      - name: cors
-        config:
-          origins:
-            - "https://frontend.dive25.local:8443"
-            - "https://api.dive25.local:8443"
-            - "https://keycloak.dive25.local:8443"
-            - "https://kong.dive25.local:8443"
-            - "https://dive25.local:8443"
-          methods:
-            - GET
-            - POST
-            - PUT
-            - DELETE
-            - OPTIONS
-          headers:
-            - Accept
-            - Accept-Version
-            - Authorization
-            - Content-Length
-            - Content-MD5
-            - Content-Type
-            - Date
-            - X-Auth-Token
-          exposed_headers:
-            - X-Auth-Token
-          credentials: true
-          max_age: 3600
-          preflight_continue: false
     routes:
-      # Root domain route for main domain
-      - name: root-domain-route
+      - name: frontend-route
         hosts:
-          - "dive25.local"
+          - dive25.local
+          - frontend.dive25.local
         protocols:
           - http
           - https
-        paths:
-          - "/"
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-        # Lower priority so Keycloak routes take precedence
-        priority: 10
-      # Route based on frontend domain
-      - name: frontend-domain-route
-        hosts:
-          - "frontend.dive25.local"
-        protocols:
-          - http
-          - https
-        paths:
-          - "/"
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-      # Route for auth callbacks - ensure these match the Keycloak redirect_uri config
-      - name: frontend-auth-routes
-        hosts:
-          - "frontend.dive25.local"
-          - "dive25.local"
-        protocols:
-          - http
-          - https
-        paths:
-          - /callback
-          - /auth/callback
-          - /logout
-          - /error
-          - /login
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-        # Higher priority than all other routes
-        priority: 200
-
+  
   # API Service
   - name: api-service
-    url: https://api:3000
-    tags:
-      - core
-      - backend
-      - api
-    connect_timeout: 60000
-    read_timeout: 60000
-    write_timeout: 60000
-    retries: 2
+    url: http://api:3000
     routes:
-      # Route based on API domain
-      - name: api-domain-route
+      - name: api-route
         hosts:
-          - "api.dive25.local"
+          - api.dive25.local
         protocols:
           - http
           - https
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-        paths:
-          - "/api/v1"
-    plugins:
-      - name: cors
-        config:
-          origins:
-            - "https://frontend.dive25.local:8443"
-            - "https://api.dive25.local:8443"
-            - "https://keycloak.dive25.local:8443"
-            - "https://kong.dive25.local:8443"
-            - "https://dive25.local:8443"
-          methods:
-            - GET
-            - POST
-            - PUT
-            - DELETE
-            - OPTIONS
-          headers:
-            - Accept
-            - Accept-Version
-            - Authorization
-            - Content-Length
-            - Content-MD5
-            - Content-Type
-            - Date
-            - X-Auth-Token
-            - X-Skip-JWT-Verification
-          exposed_headers:
-            - X-Auth-Token
-          credentials: true
-          max_age: 3600
-          preflight_continue: false
-      # Add OIDC plugin to verify tokens and pass user info to the API
-      - name: oidc-auth
-        config:
-          client_id: dive25-api
-          client_secret: change-me-in-production
-          discovery: https://keycloak.dive25.local:8443/realms/dive25/.well-known/openid-configuration
-          introspection_endpoint: https://keycloak.dive25.local:8443/realms/dive25/protocol/openid-connect/token/introspect
-          bearer_only: true
-          realm: dive25
-          ssl_verify: true
-          token_endpoint_auth_method: client_secret_post
-          # Pass user info to the backend in a header
-          pass_user_info_in_header: true
-          user_info_header_name: X-UserInfo
-          # Enable introspection for better token validation
-          use_introspection: true
-          # Only allow authenticated access
-          anonymous: false
-
-  # ============================================================================
-  # TEST API Service - NO AUTHENTICATION - FOR TESTING ONLY
-  # WARNING: This route bypasses authentication and should only be used for testing.
-  # REMOVE BEFORE DEPLOYING TO PRODUCTION.
-  # ============================================================================
-  - name: api-test-service
-    url: https://api:3000
-    tags:
-      - core
-      - backend
-      - api
-      - test
-      - no-auth
-    connect_timeout: 60000
-    read_timeout: 60000
-    write_timeout: 60000
-    retries: 2
-    routes:
-      # Test route that bypasses authentication
-      - name: api-test-route
-        hosts:
-          - "api-test.dive25.local"
-          - "api.dive25.local"
-        protocols:
-          - http
-          - https
-        paths:
-          - "/api/v1/test"
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-    plugins:
-      - name: cors
-        config:
-          origins:
-            - "https://frontend.dive25.local:3001"
-            - "https://api.dive25.local:3002"
-            - "https://keycloak.dive25.local:8443"
-            - "https://kong.dive25.local:8443"
-            - "https://dive25.local:8443"
-          methods:
-            - GET
-            - POST
-            - PUT
-            - DELETE
-            - OPTIONS
-          headers:
-            - Accept
-            - Accept-Version
-            - Authorization
-            - Content-Length
-            - Content-MD5
-            - Content-Type
-            - Date
-            - X-Auth-Token
-            - X-Skip-JWT-Verification
-          exposed_headers:
-            - X-Auth-Token
-          credentials: true
-          max_age: 3600
-          preflight_continue: false
-      # Add request transformer to add header
-      - name: request-transformer
-        config:
-          add:
-            headers:
-              - "X-Skip-JWT-Verification:true"
-
+  
   # Keycloak Service
   - name: keycloak-service
     url: http://keycloak:8080
-    tags:
-      - auth
-      - keycloak
-    connect_timeout: 60000
-    read_timeout: 60000
-    write_timeout: 60000
-    retries: 2
     routes:
-      # Route based on Keycloak domain
-      - name: keycloak-domain-route
+      - name: keycloak-route
         hosts:
-          - "keycloak.dive25.local"
+          - keycloak.dive25.local
         protocols:
           - http
           - https
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-      # NEW: Route for proxying Keycloak auth through main domain
-      # Use standard path prefixes with higher priority than the root domain route
-      - name: keycloak-main-domain-auth-proxy
+  
+  # MongoDB Express Service
+  - name: mongo-express-service
+    url: http://mongo-express:8081
+    routes:
+      - name: mongo-express-route
         hosts:
-          - "dive25.local"
+          - mongo-express.dive25.local
         protocols:
           - http
           - https
-        paths:
-          - /realms
-          - /resources
-          - /auth/realms
-          - /auth/resources
-          - /auth/admin
-        strip_path: false
-        preserve_host: false
-        https_redirect_status_code: 301
-        # Add priority to ensure this route takes precedence over the root domain route
-        priority: 90
-    plugins:
-      - name: cors
-        config:
-          origins:
-            - "https://frontend.dive25.local:3001"
-            - "https://api.dive25.local:3002"
-            - "https://keycloak.dive25.local:8443"
-            - "https://kong.dive25.local:8443"
-            - "https://dive25.local:8443"
-          methods:
-            - GET
-            - POST
-            - PUT
-            - DELETE
-            - OPTIONS
-          headers:
-            - Accept
-            - Accept-Version
-            - Authorization
-            - Content-Length
-            - Content-MD5
-            - Content-Type
-            - Date
-            - X-Auth-Token
-          exposed_headers:
-            - X-Auth-Token
-          credentials: true
-          max_age: 3600
-      - name: response-transformer
-        config:
-          add:
-            headers:
-              - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
-              - "X-XSS-Protection:1; mode=block"
-              - "X-Content-Type-Options:nosniff"
-              - "X-Frame-Options:SAMEORIGIN"
-              - "Content-Security-Policy:frame-ancestors 'self'"
-
-  # Grafana Service (Admin)
+  
+  # Grafana Service
   - name: grafana-service
     url: http://grafana:3000
-    tags:
-      - monitoring
-      - admin
-    connect_timeout: 60000
-    read_timeout: 60000
-    write_timeout: 60000
-    retries: 2
     routes:
-      # Route based on Grafana domain
-      - name: grafana-domain-route
+      - name: grafana-route
         hosts:
-          - "grafana.dive25.local"
+          - grafana.dive25.local
         protocols:
           - http
           - https
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-    plugins:
-      - name: oidc-auth
-        config:
-          client_id: dive25-frontend
-          client_secret: change-me-in-production
-          discovery: https://keycloak.dive25.local:8443/realms/dive25/.well-known/openid-configuration
-          introspection_endpoint: https://keycloak.dive25.local:8443/realms/dive25/protocol/openid-connect/token/introspect
-          bearer_only: false
-          realm: dive25
-          redirect_uri_path: /callback
-          logout_path: /logout
-          redirect_after_logout_uri: /
-          ssl_verify: true
-          session_secret: your_session_secret
-          token_endpoint_auth_method: client_secret_post
-          refresh_tokens: true
-          encrypt_session_cookie: true
-          use_pkce: true
-          auth_methods:
-            - authorization_code
-          response_type: code
-          unauth_action: auth
-          # Only allow authenticated access
-          anonymous: false
-
-  # Prometheus Service (Admin)
+  
+  # Prometheus Service
   - name: prometheus-service
     url: http://prometheus:9090
-    tags:
-      - monitoring
-      - admin
-    connect_timeout: 60000
-    read_timeout: 60000
-    write_timeout: 60000
-    retries: 2
     routes:
-      # Route based on Prometheus domain
-      - name: prometheus-domain-route
+      - name: prometheus-route
         hosts:
-          - "prometheus.dive25.local"
+          - prometheus.dive25.local
         protocols:
           - http
           - https
-        strip_path: false
-        preserve_host: true
-        https_redirect_status_code: 301
-    plugins:
-      - name: oidc-auth
-        config:
-          client_id: dive25-frontend
-          client_secret: change-me-in-production
-          discovery: https://keycloak.dive25.local:8443/realms/dive25/.well-known/openid-configuration
-          introspection_endpoint: https://keycloak.dive25.local:8443/realms/dive25/protocol/openid-connect/token/introspect
-          bearer_only: false
-          realm: dive25
-          redirect_uri_path: /callback
-          logout_path: /logout
-          redirect_after_logout_uri: /
-          ssl_verify: true
-          session_secret: your_session_secret
-          token_endpoint_auth_method: client_secret_post
-          refresh_tokens: true
-          encrypt_session_cookie: true
-          use_pkce: true
-          auth_methods:
-            - authorization_code
-          response_type: code
-          unauth_action: auth
-          # Only allow authenticated access
-          anonymous: false
+  
+  # phpLDAPadmin Service
+  - name: phpldapadmin-service
+    url: http://phpldapadmin:80
+    routes:
+      - name: phpldapadmin-route
+        hosts:
+          - phpldapadmin.dive25.local
+        protocols:
+          - http
+          - https
+  
+  # Kong Admin Service (exposed via subdomain)
+  - name: kong-admin-service
+    url: http://kong:8001
+    routes:
+      - name: kong-admin-route
+        hosts:
+          - kong.dive25.local
+        protocols:
+          - http
+          - https
+  
+  # Konga Service
+  - name: konga-service
+    url: http://konga:1337
+    routes:
+      - name: konga-route
+        hosts:
+          - konga.dive25.local
+        protocols:
+          - http
+          - https
 
-# Global plugins applied to all routes
+# Redirects from HTTP to HTTPS
 plugins:
-  # Security headers for all services
-  - name: response-transformer
+  - name: redirect
     config:
-      add:
-        headers:
-          - "X-Frame-Options:SAMEORIGIN"
-          - "X-XSS-Protection:1; mode=block"
-          - "X-Content-Type-Options:nosniff"
-          - "Referrer-Policy:strict-origin-when-cross-origin"
-
-  # Request ID for tracing
-  - name: correlation-id
-    config:
-      header_name: X-Request-ID
-      generator: uuid
-      echo_downstream: true
-
-  # Request size limits
-  - name: request-size-limiting
-    config:
-      allowed_payload_size: 10 
+      status_code: 301
+      https_port: 8443
+    enabled: true
+    protocols:
+      - http

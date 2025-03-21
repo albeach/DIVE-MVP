@@ -448,3 +448,55 @@ After deployment, consider consulting:
 - [User Guide](docs/user/guide.md) for usage instructions
 - [API Documentation](docs/technical/api.md) for backend integration
 - [Troubleshooting](docs/deployment/installation.md#troubleshooting) for common issues
+
+## Environment Variables and Build Process
+
+### Environment Variables
+
+The application requires various environment variables to be set correctly, particularly for Next.js client-side variables that need to be embedded at build time.
+
+#### Validating Environment Variables
+
+A validation script is included to check that all required environment variables are set:
+
+```bash
+./scripts/validate-env.sh
+```
+
+This script will:
+- Check for all required Next.js public variables
+- Verify Keycloak configuration variables
+- Validate network configuration settings
+- Ensure URL formats are correct
+
+#### Required Next.js Environment Variables
+
+These variables must be set at build time to be available in the client-side code:
+
+- `NEXT_PUBLIC_API_URL`: The URL for the API service
+- `NEXT_PUBLIC_FRONTEND_URL`: The URL for the frontend service
+- `NEXT_PUBLIC_KEYCLOAK_URL`: The URL for the Keycloak authentication service
+- `NEXT_PUBLIC_KEYCLOAK_REALM`: The Keycloak realm name
+- `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID`: The Keycloak client ID for the frontend
+- `NEXT_PUBLIC_KONG_URL`: The URL for the Kong API gateway
+
+### Building the Frontend
+
+Due to how Next.js handles environment variables, you must provide the NEXT_PUBLIC_* variables at build time:
+
+```bash
+# Using docker-compose
+docker-compose build frontend
+
+# Manual build with explicit args
+docker build \
+  --build-arg NEXT_PUBLIC_API_URL=https://api.dive25.local:3002/api/v1 \
+  --build-arg NEXT_PUBLIC_FRONTEND_URL=https://frontend.dive25.local:3001 \
+  --build-arg NEXT_PUBLIC_KEYCLOAK_URL=https://keycloak.dive25.local:8443/auth \
+  --build-arg NEXT_PUBLIC_KEYCLOAK_REALM=dive25 \
+  --build-arg NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=dive25-frontend \
+  --build-arg NEXT_PUBLIC_KONG_URL=https://dive25.local:8443 \
+  -t dive-mvp-frontend:latest ./frontend
+```
+
+The docker-compose.yml file has been updated to include these build arguments automatically.

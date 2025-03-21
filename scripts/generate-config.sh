@@ -207,9 +207,9 @@ generate_env_file() {
   # Generate security headers configuration
   echo "# Security Headers Configuration" >> "$ENV_OUTPUT"
   KEYCLOAK_HEADERS=$(yq eval '.security.headers.keycloak.add | join(",")' "$CONFIG_FILE")
-  echo "KEYCLOAK_SECURITY_HEADERS=$KEYCLOAK_HEADERS" >> "$ENV_OUTPUT"
+  echo "KEYCLOAK_SECURITY_HEADERS=\"$KEYCLOAK_HEADERS\"" >> "$ENV_OUTPUT"
   GLOBAL_HEADERS=$(yq eval '.security.headers.global.add | join(",")' "$CONFIG_FILE")
-  echo "GLOBAL_SECURITY_HEADERS=$GLOBAL_HEADERS" >> "$ENV_OUTPUT"
+  echo "GLOBAL_SECURITY_HEADERS=\"$GLOBAL_HEADERS\"" >> "$ENV_OUTPUT"
   echo "" >> "$ENV_OUTPUT"
   
   # SSL configuration

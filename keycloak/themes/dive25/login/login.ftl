@@ -1,7 +1,7 @@
 <#import "template.ftl" as layout>
 <@layout.registrationLayout displayMessage=!messagesPerField.existsError('username','password') displayInfo=realm.password && realm.registrationAllowed && !registrationDisabled??; section>
     <#if section = "header">
-        <div class="login-header">
+        <div class="login-header animated-fade-in">
             <div class="w-24 h-24 mx-auto bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/20 shadow-lg">
                 <img src="${url.resourcesPath}/img/dive25-logo.svg" alt="DIVE25 Logo" class="login-logo">
             </div>
@@ -9,7 +9,7 @@
             <p>${msg("loginWelcomeMessage")}</p>
         </div>
     <#elseif section = "form">
-        <div id="kc-form">
+        <div id="kc-form" class="animated-fade-in" style="animation-delay: 0.1s;">
             <div id="kc-form-wrapper">
                 <#if realm.password>
                     <form id="kc-form-login" onsubmit="return true;" action="${url.loginAction}" method="post">
@@ -17,6 +17,7 @@
                             <label for="username" class="form-label">${msg("username")}</label>
                             <input tabindex="1" id="username" class="form-control" name="username" value="${(login.username!'')}" type="text" autofocus autocomplete="off"
                                    aria-invalid="<#if messagesPerField.existsError('username')>true</#if>"
+                                   placeholder="Enter your username"
                             />
                             <#if messagesPerField.existsError('username')>
                                 <span id="input-error-username" class="text-white/90 text-sm mt-2 block" aria-live="polite">
@@ -30,6 +31,7 @@
                             <div class="password-container">
                                 <input tabindex="2" id="password" class="form-control" name="password" type="password" autocomplete="off"
                                        aria-invalid="<#if messagesPerField.existsError('password')>true</#if>"
+                                       placeholder="Enter your password"
                                 />
                                 <#if messagesPerField.existsError('password')>
                                     <span id="input-error-password" class="text-white/90 text-sm mt-2 block" aria-live="polite">
@@ -67,7 +69,7 @@
             </div>
         </div>
     <#elseif section = "info">
-        <div id="kc-registration" class="text-center mt-6">
+        <div id="kc-registration" class="text-center mt-6 animated-fade-in" style="animation-delay: 0.2s;">
             <#if realm.password && realm.registrationAllowed && !registrationDisabled??>
                 <div class="register-link">
                     <span class="text-white/90">${msg("noAccount")} <a tabindex="6" href="${url.registrationUrl}" class="text-white font-medium hover:underline">${msg("doRegister")}</a></span>
@@ -76,7 +78,7 @@
         </div>
 
         <#if realm.password && social.providers??>
-            <div id="kc-social-providers" class="social-providers mt-10">
+            <div id="kc-social-providers" class="social-providers mt-10 animated-fade-in" style="animation-delay: 0.3s;">
                 <hr class="border-white/10 mb-6"/>
                 <h4 class="text-center text-lg mb-4 text-white/90">${msg("identity-provider-login-label",realm.displayName)}</h4>
 

@@ -241,11 +241,11 @@ create_realm() {
     echo "⚠️ First attempt failed, trying alternative approach..."
     
     # Try direct approach within container
-    local HTTP_STATUS=$(docker exec $CURL_TOOLS_CONTAINER bash -c "curl -s -o /dev/null -w \"%{http_code}\" -X POST \
-      \"${KEYCLOAK_URL}/admin/realms\" \
-      -H \"Authorization: Bearer ${TOKEN}\" \
-      -H \"Content-Type: application/json\" \
-      -d '${REALM_JSON}'")
+    local HTTP_STATUS=$(docker exec $CURL_TOOLS_CONTAINER curl -s -o /dev/null -w "%{http_code}" -X POST \
+      "${KEYCLOAK_URL}/admin/realms" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d '${REALM_JSON}')
     
     if [ "$HTTP_STATUS" == "201" ] || [ "$HTTP_STATUS" == "409" ]; then
       if [ "$HTTP_STATUS" == "201" ]; then
@@ -260,7 +260,7 @@ create_realm() {
       echo "⚠️ Second attempt failed with HTTP $HTTP_STATUS, trying one more approach..."
       
       # Try the most direct approach that we know works
-      docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -X POST '${KEYCLOAK_URL}/admin/realms' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${REALM_JSON}'"
+      docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -X POST '${KEYCLOAK_URL}/admin/realms' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${REALM_JSON}'"
       
       # Even if this also fails, check if realm now exists
       REALM_STATUS=$(docker exec $CURL_TOOLS_CONTAINER curl -s -o /dev/null -w "%{http_code}" "${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}")
@@ -347,7 +347,7 @@ create_frontend_client() {
   echo "Creating frontend client with JSON: $CLIENT_JSON"
   
   # Attempt direct approach within container
-  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CLIENT_JSON}' 2>&1")
+  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CLIENT_JSON}' 2>&1")
   
   # Check if creation was successful 
   if echo "$RESULT" | grep -q "HTTP/1.1 201" || echo "$RESULT" | grep -q "HTTP/1.1 409"; then
@@ -359,7 +359,7 @@ create_frontend_client() {
     # Try a second time with simplified JSON
     echo "Trying alternative approach with simplified JSON..."
     local SIMPLIFIED_JSON="{\"clientId\":\"${KEYCLOAK_CLIENT_ID_FRONTEND}\",\"enabled\":true,\"publicClient\":true}"
-    local RETRY_RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${SIMPLIFIED_JSON}' 2>&1")
+    local RETRY_RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${SIMPLIFIED_JSON}' 2>&1")
     
     if echo "$RETRY_RESULT" | grep -q "HTTP/1.1 201" || echo "$RETRY_RESULT" | grep -q "HTTP/1.1 409"; then
       echo "✅ Frontend client created successfully with simplified JSON"
@@ -395,7 +395,7 @@ create_api_client() {
   echo "Creating API client with JSON: $CLIENT_JSON"
   
   # Attempt direct approach within container
-  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CLIENT_JSON}' 2>&1")
+  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CLIENT_JSON}' 2>&1")
   
   # Check if creation was successful
   if echo "$RESULT" | grep -q "HTTP/1.1 201" || echo "$RESULT" | grep -q "HTTP/1.1 409"; then
@@ -407,7 +407,7 @@ create_api_client() {
     # Try a second time with simplified JSON
     echo "Trying alternative approach with simplified JSON..."
     local SIMPLIFIED_JSON="{\"clientId\":\"${KEYCLOAK_CLIENT_ID_API}\",\"enabled\":true}"
-    local RETRY_RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${SIMPLIFIED_JSON}' 2>&1")
+    local RETRY_RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${SIMPLIFIED_JSON}' 2>&1")
     
     if echo "$RETRY_RESULT" | grep -q "HTTP/1.1 201" || echo "$RETRY_RESULT" | grep -q "HTTP/1.1 409"; then
       echo "✅ API client created successfully with simplified JSON"
@@ -437,7 +437,7 @@ configure_realm_settings() {
   echo "Updating realm with JSON: $UPDATE_DATA"
   
   # Attempt direct approach within container
-  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X PUT '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${UPDATE_DATA}' 2>&1")
+  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X PUT '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${UPDATE_DATA}' 2>&1")
   
   # Check if update was successful
   if echo "$RESULT" | grep -q "HTTP/1.1 204"; then
@@ -451,7 +451,8 @@ configure_realm_settings() {
     local MINIMAL_UPDATE="{\"id\":\"${KEYCLOAK_REALM}\",\"realm\":\"${KEYCLOAK_REALM}\"}"
     
     # First get the current realm config
-    local CURRENT_CONFIG=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -s -H \"Authorization: Bearer \$TOKEN\" '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}'")
+    local CURRENT_CONFIG=$(docker exec $CURL_TOOLS_CONTAINER curl -s -H "Authorization: Bearer $TOKEN" \
+      "${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}")
     
     if [ -n "$CURRENT_CONFIG" ] && [ "$CURRENT_CONFIG" != "null" ]; then
       echo "✅ Retrieved current realm configuration"
@@ -459,7 +460,7 @@ configure_realm_settings() {
       # Try to update with just the browserSecurityHeaders field
       local CSP_UPDATE="{\"id\":\"${KEYCLOAK_REALM}\",\"realm\":\"${KEYCLOAK_REALM}\",\"browserSecurityHeaders\":{\"contentSecurityPolicy\":\"frame-src *; frame-ancestors *; object-src 'none'\"}}"
       
-      local CSP_RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X PUT '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CSP_UPDATE}' 2>&1")
+      local CSP_RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X PUT '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CSP_UPDATE}' 2>&1")
       
       if echo "$CSP_RESULT" | grep -q "HTTP/1.1 204"; then
         echo "✅ Updated realm with CSP settings"
@@ -467,7 +468,7 @@ configure_realm_settings() {
         # Now try to update attributes separately
         local ATTR_UPDATE="{\"id\":\"${KEYCLOAK_REALM}\",\"realm\":\"${KEYCLOAK_REALM}\",\"attributes\":{\"frontendUrl\":\"${PUBLIC_KEYCLOAK_URL}\",\"hostname-url\":\"${PUBLIC_KEYCLOAK_URL}\",\"hostname-admin-url\":\"${PUBLIC_KEYCLOAK_URL}\"}}"
         
-        local ATTR_RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X PUT '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${ATTR_UPDATE}' 2>&1")
+        local ATTR_RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X PUT '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${ATTR_UPDATE}' 2>&1")
         
         if echo "$ATTR_RESULT" | grep -q "HTTP/1.1 204"; then
           echo "✅ Updated realm attributes"
@@ -628,7 +629,7 @@ create_test_client_via_api() {
   echo "Creating test client with JSON: $CLIENT_JSON"
   
   # Attempt direct approach within container
-  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CLIENT_JSON}' 2>&1")
+  local RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${CLIENT_JSON}' 2>&1")
   
   # Check if creation was successful
   if echo "$RESULT" | grep -q "HTTP/1.1 201" || echo "$RESULT" | grep -q "HTTP/1.1 409"; then
@@ -640,7 +641,7 @@ create_test_client_via_api() {
     # Try a simpler approach
     echo "Trying alternative approach with simplified JSON..."
     local SIMPLIFIED_JSON="{\"clientId\":\"api-test-client\",\"enabled\":true}"
-    local RETRY_RESULT=$(docker exec $CURL_TOOLS_CONTAINER bash -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${SIMPLIFIED_JSON}' 2>&1")
+    local RETRY_RESULT=$(docker exec $CURL_TOOLS_CONTAINER /bin/sh -c "TOKEN=\$(curl -s -X POST '${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token' -H 'Content-Type: application/x-www-form-urlencoded' -d 'username=${KEYCLOAK_ADMIN}' -d 'password=${KEYCLOAK_ADMIN_PASSWORD}' -d 'grant_type=password' -d 'client_id=admin-cli' | jq -r '.access_token') && curl -v -X POST '${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/clients' -H \"Authorization: Bearer \$TOKEN\" -H 'Content-Type: application/json' -d '${SIMPLIFIED_JSON}' 2>&1")
     
     if echo "$RETRY_RESULT" | grep -q "HTTP/1.1 201" || echo "$RETRY_RESULT" | grep -q "HTTP/1.1 409"; then
       echo "✅ Test client created successfully with simplified JSON"
@@ -736,6 +737,17 @@ generate_browser_script || echo "⚠️ Browser script generation had issues, co
 
 # Step 9: Fix frontend translations
 fix_frontend_translations || echo "⚠️ Frontend translations fix had issues, continuing..."
+
+# Configure country-specific Identity Providers
+echo "Configuring country-specific Identity Providers..."
+if [ -f "/opt/keycloak/configure-country-idps.sh" ]; then
+  # Fix the path in the script to match the mounted volume path
+  sed -i 's|/opt/keycloak/identity-providers|/identity-providers|g' /opt/keycloak/configure-country-idps.sh
+  /opt/keycloak/configure-country-idps.sh
+  echo "✅ Country-specific Identity Providers configured successfully"
+else
+  echo "⚠️ Country IdP configuration script not found. Skipping..."
+fi
 
 # Mark configuration as complete
 echo "completed" > /tmp/keycloak-config/status

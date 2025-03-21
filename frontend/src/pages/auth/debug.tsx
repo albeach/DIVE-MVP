@@ -134,7 +134,7 @@ export default function AuthDebugPage() {
             {isRefreshing ? <><Spinner size="sm" /> Refreshing...</> : 'Refresh Token'}
           </Button>
         ) : (
-          <Button variant="primary" onClick={login}>
+          <Button variant="primary" onClick={() => login()}>
             Log In
           </Button>
         )}

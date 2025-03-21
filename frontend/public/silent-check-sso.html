@@ -3,17 +3,64 @@
 
 <head>
     <meta charset="utf-8">
-    <title>Silent SSO check</title>
+    <title>Silent SSO Check</title>
     <script>
-        // This file is used for silent Keycloak authentication checks
-        // It receives authentication information and sends it back to the parent window
-        parent.postMessage(location.href, location.origin);
+        // This page is used by Keycloak for silent authentication check
+        // It communicates with the parent window using postMessage
+        window.onload = function () {
+            try {
+                // Extract parameters from URL
+                const params = new URLSearchParams(window.location.search);
+                const urlHash = window.location.hash;
+
+                // Log that we're processing the SSO check
+                console.log('Processing silent SSO check', {
+                    url: window.location.href,
+                    hasOpener: window.opener !== null
+                });
+
+                // Check if window.opener exists before trying to post a message
+                if (!window.opener) {
+                    console.log('No opener window found, redirecting to home');
+                    // If no opener, redirect to home page
+                    window.location.href = '/';
+                    return;
+                }
+
+                // Send message to parent window
+                console.log('Sending message to parent');
+
+                if (urlHash && urlHash.includes('error=login_required')) {
+                    // If login is required, send appropriate message
+                    window.opener.postMessage({
+                        type: 'login-required'
+                    }, window.location.origin);
+                } else {
+                    // Otherwise send the URL for processing
+                    window.opener.postMessage(window.location.href, window.location.origin);
+                }
+            } catch (error) {
+                console.error('Error in silent-check-sso.html:', error);
+
+                // Handle error gracefully
+                if (window.opener) {
+                    // Send error message to parent if it exists
+                    window.opener.postMessage({
+                        type: 'error',
+                        error: 'Silent authentication check failed'
+                    }, window.location.origin);
+                } else {
+                    // If no opener, redirect to home page
+                    window.location.href = '/';
+                }
+            }
+        };
     </script>
 </head>
 
 <body>
     <!-- This page is used for silent authentication checks -->
-    <p>Authentication check in progress...</p>
+    <p>Silent SSO check in progress...</p>
 </body>
 
 </html>

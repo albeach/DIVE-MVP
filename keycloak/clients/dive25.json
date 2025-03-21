@@ -1,0 +1,87 @@
+{
+    "clientId": "dive25",
+    "rootUrl": "https://dive25.local:8443",
+    "adminUrl": "https://dive25.local:8443",
+    "surrogateAuthRequired": false,
+    "enabled": true,
+    "alwaysDisplayInConsole": false,
+    "clientAuthenticatorType": "client-secret",
+    "redirectUris": [
+        "https://dive25.local:8443/*",
+        "https://dive25.local:8443/callback",
+        "https://keycloak.dive25.local:8443/*",
+        "https://dive25.local:8443/auth/callback",
+        "https://dive25.local:8443/auth/*",
+        "https://keycloak.dive25.local:8443/realms/dive25/broker/*/endpoint*"
+    ],
+    "webOrigins": [
+        "https://dive25.local:8443",
+        "https://keycloak.dive25.local:8443",
+        "+"
+    ],
+    "notBefore": 0,
+    "bearerOnly": false,
+    "consentRequired": false,
+    "standardFlowEnabled": true,
+    "implicitFlowEnabled": false,
+    "directAccessGrantsEnabled": true,
+    "serviceAccountsEnabled": false,
+    "publicClient": true,
+    "frontchannelLogout": false,
+    "protocol": "openid-connect",
+    "fullScopeAllowed": true,
+    "attributes": {
+        "backchannel.logout.session.required": "true",
+        "backchannel.logout.revoke.offline.tokens": "false",
+        "backchannel.logout.online.sessions": "false"
+    },
+    "nodeReRegistrationTimeout": -1,
+    "protocolMappers": [
+        {
+            "name": "username",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-usermodel-property-mapper",
+            "consentRequired": false,
+            "config": {
+                "user.attribute": "username",
+                "claim.name": "preferred_username",
+                "jsonType.label": "String"
+            }
+        },
+        {
+            "name": "email",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-usermodel-property-mapper",
+            "consentRequired": false,
+            "config": {
+                "user.attribute": "email",
+                "claim.name": "email",
+                "jsonType.label": "String"
+            }
+        },
+        {
+            "name": "roles",
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-usermodel-realm-role-mapper",
+            "consentRequired": false,
+            "config": {
+                "multivalued": "true",
+                "user.attribute": "roles",
+                "claim.name": "roles",
+                "jsonType.label": "String"
+            }
+        }
+    ],
+    "defaultClientScopes": [
+        "web-origins",
+        "roles",
+        "profile",
+        "email"
+    ],
+    "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+    ]
+}

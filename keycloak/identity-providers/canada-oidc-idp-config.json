@@ -1,0 +1,29 @@
+{
+    "alias": "canada-oidc",
+    "displayName": "Canada Government OIDC",
+    "providerId": "oidc",
+    "enabled": true,
+    "updateProfileFirstLoginMode": "on",
+    "trustEmail": true,
+    "storeToken": false,
+    "addReadTokenRoleOnCreate": false,
+    "authenticateByDefault": false,
+    "linkOnly": false,
+    "firstBrokerLoginFlowAlias": "first broker login",
+    "config": {
+        "clientId": "canada-client",
+        "clientSecret": "test-client-secret",
+        "tokenUrl": "https://keycloak.dive25.local:8443/realms/mock-idp/protocol/openid-connect/token",
+        "authorizationUrl": "https://keycloak.dive25.local:8443/realms/mock-idp/protocol/openid-connect/auth",
+        "jwksUrl": "https://keycloak.dive25.local:8443/realms/mock-idp/protocol/openid-connect/certs",
+        "userInfoUrl": "https://keycloak.dive25.local:8443/realms/mock-idp/protocol/openid-connect/userinfo",
+        "logoutUrl": "https://keycloak.dive25.local:8443/realms/mock-idp/protocol/openid-connect/logout",
+        "validateSignature": "true",
+        "useJwksUrl": "true",
+        "clientAuthMethod": "client_secret_basic",
+        "syncMode": "IMPORT",
+        "defaultScope": "openid profile email",
+        "disableUserInfo": "false",
+        "allowedClockSkew": "10"
+    }
+}

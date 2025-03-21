@@ -104,13 +104,17 @@ function App({ Component, pageProps }: AppProps) {
     '/unauthorized',
     '/404',
     '/500',
+    '/country-select',
   ].includes(router.pathname);
   
-  // Check if we're on the landing page
-  const isLandingPage = router.pathname === '/';
+  // Check if we're on the landing page or country selection page or accessing Keycloak URLs
+  const isPublicPage = router.pathname === '/' || 
+                       router.pathname === '/country-select' ||
+                       router.pathname.includes('/broker/') ||
+                       router.pathname.includes('/realms/');
   
-  // Only auto-initialize auth if not on landing page
-  const shouldAutoInitialize = !isLandingPage;
+  // Only auto-initialize auth if not on public pages
+  const shouldAutoInitialize = !isPublicPage;
 
   if (!isClient) {
     return null;

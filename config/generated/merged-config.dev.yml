@@ -109,6 +109,44 @@ networks:
 # Logging Configuration (more verbose for development)
 logging:
   level: debug
+# Security Headers Configuration
+security:
+  headers:
+    keycloak:
+      # Fix for CSP header issues
+      skip_csp: false
+      add:
+        - "Strict-Transport-Security:max-age=31536000; includeSubDomains"
+        - "X-XSS-Protection:1; mode=block"
+        - "X-Content-Type-Options:nosniff"
+        - "X-Frame-Options:SAMEORIGIN"
+        - "Content-Security-Policy:frame-ancestors 'self'; frame-src 'self'; object-src 'none'; base-uri 'self'; default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:"
+    global:
+      add:
+        - "X-Frame-Options:SAMEORIGIN"
+        - "X-XSS-Protection:1; mode=block"
+        - "X-Content-Type-Options:nosniff"
+        - "Referrer-Policy:strict-origin-when-cross-origin"
+        - "Content-Security-Policy:frame-ancestors 'self'; frame-src 'self'; object-src 'none'"
+# CORS Configuration
+cors:
+  allowed_origins:
+    - http://localhost:3001
+    - http://localhost:3002
+    - http://localhost:8080
+    - http://localhost:8000
+    - http://frontend.localhost:3001
+    - http://api.localhost:3002
+    - http://keycloak.localhost:8080
+# API configuration
+api:
+  url: https://api.dive25.local:8443
+  internal_url: http://api:8080
+  version: v1
+# Frontend configuration
+frontend:
+  url: https://frontend.dive25.local:8443
+  internal_url: http://frontend:3000
 # Environment Settings
 environment: development
 base_domain: localhost
@@ -146,16 +184,6 @@ external_ports:
   konga: 1337
   mongodb_exporter: 9216
   node_exporter: 9100
-# CORS Configuration
-cors:
-  allowed_origins:
-    - http://localhost:3001
-    - http://localhost:3002
-    - http://localhost:8080
-    - http://localhost:8000
-    - http://frontend.localhost:3001
-    - http://api.localhost:3002
-    - http://keycloak.localhost:8080
 # SSL/TLS Configuration (for development - self-signed)
 ssl:
   cert_path: ./certs/dev-cert.pem

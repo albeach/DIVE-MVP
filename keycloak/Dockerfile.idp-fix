@@ -1,0 +1,65 @@
+FROM curlimages/curl:latest
+
+USER root
+
+# Install bash and jq for JSON processing
+RUN apk add --no-cache bash jq
+
+# Create directory structure
+RUN mkdir -p /tmp/keycloak-config /identity-providers
+
+# Set permissions for the tmp directory
+RUN chmod -R 777 /tmp/keycloak-config /identity-providers
+
+# Copy identity provider configurations
+COPY ./identity-providers/uk-oidc-idp-config.json /identity-providers/
+COPY ./identity-providers/usa-oidc-idp-config.json /identity-providers/
+COPY ./identity-providers/canada-oidc-idp-config.json /identity-providers/
+COPY ./identity-providers/australia-oidc-idp-config.json /identity-providers/
+COPY ./identity-providers/newzealand-oidc-idp-config.json /identity-providers/
+
+# Copy our configuration script
+COPY ./configure-country-idps.sh /configure-country-idps.sh
+RUN chmod +x /configure-country-idps.sh
+
+# Create a simple script to wait for Keycloak and then run the configuration
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+MAX_RETRIES=60\n\
+RETRY_INTERVAL=5\n\
+count=0\n\
+echo "Starting IdP configuration script..."\n\
+\n\
+# Modify the script to use the correct paths\n\
+sed -i "s|/opt/keycloak/identity-providers|/identity-providers|g" /configure-country-idps.sh\n\
+\n\
+echo "Waiting for Keycloak to be ready at ${KEYCLOAK_URL:-http://keycloak:8080}..."\n\
+\n\
+while [ $count -lt $MAX_RETRIES ]; do\n\
+  if curl -s --fail "${KEYCLOAK_URL:-http://keycloak:8080}" > /dev/null; then\n\
+    echo "Keycloak is ready, executing configuration script..."\n\
+    # Run the IdP configuration script\n\
+    /bin/bash /configure-country-idps.sh\n\
+    exit_code=$?\n\
+    if [ $exit_code -eq 0 ]; then\n\
+      echo "✅ Identity providers configured successfully!"\n\
+      exit 0\n\
+    else\n\
+      echo "❌ Identity provider configuration failed with exit code $exit_code"\n\
+      exit $exit_code\n\
+    fi\n\
+  fi\n\
+  echo "Attempt $((count+1))/$MAX_RETRIES: Keycloak not ready yet, waiting..."\n\
+  count=$((count+1))\n\
+  sleep $RETRY_INTERVAL\n\
+done\n\
+echo "Keycloak did not become ready after $MAX_RETRIES attempts"\n\
+# If Keycloak did not become ready, exit with an error\n\
+exit 1\n\
+' > /entrypoint.sh && \
+chmod +x /entrypoint.sh
+
+USER curl_user
+
+ENTRYPOINT ["/bin/bash", "/entrypoint.sh"] 

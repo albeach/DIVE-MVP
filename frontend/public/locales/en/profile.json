@@ -1,15 +1,15 @@
 {
-    "title": "My Profile",
+    "title": "User Profile",
     "personalInformation": "Personal Information",
     "fullName": "Full Name",
     "username": "Username",
     "email": "Email",
     "organization": "Organization",
     "country": "Country of Affiliation",
-    "clearance": "Clearance",
-    "caveats": "Caveats",
+    "clearance": "Security Clearance",
+    "caveats": "Security Caveats",
     "communities": "Communities of Interest",
-    "roles": "Roles",
+    "roles": "System Roles",
     "sessionInformation": "Session Information",
     "lastLogin": "Last Login",
     "sessionStatus": "Session Status",
@@ -23,14 +23,5 @@
     "developerTools": "Developer Tools",
     "noCaveatsAssigned": "No caveats assigned",
     "noCommunitiesAssigned": "No communities assigned",
-    "noRolesAssigned": "No roles assigned",
-    "showToken": "Show Token Info",
-    "hideToken": "Hide Token Info",
-    "tokenInformation": "Token Information",
-    "avatar": {
-        "change": "Change profile photo",
-        "invalidType": "Only image files are allowed",
-        "fileTooBig": "File exceeds 5MB size limit",
-        "uploadFailed": "Failed to upload avatar"
-    }
+    "noRolesAssigned": "No roles assigned"
 }
