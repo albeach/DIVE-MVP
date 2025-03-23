@@ -614,14 +614,25 @@ services:
   curl_tools:
     image: alpine:latest
     container_name: ${PROJECT_PREFIX:-dive25}-curl-tools
-    entrypoint: ["sh", "-c", "apk add --no-cache curl jq && sleep 3600"]
+    restart: unless-stopped
+    command: >
+      sh -c "apk add --no-cache curl jq bash bind-tools ca-certificates net-tools tcpdump iputils && 
+      mkdir -p /tmp/certs && 
+      echo 'Test container ready for debugging...' && 
+      tail -f /dev/null"
+    volumes:
+      - ./certs:/certs:ro
+      - ./certs:/tmp/certs:ro
     networks:
       - dive25-public
       - dive25-service
-    depends_on:
-      - kong
-      - frontend
-      - api
+      - dive25-data
+      - dive25-admin
+    healthcheck:
+      test: ["CMD", "curl", "--version"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
 networks:
   # Public-facing network for edge services

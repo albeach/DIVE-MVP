@@ -49,6 +49,37 @@ Comprehensive documentation is available in the `docs` directory:
 - [Infinite Redirection Fix](docs/troubleshooting/infinite-redirection-fix.md) - Resolving Keycloak/Kong redirection loops
 - [Common Issues](docs/troubleshooting/common-issues.md) - Solutions to frequently encountered problems
 
+## Recent Improvements to Setup Scripts
+
+The deployment scripts have been enhanced with the following improvements:
+
+- **Modular Script Organization**: Scripts are now organized in a modular structure under `modular-scripts/` directory
+- **Error Handling Improvements**: Better error handling with detailed feedback
+- **Script Permission Check**: Automatic verification and fixing of script executable permissions
+- **Automated Testing**: Simple test script in `test-dive-setup.sh` to verify deployment functionality
+- **Non-Interactive Mode**: Support for CI/CD environments with non-interactive deployment
+- **Cleanup Enhancements**: Smarter cleanup that detects when there are no containers/volumes to remove
+
+### Running the Setup Script
+
+To use the enhanced setup script:
+
+```bash
+# Basic setup
+./setup.sh
+
+# Clean setup in fast mode (for testing)
+./setup.sh --clean --fast
+
+# Run verification checks only
+./setup.sh --verify-only
+
+# Run in test mode
+./test-dive-setup.sh
+```
+
+For more detailed setup options, run `./setup.sh --help`
+
 ### For More Documentation
 
 See the [Documentation Index](docs/index.md) for a complete list of available documentation.
