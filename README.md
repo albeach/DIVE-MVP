@@ -17,6 +17,35 @@ The system comprises several components:
 
 For a detailed architecture overview, see [System Architecture Documentation](docs/architecture/overview.md).
 
+## Internal Service Communication
+
+The DIVE25 architecture uses the following networking approach:
+- **External communications** use HTTPS (TLS/SSL) via Kong API Gateway for security
+- **Internal container-to-container communications** use HTTP for efficiency and simplicity
+
+Important implementation details:
+1. All services listen on all network interfaces (`0.0.0.0`) to allow inter-container communication
+2. Kong provides TLS termination at the edge, internally using HTTP to communicate with backend services
+3. Docker networks provide network isolation and security for internal communications
+4. The ENVIRONMENT variable (dev, staging, prod) needs to be explicitly passed to docker-compose commands to ensure consistent container naming
+
+When running any DIVE25 scripts or docker commands, set the ENVIRONMENT variable to determine which environment you're working with:
+
+```bash
+# For development environment
+export ENVIRONMENT=dev
+
+# For staging environment
+export ENVIRONMENT=staging 
+
+# For production environment
+export ENVIRONMENT=prod
+```
+
+This ensures all containers will be created with the appropriate prefix (e.g., dive25-staging-kong), making it easier to identify containers in mixed environments.
+
+The API service has been explicitly configured to use HTTP internally while maintaining secure HTTPS endpoints for external access through Kong.
+
 ## Documentation
 
 Comprehensive documentation is available in the `docs` directory:
@@ -65,20 +94,26 @@ The deployment scripts have been enhanced with the following improvements:
 To use the enhanced setup script:
 
 ```bash
-# Basic setup
-./setup.sh
+# Basic setup (development environment)
+./bin/dive-setup.sh
+
+# For staging environment
+export ENVIRONMENT=staging && ./bin/dive-setup.sh
+
+# For production environment 
+export ENVIRONMENT=prod && ./bin/dive-setup.sh
 
 # Clean setup in fast mode (for testing)
-./setup.sh --clean --fast
+./bin/dive-setup.sh --clean --fast
 
 # Run verification checks only
-./setup.sh --verify-only
+./bin/dive-setup.sh --verify-only
 
 # Run in test mode
 ./test-dive-setup.sh
 ```
 
-For more detailed setup options, run `./setup.sh --help`
+For more detailed setup options, run `./bin/dive-setup.sh --help`
 
 ### For More Documentation
 
@@ -99,6 +134,64 @@ The DIVE25 system can be deployed in three environments:
 - **DEV**: Local development environment with Docker Compose
 - **TEST**: Testing/Staging environment on Kubernetes
 - **PROD**: Production environment on Kubernetes
+
+### Clean Deployment Steps
+
+For a completely clean deployment (as if running on a new computer), follow these steps:
+
+1. **Stop and remove all containers and volumes**:
+   ```bash
+   # This removes all containers, networks, and volumes associated with the project
+   docker-compose down -v
+   ```
+
+2. **Verify no containers or volumes remain**:
+   ```bash
+   # Check for any remaining containers
+   docker ps -a | grep dive
+   
+   # Check for any remaining volumes
+   docker volume ls | grep dive
+   ```
+
+3. **Ensure certificates are correctly set up**:
+   ```bash
+   # Check if the required certificate files exist
+   ls -la ./certs/tls.crt ./certs/tls.key
+   
+   # If they don't exist, create them from existing certificates
+   cp ./certs/cert.pem ./certs/tls.crt
+   cp ./certs/key.pem ./certs/tls.key
+   ```
+
+4. **Run the deployment script**:
+   ```bash
+   # For a fast deployment (skips some non-essential steps)
+   ./bin/dive-setup.sh --fast
+   
+   # For a complete deployment
+   ./bin/dive-setup.sh
+   ```
+
+5. **Check for successful deployment**:
+   ```bash
+   # Verify that all services are running
+   docker ps
+   
+   # Check the Keycloak logs to ensure it started successfully
+   docker logs dive25-staging-keycloak
+   
+   # Test access to Keycloak
+   curl -k https://localhost:8444
+   ```
+
+This process ensures:
+- All previous Docker artifacts are completely removed
+- TLS certificates are properly configured
+- Database volumes start fresh with no schema issues
+- All services are properly linked in a consistent state
+
+**Note**: When upgrading Keycloak versions or making significant configuration changes, a clean deployment is recommended to avoid database schema inconsistencies.
 
 ### Universal Deployment Script
 
@@ -469,6 +562,31 @@ If you encounter authentication issues, try the following:
    127.0.0.1 dive25.local frontend.dive25.local api.dive25.local keycloak.dive25.local
    ```
 5. Ensure that you're accepting any SSL certificate warnings in your browser
+
+For more detailed information, see the [Authentication Troubleshooting Guide](./docs/troubleshooting/infinite-redirection-fix.md).
+
+#### Keycloak Database Schema Issues
+
+If you encounter errors related to Keycloak database schema validation such as:
+
+```
+Database up-to-date for version: 21.0.2
+Failed to verify database: 
+org.keycloak.migration.MigrationException: Migration validation failed, see your log for details
+...
+Checksum validation failed for [...]
+```
+
+This indicates a mismatch between the expected database schema and what's present in the PostgreSQL volume. This can happen when:
+
+1. Upgrading Keycloak versions
+2. Making configuration changes that affect the database schema
+3. A previous database migration was interrupted
+
+**Solution:**
+Perform a clean deployment using the steps in the [Clean Deployment Steps](#clean-deployment-steps) section. This will remove all volumes including the PostgreSQL database, allowing Keycloak to initialize a fresh database with the correct schema.
+
+**Never** disable schema validation with `KC_DB_SCHEMA_UPDATE_VALIDATE: false` as this can lead to data corruption or unexpected behavior.
 
 For more detailed information, see the [Authentication Troubleshooting Guide](./docs/troubleshooting/infinite-redirection-fix.md).
 

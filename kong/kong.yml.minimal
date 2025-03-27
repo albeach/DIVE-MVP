@@ -1,0 +1,33 @@
+_format_version: "2.1"
+_transform: true
+
+# Services Configuration
+services:
+  # Frontend Service
+  - name: frontend-service
+    url: http://frontend:3000
+    routes:
+      - name: frontend-route
+        protocols: ["http", "https"]
+        hosts: ["dive25.local", "frontend.dive25.local"]
+        paths: ["/"]
+        strip_path: false
+
+  # API Service
+  - name: api-service
+    url: http://api:3000
+    routes:
+      - name: api-route
+        protocols: ["http", "https"]
+        hosts: ["api.dive25.local"]
+        paths: ["/"]
+        strip_path: false
+  
+  # Keycloak Service
+  - name: keycloak-service
+    url: http://keycloak:8080
+    routes:
+      - name: keycloak-route
+        protocols: ["http", "https"]
+        hosts: ["keycloak.dive25.local"]
+        strip_path: true 
