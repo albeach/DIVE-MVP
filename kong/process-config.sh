@@ -29,7 +29,8 @@ echo "KEYCLOAK_CLIENT_ID_API: $KEYCLOAK_CLIENT_ID_API"
 
 # Process the template file
 TEMPLATE_FILE="/etc/kong/kong.yml.template"
-CONFIG_FILE="/etc/kong/kong.yml"
+CONFIG_FILE="/tmp/kong-config/kong.yml"
+FINAL_CONFIG_FILE="/etc/kong/kong.yml"
 
 if [ -f "$TEMPLATE_FILE" ]; then
   echo "Found template file at $TEMPLATE_FILE"
@@ -43,7 +44,7 @@ if [ -f "$TEMPLATE_FILE" ]; then
   # Create a backup of the template file
   cp "$TEMPLATE_FILE" "${TEMPLATE_FILE}.bak" || echo "Warning: Failed to create backup of template file"
   
-  # Process the template with environment variable substitution
+  # Process the template with environment variable substitution to a writable temp directory
   echo "Processing template and writing to $CONFIG_FILE"
   envsubst < "$TEMPLATE_FILE" > "$CONFIG_FILE"
   
@@ -59,6 +60,10 @@ if [ -f "$TEMPLATE_FILE" ]; then
       echo "Check template file for proper variable syntax (should use \${VARIABLE_NAME})."
     else
       echo "Config file size: ${CONFIG_SIZE} bytes (looks good)"
+      
+      # Set KONG_DECLARATIVE_CONFIG to point to our generated config
+      export KONG_DECLARATIVE_CONFIG="$CONFIG_FILE"
+      echo "KONG_DECLARATIVE_CONFIG set to: $KONG_DECLARATIVE_CONFIG"
     fi
   else
     echo "❌ Error: Failed to create config file"
@@ -70,8 +75,9 @@ else
   ls -la /etc/kong/
   
   # If we have a non-template config file, use that
-  if [ -f "/etc/kong/kong.yml" ]; then
-    echo "Found direct config file at /etc/kong/kong.yml. Using as-is."
+  if [ -f "$FINAL_CONFIG_FILE" ]; then
+    echo "Found direct config file at $FINAL_CONFIG_FILE. Using as-is."
+    export KONG_DECLARATIVE_CONFIG="$FINAL_CONFIG_FILE"
   else
     echo "No config file found. Kong may use default configuration or fail."
   fi

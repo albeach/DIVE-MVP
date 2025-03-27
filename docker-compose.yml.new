@@ -1,0 +1,375 @@
+version: '3.8'
+
+services:
+
+  # Database Services
+  
+  mongodb:
+    image: mongo:6.0
+    container_name: dive25-${ENVIRONMENT:-dev}-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin_password
+      MONGO_INITDB_DATABASE: dive25
+    volumes:
+      - mongo_data:/data/db
+      - ./mongodb/init-mongo.js:/docker-entrypoint-initdb.d/init-mongo.js:ro
+      - ./mongodb/mongod.conf:/etc/mongod.conf:ro
+    networks:
+      - dive25-data
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # MongoDB Express for MongoDB administration
+  mongo-express:
+    image: mongo-express:latest
+    container_name: dive25-${ENVIRONMENT:-dev}-mongo-express
+    restart: unless-stopped
+    ports:
+      - "4435:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: admin
+      ME_CONFIG_MONGODB_ADMINPASSWORD: admin_password
+      ME_CONFIG_MONGODB_URL: mongodb://admin:admin_password@dive25-${ENVIRONMENT:-dev}-mongodb:27017/admin?authSource=admin
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD:-admin_password}
+      ME_CONFIG_SITE_COOKIESECRET: cookiesecret
+      ME_CONFIG_SITE_SESSIONSECRET: sessionsecret
+      ME_CONFIG_OPTIONS_EDITORTHEME: ambiance
+    depends_on:
+      - mongodb
+    networks:
+      - dive25-admin
+      - dive25-data  # Needs access to MongoDB
+
+  # PostgreSQL for Keycloak
+  postgres:
+    image: postgres:15
+    container_name: dive25-${ENVIRONMENT:-dev}-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - dive25-data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # OpenLDAP Directory Service
+  openldap:
+    image: osixia/openldap:latest
+    container_name: dive25-${ENVIRONMENT:-dev}-openldap
+    restart: unless-stopped
+    environment:
+      LDAP_ORGANISATION: "DIVE25"
+      LDAP_DOMAIN: "dive25.local"
+      LDAP_BASE_DN: dc=dive25,dc=local
+      LDAP_ADMIN_PASSWORD: admin_password
+      LDAP_CONFIG_PASSWORD: config_password
+      LDAP_READONLY_USER: "true"
+      LDAP_READONLY_USER_USERNAME: "readonly"
+      LDAP_READONLY_USER_PASSWORD: readonly_password
+      LDAP_TLS: "false"
+      LDAP_SKIP_DEFAULT_BOOTSTRAP: "false"
+      LDAP_REPLICATION: "false"
+      LDAP_REMOVE_CONFIG_AFTER_SETUP: "false"
+    volumes:
+      - ldap_data:/var/lib/ldap
+      - ldap_config:/etc/ldap/slapd.d
+      - ./openldap/bootstrap:/container/service/slapd/assets/config/bootstrap
+    networks:
+      - dive25-data
+    healthcheck:
+      test: ["CMD", "ldapsearch", "-x", "-H", "ldap://localhost:389", "-D", "cn=admin,dc=dive25,dc=local", "-w", "admin_password", "-b", "dc=dive25,dc=local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Infrastructure Services
+
+  # Keycloak Identity Provider
+  keycloak:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile
+    container_name: dive25-${ENVIRONMENT:-dev}-keycloak
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_URL_HOST: dive25-${ENVIRONMENT:-dev}-postgres
+      KC_DB_URL_PORT: 5432
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_FEATURES: admin-api,impersonation,import-realm
+      # CSP settings
+      KC_SPI_CONTENT_SECURITY_POLICY_ENABLED: "true"
+      KC_PROXY: edge
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_PORT: 8443
+      # Use consistent domain/URL configuration
+      KC_HOSTNAME: "${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-dive25.local}"
+      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME_STRICT_HTTPS: "true"
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_SUPPRESS_LOGOUT_CONFIRMATION_SCREEN: "true"
+      KC_SPI_EVENTS_LISTENER: "jboss-logging,admin-event-listener"
+      KC_HTTP_CORS: "true"
+      KC_HTTP_CORS_ALLOWED_ORIGINS: "https://${FRONTEND_DOMAIN:-frontend}.${BASE_DOMAIN:-dive25.local},https://${API_DOMAIN:-api}.${BASE_DOMAIN:-dive25.local},https://${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-dive25.local},https://${KONG_DOMAIN:-kong}.${BASE_DOMAIN:-dive25.local},https://${BASE_DOMAIN:-dive25.local}"
+      KC_HTTP_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,OPTIONS"
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_OVERRIDE_WELL_KNOWN: "true"
+      KC_SPI_HOSTNAME_DEFAULT_FRONTEND_URL: "https://${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-dive25.local}:8443"
+      KC_SPI_LOGIN_PROTOCOL_OPENID_CONNECT_LEGACY_LOGOUT_REDIRECT_URI: "true"
+      # Force port 8443 for all Keycloak URLs
+      KC_HOSTNAME_PORT: "8443"
+      KC_HOSTNAME_PORT_HTTPS: "8443"
+      # Additional settings to ensure consistent port usage
+      KC_SPI_HOSTNAME_DEFAULT_HOSTNAME: "${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-dive25.local}"
+      KC_SPI_HOSTNAME_DEFAULT_HOSTNAME_PORT: "8443"
+      KC_SPI_HOSTNAME_DEFAULT_ADMIN_URL: "https://${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-dive25.local}:8443"
+    volumes:
+      - keycloak_data:/opt/keycloak/data
+      - ./certs:/opt/keycloak/certs:ro
+    ports:
+      - "8444:8443"  # External HTTPS access
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dive25-service
+      - dive25-data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # Keycloak Configuration
+  keycloak-config:
+    build:
+      context: ./keycloak
+      dockerfile: Dockerfile.config
+    container_name: dive25-${ENVIRONMENT:-dev}-keycloak-config
+    # This container is designed to exit after successful configuration
+    # It will exit with code 0 when complete - this is expected behavior
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./config/keycloak/realm-export.json:/realm-export.json:ro
+      - ./keycloak/identity-providers:/opt/keycloak/data/identity-providers:ro
+      - ./keycloak/test-users:/test-users:ro
+      - ./keycloak/clients:/clients:ro
+      - keycloak_config_data:/tmp/keycloak-config
+    environment:
+      - KEYCLOAK_URL=http://keycloak:8080
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - PUBLIC_KEYCLOAK_URL=https://${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-dive25.local}:8443
+      - PUBLIC_FRONTEND_URL=https://${FRONTEND_DOMAIN:-frontend}.${BASE_DOMAIN:-dive25.local}
+      - PUBLIC_API_URL=https://${API_DOMAIN:-api}.${BASE_DOMAIN:-dive25.local}
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM:-dive25}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-dive25-frontend}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
+      - KEYCLOAK_CONTAINER=dive25-${ENVIRONMENT:-dev}-keycloak
+    networks:
+      - dive25-service
+    # Only restart in case of failure, not after successful completion
+    restart: no
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/keycloak-config/realm-ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # OPA Policy Agent
+  opa:
+    build:
+      context: ./opa
+      dockerfile: Dockerfile
+    container_name: dive25-${ENVIRONMENT:-dev}-opa
+    restart: unless-stopped
+    volumes:
+      - ./opa/policies:/opt/opa/policies:ro
+      - opa_data:/data
+    networks:
+      - dive25-service
+
+  # Kong API Gateway (DB-less mode)
+  kong:
+    build:
+      context: ./kong
+      dockerfile: Dockerfile
+    container_name: dive25-${ENVIRONMENT:-dev}-kong
+    restart: unless-stopped
+    environment:
+      # DB-less mode configuration
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: "/etc/kong/kong.yml"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001, 0.0.0.0:8444 ssl"
+      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
+      # Certificate paths
+      KONG_SSL_CERT: "/etc/kong/certs/dive25-cert.pem"
+      KONG_SSL_CERT_KEY: "/etc/kong/certs/dive25-key.pem"
+      # Additional configuration
+      KONG_PLUGINS: "bundled,oidc"
+      KONG_NGINX_HTTP_RESOLVER: "1.1.1.1 8.8.8.8"
+      KONG_NGINX_HTTP_LUA_SHARED_DICT: "sessions 10m"
+      KONG_MEM_CACHE_SIZE: "128m"
+      KONG_LOG_LEVEL: "notice"
+      # Environment variables for configuration template
+      BASE_DOMAIN: ${BASE_DOMAIN:-dive25.local}
+      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-frontend}
+      API_DOMAIN: ${API_DOMAIN:-api}
+      KEYCLOAK_DOMAIN: ${KEYCLOAK_DOMAIN:-keycloak}
+      KONG_DOMAIN: ${KONG_DOMAIN:-kong}
+      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-dive25}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-dive25-frontend}
+      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
+    volumes:
+      - ./certs:/etc/kong/certs:ro
+      - ./kong/plugins:/usr/local/kong/plugins:ro
+      - ./kong/kong.yml:/etc/kong/kong.yml:ro
+    ports:
+      - "4433:8000"
+      - "8443:8443"
+      - "9444:8001"
+      - "9445:8444"
+    networks:
+      - dive25-public
+      - dive25-service
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Kong Configuration
+  kong-config:
+    image: alpine:latest
+    container_name: dive25-${ENVIRONMENT:-dev}-kong-config
+    command: >
+      sh -c "
+      echo 'Waiting for Kong to be ready...' &&
+      apk add --no-cache curl jq &&
+      until curl -s http://kong:8001/status > /dev/null; do
+        echo 'Kong is not ready yet...'
+        sleep 5
+      done &&
+      echo 'Kong is ready!' &&
+      echo 'Applying configuration...' &&
+      cat /kong/kong.yml &&
+      curl -s -X POST http://kong:8001/config -H 'Content-Type: application/json' -d @/kong/kong.yml &&
+      echo 'Kong configuration applied!'
+      "
+    volumes:
+      - ./kong/kong.yml:/kong/kong.yml:ro
+    depends_on:
+      kong:
+        condition: service_healthy
+    networks:
+      - dive25-service
+    restart: on-failure:3
+
+  # Frontend Service
+  frontend:
+    image: nginx:alpine
+    container_name: dive25-${ENVIRONMENT:-dev}-frontend
+    restart: unless-stopped
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./certs:/etc/nginx/certs:ro
+    ports:
+      - "3001:3000"
+    networks:
+      - dive25-service
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # API Service
+  api:
+    image: node:18-alpine
+    container_name: dive25-${ENVIRONMENT:-dev}-api
+    restart: unless-stopped
+    working_dir: /app
+    command: sh -c "npm install && npm start"
+    volumes:
+      - ./api:/app:ro
+      - ./certs:/app/certs:ro
+    ports:
+      - "3002:3000"
+    environment:
+      - NODE_ENV=${ENVIRONMENT:-development}
+      - PORT=3000
+      - KEYCLOAK_URL=https://${KEYCLOAK_DOMAIN:-keycloak}.${BASE_DOMAIN:-dive25.local}:8443
+      - KEYCLOAK_REALM=${KEYCLOAK_REALM:-dive25}
+      - KEYCLOAK_CLIENT_ID=${KEYCLOAK_CLIENT_ID:-dive25-frontend}
+      - KEYCLOAK_CLIENT_SECRET=${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
+      - MONGODB_URI=mongodb://dive25-${ENVIRONMENT:-dev}-mongodb:27017/dive25
+    networks:
+      - dive25-service
+      - dive25-data  # Access to MongoDB
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Monitoring and Utils
+
+  # Curl Tools for Testing
+  curl-tools:
+    image: alpine:latest
+    container_name: dive25-${ENVIRONMENT:-dev}-curl-tools
+    command: sh -c "apk add --no-cache curl jq bash bind-tools ca-certificates && sleep 3600"
+    restart: unless-stopped
+    networks:
+      - dive25-public
+      - dive25-service
+      - dive25-data
+      - dive25-admin
+
+networks:
+  dive25-public:
+    driver: bridge
+  dive25-service:
+    driver: bridge
+  dive25-data:
+    driver: bridge
+  dive25-admin:
+    driver: bridge
+
+volumes:
+  mongo_data:
+  postgres_data:
+  keycloak_data:
+  keycloak_config_data:
+  ldap_data:
+  ldap_config:
+  opa_data: 

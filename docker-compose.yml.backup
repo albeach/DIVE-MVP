@@ -65,6 +65,25 @@ services:
       retries: 5
       start_period: 10s
 
+  # Kong PostgreSQL Database
+  kong-database:
+    image: postgres:13
+    container_name: dive25-staging-kong-database
+    environment:
+      POSTGRES_USER: kong
+      POSTGRES_DB: kong
+      POSTGRES_PASSWORD: kong_password
+    volumes:
+      - kong_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "kong"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - dive25-data
+
   # OpenLDAP Directory Service
   openldap:
     image: osixia/openldap:latest
@@ -140,8 +159,8 @@ services:
     ports:
       - "8444:8443"  # External HTTPS access
     depends_on:
-      - postgres
-
+      postgres:
+        condition: service_healthy
     networks:
       - dive25-service
       - dive25-data
@@ -162,8 +181,8 @@ services:
     # This container is designed to exit after successful configuration
     # It will exit with code 0 when complete - this is expected behavior
     depends_on:
-      - keycloak
-
+      keycloak:
+        condition: service_healthy
     volumes:
       - ./keycloak/realm-export.json:/realm-export.json:ro
       - ./keycloak/identity-providers:/opt/keycloak/data/identity-providers:ro
@@ -182,11 +201,6 @@ services:
       - KEYCLOAK_CLIENT_ID_API=dive25-api
       - KEYCLOAK_CLIENT_SECRET=change-me-in-production
       - KEYCLOAK_CONTAINER=dive25-staging-keycloak
-      # Add correct container names for staging environment
-      - KONG_CONTAINER=dive25-staging-kong
-      - FRONTEND_CONTAINER=dive25-staging-frontend
-      - API_CONTAINER=dive25-staging-api
-      - ENVIRONMENT=staging
     networks:
       - dive25-service
     # Only restart in case of failure, not after successful completion
@@ -211,6 +225,30 @@ services:
     networks:
       - dive25-service
 
+  # Kong Migrations
+  kong-migrations:
+    build:
+      context: ./kong
+      dockerfile: Dockerfile
+    container_name: dive25-staging-kong-migrations
+    command: kong migrations bootstrap
+    depends_on:
+      - kong-database
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: dive25-staging-kong-database
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      # Add environment variables for configuration template
+      BASE_DOMAIN: dive25.local
+      INTERNAL_FRONTEND_URL: http://frontend:3000
+      INTERNAL_API_URL: http://api:3000
+      INTERNAL_KEYCLOAK_URL: http://keycloak:8080
+      PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443
+    networks:
+      - dive25-data
+    restart: on-failure
+
   # Kong API Gateway
   kong:
     build:
@@ -218,64 +256,73 @@ services:
       dockerfile: Dockerfile
     container_name: dive25-staging-kong
     depends_on:
-      frontend:
-        condition: service_started
-      api:
-        condition: service_started
-    networks:
-      - dive25-public
-      - dive25-service
-      - dive25-admin
-    env_file:
-      - .env
-    environment:
-      # DB-less mode configuration
-      KONG_DATABASE: "off"
-      KONG_DECLARATIVE_CONFIG: "/etc/kong/kong.yml"
-      KONG_PROXY_ACCESS_LOG: /dev/stdout
-      KONG_ADMIN_ACCESS_LOG: /dev/stdout
-      KONG_PROXY_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_ERROR_LOG: /dev/stderr
-      KONG_ADMIN_LISTEN: "0.0.0.0:8001, 0.0.0.0:8444 ssl"
-      KONG_PROXY_LISTEN: "0.0.0.0:8000, 0.0.0.0:8443 ssl"
-      # Certificate paths
-      KONG_SSL_CERT: "/etc/kong/certs/dive25-cert.pem"
-      KONG_SSL_CERT_KEY: "/etc/kong/certs/dive25-key.pem"
-      # Additional configuration
-      KONG_PLUGINS: "bundled,oidc-auth"
-      KONG_NGINX_HTTP_RESOLVER: "1.1.1.1 8.8.8.8"
-      KONG_NGINX_HTTP_LUA_SHARED_DICT: "sessions 10m"
-      KONG_MEM_CACHE_SIZE: "128m"
-      KONG_LOG_LEVEL: ${KONG_LOG_LEVEL:-debug}
-      # Environment variables for configuration template
-      BASE_DOMAIN: ${BASE_DOMAIN:-dive25.local}
-      FRONTEND_DOMAIN: ${FRONTEND_DOMAIN:-frontend}
-      API_DOMAIN: ${API_DOMAIN:-api}
-      KEYCLOAK_DOMAIN: ${KEYCLOAK_DOMAIN:-keycloak}
-      KONG_DOMAIN: ${KONG_DOMAIN:-kong}
-      KEYCLOAK_REALM: ${KEYCLOAK_REALM:-dive25}
-      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-dive25-frontend}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:-change-me-in-production}
-    volumes:
-      - ./certs:/etc/kong/certs:ro
-      - ./kong/plugins:/usr/local/kong/plugins:ro
-      - ./kong/kong.yml:/etc/kong/kong.yml
-    ports:
-      - "${KONG_HTTP_PORT:-4433}:8000"
-      - "${KONG_HTTPS_PORT:-8443}:8443"
-      - "${KONG_ADMIN_PORT:-9444}:8001"
-      - "${KONG_ADMIN_PORT_SSL:-9445}:8444"
+      - kong-database
+    command: >
+      sh -c "if [ -f /usr/local/kong/pids/nginx.pid ]; then 
+               rm -f /usr/local/kong/pids/nginx.pid; 
+               echo 'Removed stale nginx.pid file'; 
+             fi &&
+             if [ -f /usr/local/kong/nginx.pid ]; then 
+               rm -f /usr/local/kong/nginx.pid; 
+               echo 'Removed stale nginx.pid file'; 
+             fi &&
+             /docker-entrypoint.sh kong docker-start"
+    restart: unless-stopped
     healthcheck:
       test: ["CMD", "kong", "health"]
       interval: 10s
       timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    extra_hosts:
-      - "dive25.local:127.0.0.1"
-      - "frontend.dive25.local:127.0.0.1"
-      - "api.dive25.local:127.0.0.1"
-      - "keycloak.dive25.local:127.0.0.1"
+      retries: 3
+      start_period: 10s
+    networks:
+      - dive25-public
+      - dive25-service
+      - dive25-data
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: dive25-staging-kong-database
+      KONG_PG_PORT: 5432
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong_password
+      KONG_PG_DATABASE: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
+      KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
+      # Add environment variables for configuration template
+      BASE_DOMAIN: dive25.local
+      INTERNAL_FRONTEND_URL: http://frontend:3000
+      INTERNAL_API_URL: http://api:3000
+      INTERNAL_KEYCLOAK_URL: http://keycloak:8080
+      INTERNAL_KEYCLOAK_AUTH_URL: http://keycloak:8080/auth
+      PUBLIC_KEYCLOAK_URL: https://keycloak.dive25.local:8443
+      PUBLIC_KEYCLOAK_AUTH_URL: https://keycloak.dive25.local:8443/auth
+      KEYCLOAK_REALM: dive25
+      KEYCLOAK_CLIENT_ID: dive25-frontend
+      KEYCLOAK_CLIENT_ID_API: dive25-api
+      KEYCLOAK_CLIENT_SECRET: change-me-in-production
+      SESSION_SECRET: your_session_secret
+      # Additional configuration
+      KONG_PLUGINS: bundled,ldap-auth,oidc-auth
+      KONG_SSL_CERT: /etc/kong/certs/dive25-cert.pem
+      KONG_SSL_CERT_KEY: /etc/kong/certs/dive25-key.pem
+      KONG_NGINX_HTTP_RESOLVER: 1.1.1.1 8.8.8.8
+      KONG_NGINX_HTTP_LUA_SHARED_DICT: sessions 10m
+      KONG_MEM_CACHE_SIZE: 128m
+      KONG_NGINX_WORKER_PROCESSES: 2
+      KONG_LOG_LEVEL: debug
+    volumes:
+      - ./certs:/etc/kong/certs:ro
+      - ./kong/certs:/usr/local/kong/certs:ro
+      - ./kong/plugins:/usr/local/kong/plugins:ro
+      - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
+    ports:
+      - "4433:8000"
+      - "8443:8443"
+      - "9444:8001"
+      - "9445:8444"
 
   # Optional: Kong Admin UI
   konga:
@@ -283,19 +330,20 @@ services:
     container_name: dive25-staging-konga
     environment:
       NODE_ENV: production
-      KONGA_HOOK_TIMEOUT: 120000
-      KONGA_ADMIN_USER: admin
-      KONGA_ADMIN_PASSWORD: admin
-      KONGA_DISABLE_GUI: false
-      KONGA_SKIP_SIGNUP: true
-      KONG_API_URL: http://kong:8001
+      DB_ADAPTER: postgres
+      DB_HOST: dive25-staging-kong-database
+      DB_PORT: 5432
+      DB_USER: kong
+      DB_PASSWORD: kong_password
+      DB_DATABASE: konga
     ports:
       - "4439:1337"
     depends_on:
+      - kong-database
       - kong
     networks:
       - dive25-admin
-      - dive25-service
+      - dive25-data  # Needs access to kong-database
     restart: unless-stopped
 
   # Kong Configuration
@@ -316,11 +364,6 @@ services:
       INTERNAL_KEYCLOAK_URL: http://keycloak:8080
       BASE_DOMAIN: dive25.local
       ENVIRONMENT: staging
-      # Add correct container names for the staging environment
-      KONG_CONTAINER: dive25-staging-kong
-      KEYCLOAK_CONTAINER: dive25-staging-keycloak
-      FRONTEND_CONTAINER: dive25-staging-frontend
-      API_CONTAINER: dive25-staging-api
     volumes:
       - ./kong/kong-configure-unified.sh:/app/kong-configure-unified.sh:ro
       - keycloak_config_data:/tmp/keycloak-config:ro
@@ -423,23 +466,23 @@ services:
       - dive25-admin  # Access for Prometheus to scrape metrics
 
   # Node Exporter for Host Metrics
-  # node-exporter:
-  #   image: prom/node-exporter:latest
-  #   container_name: dive25-staging-node-exporter
-  #   restart: unless-stopped
-  #   volumes:
-  #     - /proc:/host/proc:ro
-  #     - /sys:/host/sys:ro
-  #     - /:/rootfs:ro
-  #   command:
-  #     - '--path.procfs=/host/proc'
-  #     - '--path.sysfs=/host/sys'
-  #     - '--path.rootfs=/rootfs'
-  #     - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
-  #   ports:
-  #     - "4441:9100"
-  #   networks:
-  #     - dive25-admin  # Only needs to be accessible by Prometheus
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: dive25-staging-node-exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)'
+    ports:
+      - "4441:9100"
+    networks:
+      - dive25-admin  # Only needs to be accessible by Prometheus
 
   # LDAP Admin UI
   phpldapadmin:
@@ -490,7 +533,7 @@ services:
       JWT_SECRET: change-me-in-production
       LOG_LEVEL: info
       # Add HTTPS configuration
-      USE_HTTPS: false
+      USE_HTTPS: true
       SSL_CERT_PATH: /app/certs/tls.crt
       SSL_KEY_PATH: /app/certs/tls.key
     volumes:
@@ -585,26 +628,6 @@ services:
       timeout: 5s
       retries: 3
 
-  # Network Debugging Tools
-  netdebug:
-    image: nicolaka/netshoot
-    container_name: dive25-staging-netdebug
-    volumes:
-      - ./debug-scripts:/scripts
-    networks:
-      - dive25-public
-      - dive25-service
-      - dive25-data
-      - dive25-admin
-    command: sleep infinity
-    restart: unless-stopped
-    depends_on:
-      - frontend
-      - api
-      - kong
-    # Make sure the container stays running
-    tty: true
-
 networks:
   # Public-facing network for edge services
   dive25-public:
@@ -646,4 +669,5 @@ volumes:
   api_temp:
   api_logs:
   opa_data:
+  kong_data:
   keycloak_config_data: 

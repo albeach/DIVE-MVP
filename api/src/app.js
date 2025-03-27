@@ -381,7 +381,7 @@ if (useHttps) {
     server = http.createServer(app);
 }
 
-server.listen(config.port, async () => {
+server.listen(config.port, '0.0.0.0', async () => {
     try {
         // Connect to MongoDB if not in test mode
         if (process.env.SKIP_MONGODB !== 'true') {

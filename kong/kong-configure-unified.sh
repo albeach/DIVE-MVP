@@ -45,10 +45,23 @@ NC='\033[0m' # No Color
 # Default values
 KONG_ADMIN_URL=${KONG_ADMIN_URL:-"http://kong:8001"}
 BASE_DOMAIN=${BASE_DOMAIN:-"dive25.local"}
-KONG_CONTAINER=${KONG_CONTAINER:-dive25-kong}
-FRONTEND_CONTAINER=${FRONTEND_CONTAINER:-dive25-frontend}
-API_CONTAINER=${API_CONTAINER:-dive25-api}
-KEYCLOAK_CONTAINER=${KEYCLOAK_CONTAINER:-dive25-keycloak}
+
+# Handle environment-specific container names
+ENVIRONMENT=${ENVIRONMENT:-"dev"}
+if [ "$ENVIRONMENT" = "staging" ]; then
+  # Default container names for staging environment
+  KONG_CONTAINER=${KONG_CONTAINER:-"dive25-staging-kong"}
+  FRONTEND_CONTAINER=${FRONTEND_CONTAINER:-"dive25-staging-frontend"}
+  API_CONTAINER=${API_CONTAINER:-"dive25-staging-api"}
+  KEYCLOAK_CONTAINER=${KEYCLOAK_CONTAINER:-"dive25-staging-keycloak"}
+else
+  # Default container names for dev environment
+  KONG_CONTAINER=${KONG_CONTAINER:-"dive25-kong"}
+  FRONTEND_CONTAINER=${FRONTEND_CONTAINER:-"dive25-frontend"}
+  API_CONTAINER=${API_CONTAINER:-"dive25-api"}
+  KEYCLOAK_CONTAINER=${KEYCLOAK_CONTAINER:-"dive25-keycloak"}
+fi
+
 INTERNAL_FRONTEND_URL=${INTERNAL_FRONTEND_URL:-"http://frontend:3000"}
 INTERNAL_API_URL=${INTERNAL_API_URL:-"https://api:3000"}
 INTERNAL_KEYCLOAK_URL=${INTERNAL_KEYCLOAK_URL:-"http://keycloak:8080"}

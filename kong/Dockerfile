@@ -36,11 +36,15 @@ COPY certs/dive25-key.pem /etc/kong/certs/
 # Fix permissions for SSL certificates
 RUN chmod 644 /etc/kong/ssl/ca-certificates.crt \
     && chmod 644 /etc/kong/certs/dive25-cert.pem \
-    && chmod 644 /etc/kong/certs/dive25-key.pem \
-    && chown -R kong:kong /etc/kong/ssl /etc/kong/certs
+    && chmod 644 /etc/kong/certs/dive25-key.pem
 
 # Copy the original configuration file as a template
 COPY kong.yml /etc/kong/kong.yml.template
+
+# Create a directory for temporary config to handle permissions
+RUN mkdir -p /tmp/kong-config && \
+    chown -R kong:kong /tmp/kong-config && \
+    chmod 755 /tmp/kong-config
 
 # Copy the configuration processor script and make it executable
 COPY process-config.sh /process-config.sh
