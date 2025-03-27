@@ -13,6 +13,8 @@ import { Layout } from '@/components/layout/Layout';
 import { useEffect, useState } from 'react';
 // Import i18n initialization
 import '@/utils/i18n';
+// Import i18n helper
+import { appNamespaces } from '@/utils/i18nHelper';
 import Head from 'next/head';
 
 function App({ Component, pageProps }: AppProps) {
@@ -38,6 +40,11 @@ function App({ Component, pageProps }: AppProps) {
         NEXT_PUBLIC_KEYCLOAK_REALM: process.env.NEXT_PUBLIC_KEYCLOAK_REALM,
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID
       });
+      
+      // Debug i18n loading
+      console.log('i18n Namespaces:', appNamespaces);
+      // Get information about i18n config from env
+      console.log('i18n ENV Config:', process.env.i18n);
     }
   }, []);
 

@@ -6,15 +6,17 @@ export interface SecurityBannerProps {
   caveats?: string[];
   releasability?: string[];
   coi?: string[];
+  className?: string;
 }
 
-export function SecurityBanner({ 
+export const SecurityBanner: React.FC<SecurityBannerProps> = ({ 
   classification = 'UNCLASSIFIED', 
   caveats = [],
   releasability = [],
-  coi = []
-}: SecurityBannerProps) {
-  const { t } = useTranslation('common');
+  coi = [],
+  className = ''
+}) => {
+  const { t } = useTranslation(['common', 'translation']);
   
   // Determine banner color based on classification
   const getBannerColor = (classification: string) => {
@@ -68,7 +70,7 @@ export function SecurityBanner({
   const coiText = formatCOI();
   
   return (
-    <div className={`${bannerColor} text-white text-center py-1 px-4 sticky top-0 z-50`}>
+    <div className={`${bannerColor} text-white text-center py-1 px-4 sticky top-0 z-50 ${className}`}>
       <div className="flex flex-col sm:flex-row justify-center items-center text-sm font-bold">
         <span>{t('security.classification')}: {formatClassification(classification)}</span>
         

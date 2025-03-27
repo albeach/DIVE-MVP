@@ -10,7 +10,7 @@ import { GetStaticProps } from 'next';
 export default function LoginPage() {
   const { login, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'translation']);
   
   // Redirect if already authenticated
   useEffect(() => {
@@ -99,7 +99,7 @@ export default function LoginPage() {
 export const getStaticProps: GetStaticProps = async ({ locale }) => {
   return {
     props: {
-      ...(await serverSideTranslations(locale || 'en', ['common'])),
+      ...(await serverSideTranslations(locale || 'en', ['common', 'translation'])),
     },
   };
 }; 

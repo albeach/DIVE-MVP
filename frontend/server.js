@@ -39,6 +39,12 @@ app.prepare().then(() => {
         // Parse URL
         const parsedUrl = parse(req.url, true);
 
+        // Add cache busting headers to all responses
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.setHeader('Surrogate-Control', 'no-store');
+
         // Special handling for the problematic CSS file
         if (req.url.includes('/_next/static/css') && req.url.includes(TARGET_CSS)) {
             console.log(`Applying CORS headers to CSS file: ${req.url}`);

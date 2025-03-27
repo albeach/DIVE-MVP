@@ -16,7 +16,18 @@ WORKDIR /app
 
 # Copy dependencies
 COPY --from=deps /app/node_modules ./node_modules
+
+# First, copy i18n critical files specifically to ensure they're included
+COPY next-i18next.config.js ./
+COPY public/locales ./public/locales
+COPY src/utils/i18n.ts ./src/utils/i18n.ts
+
+# Now copy everything else
 COPY . .
+
+# Debug i18n config during build
+RUN echo "i18n config file contents:" && cat next-i18next.config.js
+RUN echo "Verifying i18n locale files:" && ls -la public/locales || echo "No locales found!"
 
 # Ensure public directory exists
 RUN mkdir -p ./public
@@ -61,11 +72,16 @@ RUN addgroup --system --gid 1001 nodejs && \
 
 # Copy necessary files
 COPY --from=builder /app/next.config.js ./
+COPY --from=builder /app/next-i18next.config.js ./
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/server.js ./server.js
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+# Verify i18n config is present in final stage
+RUN echo "Checking i18n config in runner stage:" && [ -f "next-i18next.config.js" ] && echo "next-i18next.config.js exists" || echo "next-i18next.config.js MISSING!"
+RUN echo "Checking locales in runner stage:" && ls -la public/locales || echo "No locales directory found!"
 
 # Set proper permissions
 USER nextjs

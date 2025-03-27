@@ -9,7 +9,7 @@ interface PaginationProps {
 }
 
 export function Pagination({ currentPage, totalPages, onPageChange }: PaginationProps) {
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'translation']);
   
   // Generate page numbers to display
   const getPageNumbers = () => {

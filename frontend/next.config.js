@@ -1,11 +1,14 @@
 // frontend/next.config.js
 /** @type {import('next').NextConfig} */
-const { i18n } = require('./next-i18next.config');
+const i18nConfig = require('./next-i18next.config.js');
+
+// Log i18n config at load time
+console.log('Loading i18n configuration:', i18nConfig);
 
 const nextConfig = {
     reactStrictMode: true,
     swcMinify: true,
-    i18n,
+    i18n: i18nConfig.i18n,
     output: 'standalone',
     images: {
         domains: ['localhost', 'dive25.local', 'dive25.com'],
@@ -18,6 +21,7 @@ const nextConfig = {
         keycloakClientId: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || 'dive25-frontend',
         kongUrl: process.env.NEXT_PUBLIC_KONG_URL || 'https://dive25.local:8443',
         apiPath: '/api/v1',
+        i18n: JSON.stringify(i18nConfig),
     },
     async headers() {
         return [

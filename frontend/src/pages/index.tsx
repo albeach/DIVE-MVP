@@ -8,6 +8,7 @@ import Image from 'next/image';
 import { useTranslation } from 'next-i18next';
 import { serverSideTranslations } from 'next-i18next/serverSideTranslations';
 import { motion } from 'framer-motion';
+import { defaultNamespaces, getTranslationFallbacks } from '@/utils/i18nHelper';
 
 import { Button } from '@/components/ui/Button';
 import LoginButton from '@/components/auth/LoginButton';
@@ -16,7 +17,18 @@ import { useAuth } from '@/context/auth-context';
 
 const HomePage: NextPage = () => {
   const router = useRouter();
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(defaultNamespaces);
+  
+  // Helper function to get translations with fallbacks
+  const translate = (keys: string[]) => {
+    for (const key of keys) {
+      const translation = t(key);
+      if (translation && translation !== key) {
+        return translation;
+      }
+    }
+    return t(keys[0]);
+  };
   
   // Safe auth usage with fallback for landing page
   let isAuthenticated = false;
@@ -30,7 +42,7 @@ const HomePage: NextPage = () => {
   return (
     <>
       <Head>
-        <title>{t('app.name')} - Secure Document Access System</title>
+        <title>{translate(getTranslationFallbacks.appName)} - Secure Document Access System</title>
         <meta name="description" content="DIVE25 - Secure document sharing across organizational boundaries" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -89,7 +101,7 @@ const HomePage: NextPage = () => {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.4, duration: 0.6 }}
               >
-                {t('pages.home.hero.subtitle')}
+                {translate(getTranslationFallbacks.pages.home.subtitle)}
               </motion.p>
 
               <motion.div 
@@ -109,7 +121,7 @@ const HomePage: NextPage = () => {
                       <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
-                      {t('pages.home.hero.document_cta')}
+                      {translate(getTranslationFallbacks.pages.home.viewDocuments)}
                     </span>
                   </Button>
                 ) : (
@@ -118,7 +130,7 @@ const HomePage: NextPage = () => {
                       variant="primary"
                       size="lg"
                       className="bg-white hover:bg-white/90 text-primary-900 font-medium transition duration-300 rounded-xl shadow-lg shadow-primary-900/20 px-8 py-4"
-                      label={t('auth.sign_in')}
+                      label={translate(getTranslationFallbacks.auth.signIn)}
                     />
                     <Button
                       variant="secondary"
@@ -126,7 +138,7 @@ const HomePage: NextPage = () => {
                       className="bg-transparent border-2 border-white/30 text-white hover:bg-white/10 hover:border-white/40 backdrop-blur-sm transition duration-300 rounded-xl px-8 py-4 shadow-lg shadow-primary-900/10"
                       onClick={() => router.push('/about')}
                     >
-                      {t('pages.home.hero.learn_more')}
+                      {translate(getTranslationFallbacks.pages.home.learnMore)}
                     </Button>
                   </>
                 )}
@@ -193,7 +205,7 @@ const HomePage: NextPage = () => {
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            {t('pages.home.features.title')}
+            {translate(getTranslationFallbacks.pages.home.features.title)}
           </motion.h2>
           
           <div className="grid md:grid-cols-3 gap-8 lg:gap-12">
@@ -213,10 +225,10 @@ const HomePage: NextPage = () => {
                   </div>
                 </div>
                 <h3 className="text-xl font-semibold mb-3 text-primary-900">
-                  {t('pages.home.features.feature1.title')}
+                  {translate(getTranslationFallbacks.pages.home.features.feature1.title)}
                 </h3>
                 <p className="text-gray-600 text-base leading-relaxed">
-                  {t('pages.home.features.feature1.description')}
+                  {translate(getTranslationFallbacks.pages.home.features.feature1.description)}
                 </p>
               </Card>
             </motion.div>
@@ -237,10 +249,10 @@ const HomePage: NextPage = () => {
                   </div>
                 </div>
                 <h3 className="text-xl font-semibold mb-3 text-primary-900">
-                  {t('pages.home.features.feature2.title')}
+                  {translate(getTranslationFallbacks.pages.home.features.feature2.title)}
                 </h3>
                 <p className="text-gray-600 text-base leading-relaxed">
-                  {t('pages.home.features.feature2.description')}
+                  {translate(getTranslationFallbacks.pages.home.features.feature2.description)}
                 </p>
               </Card>
             </motion.div>
@@ -261,10 +273,10 @@ const HomePage: NextPage = () => {
                   </div>
                 </div>
                 <h3 className="text-xl font-semibold mb-3 text-primary-900">
-                  {t('pages.home.features.feature3.title')}
+                  {translate(getTranslationFallbacks.pages.home.features.feature3.title)}
                 </h3>
                 <p className="text-gray-600 text-base leading-relaxed">
-                  {t('pages.home.features.feature3.description')}
+                  {translate(getTranslationFallbacks.pages.home.features.feature3.description)}
                 </p>
               </Card>
             </motion.div>
@@ -287,10 +299,10 @@ const HomePage: NextPage = () => {
             className="max-w-3xl mx-auto"
           >
             <h2 className="text-3xl md:text-4xl font-bold text-primary-900 mb-6">
-              {t('pages.home.cta.title')}
+              {translate(getTranslationFallbacks.pages.home.cta.title)}
             </h2>
             <p className="text-xl text-gray-700 max-w-2xl mx-auto mb-10 leading-relaxed">
-              {t('pages.home.cta.description')}
+              {translate(getTranslationFallbacks.pages.home.cta.description)}
             </p>
             
             {!isAuthenticated && (
@@ -303,14 +315,14 @@ const HomePage: NextPage = () => {
                     variant="primary"
                     size="lg"
                     className="bg-primary-600 hover:bg-primary-700 text-white shadow-lg rounded-xl px-10 py-4 font-medium"
-                    label={t('auth.get_started')}
+                    label={translate(getTranslationFallbacks.auth.getStarted)}
                   />
                 </motion.div>
               </div>
             )}
             
             <p className="text-sm text-gray-500 bg-gray-50 p-4 rounded-lg inline-block">
-              {t('pages.home.cta.security_note')}
+              {translate(getTranslationFallbacks.pages.home.cta.securityNote)}
             </p>
             
             <div className="mt-12">
@@ -319,7 +331,7 @@ const HomePage: NextPage = () => {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <span className="border-b border-primary-200 group-hover:border-primary-600 transition-colors duration-300">
-                  {t('pages.home.cta.need_help')}
+                  {translate(getTranslationFallbacks.pages.home.cta.needHelp)}
                 </span>
               </Link>
             </div>
@@ -332,17 +344,17 @@ const HomePage: NextPage = () => {
         <div className="container mx-auto px-4">
           <div className="flex flex-col md:flex-row justify-between items-center">
             <div className="mb-4 md:mb-0">
-              <p className="text-sm text-primary-200">&copy; {new Date().getFullYear()} {t('app.name')}. {t('footer.rights')}</p>
+              <p className="text-sm text-primary-200">&copy; {new Date().getFullYear()} {translate(getTranslationFallbacks.appName)}. {translate(getTranslationFallbacks.footer.rights)}</p>
             </div>
             <div className="flex space-x-6">
               <a href="#" className="text-primary-200 hover:text-white transition-colors duration-200 text-sm">
-                {t('footer.privacy')}
+                {translate(getTranslationFallbacks.footer.privacy)}
               </a>
               <a href="#" className="text-primary-200 hover:text-white transition-colors duration-200 text-sm">
-                {t('footer.terms')}
+                {translate(getTranslationFallbacks.footer.terms)}
               </a>
               <a href="#" className="text-primary-200 hover:text-white transition-colors duration-200 text-sm">
-                {t('footer.contact')}
+                {translate(getTranslationFallbacks.footer.contact)}
               </a>
             </div>
           </div>
@@ -355,7 +367,7 @@ const HomePage: NextPage = () => {
 export const getStaticProps: GetStaticProps = async ({ locale }) => {
   return {
     props: {
-      ...(await serverSideTranslations(locale || 'en', ['common'])),
+      ...(await serverSideTranslations(locale || 'en', ['common', 'translation', 'profile', 'documents'])),
     },
   };
 };

@@ -12,7 +12,7 @@ import { withAuth } from '@/components/hoc/withAuth';
 function Dashboard() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const router = useRouter();
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(['common', 'translation']);
 
   // Redirect to login if not authenticated
   useEffect(() => {
@@ -312,7 +312,7 @@ function Dashboard() {
 export const getServerSideProps: GetServerSideProps = async ({ locale }) => {
   return {
     props: {
-      ...(await serverSideTranslations(locale || 'en', ['common'])),
+      ...(await serverSideTranslations(locale || 'en', ['common', 'translation'])),
     },
   };
 };

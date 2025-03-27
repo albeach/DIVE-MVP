@@ -5,7 +5,7 @@ module.exports = {
         locales: ['en', 'en-US', 'fr'],
         localeDetection: false,
     },
-    ns: ['common', 'profile', 'documents'],
+    ns: ['common', 'profile', 'documents', 'translation'],
     defaultNS: 'common',
     localePath: './public/locales'
 };

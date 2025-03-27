@@ -6,10 +6,11 @@ import { useRouter } from 'next/router';
 import { useAuth } from '@/context/auth-context';
 import LoginButton from '@/components/auth/LoginButton';
 import { useTranslation } from 'next-i18next';
+import { defaultNamespaces, getTranslationFallbacks } from '@/utils/i18nHelper';
 
 const Navbar: React.FC = () => {
   const router = useRouter();
-  const { t } = useTranslation('common');
+  const { t } = useTranslation(defaultNamespaces);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [sessionTimeRemaining, setSessionTimeRemaining] = useState<number | null>(null);
@@ -166,6 +167,19 @@ const Navbar: React.FC = () => {
     );
   };
 
+  // Helper function to get i18n keys that might be in different namespaces
+  const translate = (keys: string[]) => {
+    // Try each key in order until one returns a non-empty value
+    for (const key of keys) {
+      const translation = t(key);
+      if (translation && translation !== key) {
+        return translation;
+      }
+    }
+    // Fallback to the first key
+    return t(keys[0]);
+  };
+
   // If not mounted yet, render a placeholder to avoid hydration issues
   if (!mounted) return <div className="h-16 bg-gradient-to-r from-primary-900 to-primary-800"></div>;
 
@@ -183,7 +197,7 @@ const Navbar: React.FC = () => {
                 {/* Logo with hover effect */}
                 <Image 
                   src="/assets/dive25-logo.svg" 
-                  alt={t('app.name')} 
+                  alt={translate(getTranslationFallbacks.appName)} 
                   width={48} 
                   height={48}
                   className="relative z-10 transition-all duration-300 group-hover:scale-110"
@@ -193,7 +207,7 @@ const Navbar: React.FC = () => {
               {/* Add the text logo for larger screens */}
               <div className="ml-3 hidden md:block">
                 <span className="text-xl font-bold bg-gradient-to-r from-white to-green-200 bg-clip-text text-transparent">
-                  {t('app.name')}
+                  {translate(getTranslationFallbacks.appName)}
                 </span>
               </div>
             </Link>
@@ -201,12 +215,12 @@ const Navbar: React.FC = () => {
           
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center space-x-3">
-            <NavLink href="/" active={router.pathname === '/'} label={t('navigation.home')} />
+            <NavLink href="/" active={router.pathname === '/'} label={translate(getTranslationFallbacks.navigation.home)} />
             
             {isAuthenticated && (
               <>
-                <NavLink href="/documents" active={router.pathname.startsWith('/documents')} label={t('navigation.documents')} />
-                <NavLink href="/dashboard" active={router.pathname === '/dashboard'} label={t('navigation.dashboard')} />
+                <NavLink href="/documents" active={router.pathname.startsWith('/documents')} label={translate(getTranslationFallbacks.navigation.documents)} />
+                <NavLink href="/dashboard" active={router.pathname === '/dashboard'} label={translate(getTranslationFallbacks.navigation.dashboard)} />
               </>
             )}
           </nav>
@@ -271,7 +285,7 @@ const Navbar: React.FC = () => {
                           <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                           </svg>
-                          {t('session.expires_in')}:
+                          {translate(getTranslationFallbacks.session.expiresIn)}:
                         </p>
                         <div className="flex items-center">
                           <span className={`text-sm font-medium ${isTokenExpiring ? 'text-red-600' : 'text-green-600'}`}>
@@ -280,7 +294,7 @@ const Navbar: React.FC = () => {
                           <button 
                             onClick={handleRefreshSession}
                             className="ml-2 text-primary-600 hover:text-primary-800 transition-colors p-1 rounded-full hover:bg-green-50"
-                            title={t('session.refresh')}
+                            title={translate(getTranslationFallbacks.session.refresh)}
                           >
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -300,7 +314,7 @@ const Navbar: React.FC = () => {
                           </svg>
                         }
                       >
-                        {t('navigation.profile')}
+                        {translate(getTranslationFallbacks.navigation.profile)}
                       </DropdownLink>
                       
                       <DropdownLink 
@@ -312,7 +326,7 @@ const Navbar: React.FC = () => {
                           </svg>
                         }
                       >
-                        {t('navigation.dashboard')}
+                        {translate(getTranslationFallbacks.navigation.dashboard)}
                       </DropdownLink>
                       
                       <DropdownLink 
@@ -324,7 +338,7 @@ const Navbar: React.FC = () => {
                           </svg>
                         }
                       >
-                        {t('navigation.documents')}
+                        {translate(getTranslationFallbacks.navigation.documents)}
                       </DropdownLink>
                       
                       <div className="border-t border-gray-100 my-1"></div>
@@ -337,7 +351,7 @@ const Navbar: React.FC = () => {
                         <svg className="h-4 w-4 mr-3 text-red-500 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
                         </svg>
-                        {t('auth.sign_out')}
+                        {translate(getTranslationFallbacks.auth.signOut)}
                       </button>
                     </div>
                   </div>
@@ -349,7 +363,7 @@ const Navbar: React.FC = () => {
                   variant="primary" 
                   size="md" 
                   className="bg-white/10 hover:bg-white/20 text-white py-2 px-4 rounded-md shadow-sm backdrop-blur-sm border border-white/10 hover:border-white/20 transition-all duration-300"
-                  label={t('auth.sign_in')}
+                  label={translate(getTranslationFallbacks.auth.signIn)}
                 />
               </div>
             )}
@@ -385,7 +399,7 @@ const Navbar: React.FC = () => {
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
               </svg>
-              <span>{t('navigation.home')}</span>
+              <span>{translate(getTranslationFallbacks.navigation.home)}</span>
             </MobileNavLink>
             
             {isAuthenticated ? (
@@ -394,21 +408,21 @@ const Navbar: React.FC = () => {
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <span>{t('navigation.documents')}</span>
+                  <span>{translate(getTranslationFallbacks.navigation.documents)}</span>
                 </MobileNavLink>
                 
                 <MobileNavLink href="/dashboard" active={router.pathname === '/dashboard'}>
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
                   </svg>
-                  <span>{t('navigation.dashboard')}</span>
+                  <span>{translate(getTranslationFallbacks.navigation.dashboard)}</span>
                 </MobileNavLink>
                 
                 <MobileNavLink href="/profile" active={router.pathname === '/profile'}>
                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-3 opacity-80" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
-                  <span>{t('navigation.profile')}</span>
+                  <span>{translate(getTranslationFallbacks.navigation.profile)}</span>
                 </MobileNavLink>
                 
                 <div className="pt-2 pb-1">
@@ -419,7 +433,7 @@ const Navbar: React.FC = () => {
                     <svg className="h-5 w-5 mr-3 opacity-90" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path>
                     </svg>
-                    {t('auth.sign_out')}
+                    {translate(getTranslationFallbacks.auth.signOut)}
                   </button>
                 </div>
               </>
@@ -429,7 +443,7 @@ const Navbar: React.FC = () => {
                   variant="primary" 
                   size="md" 
                   className="w-full bg-white/10 hover:bg-white/20 text-white py-2.5 px-4 rounded-lg shadow-sm backdrop-blur-sm border border-white/10 hover:border-white/20 transition-all duration-300"
-                  label={t('auth.sign_in')}
+                  label={translate(getTranslationFallbacks.auth.signIn)}
                 />
               </div>
             )}
